@@ -60,6 +60,7 @@
                 <button
                     id="connectBtn"
                     class="btn btn-primary"
+                    type="button"
                     onclick="connectWallet()"
                 >
                     Подключить MetaMask
@@ -78,7 +79,9 @@
 
     <main>
 
-        <!-- Заголовок страницы -->
+        <!-- =================================================
+             ЗАГОЛОВОК СТРАНИЦЫ
+        ================================================== -->
 
         <div class="page-header">
 
@@ -94,6 +97,49 @@
             </p>
 
         </div>
+
+
+        <!-- =================================================
+             СОСТОЯНИЕ ПОДКЛЮЧЕНИЯ К БЛОКЧЕЙНУ
+        ================================================== -->
+
+        <section
+            class="box"
+            id="connectionInfo"
+            style="margin-bottom: 1.5rem;"
+        >
+
+            <div class="row-between">
+
+                <div>
+
+                    <h3 style="margin-bottom: 0.35rem;">
+                        Подключение к блокчейну
+                    </h3>
+
+                    <p
+                        id="connectionStatus"
+                        style="
+                            font-size: 0.9rem;
+                            color: var(--text-muted);
+                            margin: 0;
+                        "
+                    >
+                        Проверка подключения к локальной сети Geth...
+                    </p>
+
+                </div>
+
+                <span
+                    id="networkBadge"
+                    class="badge badge-gray"
+                >
+                    Проверка сети
+                </span>
+
+            </div>
+
+        </section>
 
 
         <!-- =================================================
@@ -119,6 +165,8 @@
             >
                 Регистрация новых участников в децентрализованной
                 автономной организации RescueDAO.
+                Управление участниками выполняется через основной
+                контракт DAO.
             </p>
 
 
@@ -292,18 +340,118 @@
 
     <script src="https://cdnjs.cloudflare.com/ajax/libs/ethers/6.13.1/ethers.umd.min.js"></script>
 
-    <!-- Конфигурация контрактов -->
+
+    <!-- Адреса и ABI контрактов:
+         RescueDAO
+         RescueDAOView
+         RescueTreasury
+         RescueMilestones
+         RescueNFT
+    -->
 
     <script src="js/config.js"></script>
 
-    <!-- Подключение MetaMask и Web3 -->
+
+    <!-- Подключение MetaMask и инициализация контрактов -->
 
     <script src="js/wallet.js"></script>
+
 
     <!-- Логика панели валидаторов и истории -->
 
     <script src="js/validator.js"></script>
 
+
+    <!-- =================================================
+         ИНДИКАТОР ПОДКЛЮЧЕНИЯ
+    ================================================== -->
+
+    <script>
+
+        window.addEventListener("DOMContentLoaded", () => {
+
+            const connectionStatus =
+                document.getElementById("connectionStatus");
+
+            const networkBadge =
+                document.getElementById("networkBadge");
+
+
+            /**
+             * Обновление состояния подключения.
+             */
+            window.updateConnectionInfo = function (connected) {
+
+                if (!connectionStatus || !networkBadge) {
+                    return;
+                }
+
+                if (connected) {
+
+                    connectionStatus.textContent =
+                        typeof userAddress !== "undefined" && userAddress
+                            ? "Кошелёк подключён. Доступны операции валидатора и администратора."
+                            : "Сеть Geth доступна. Для выполнения транзакций подключите MetaMask.";
+
+                    networkBadge.textContent =
+                        "Geth · 1337";
+
+                    networkBadge.className =
+                        "badge badge-green";
+
+                } else {
+
+                    connectionStatus.textContent =
+                        "Нет подключения к локальной сети Geth. Проверьте работу узла и настройки MetaMask.";
+
+                    networkBadge.textContent =
+                        "Нет подключения";
+
+                    networkBadge.className =
+                        "badge badge-red";
+                }
+
+            };
+
+
+            /**
+             * Проверка доступности провайдера.
+             */
+            if (
+                typeof provider !== "undefined" &&
+                provider
+            ) {
+
+                provider.getNetwork()
+
+                    .then(network => {
+
+                        window.updateConnectionInfo(
+                            network.chainId === 1337n
+                        );
+
+                    })
+
+                    .catch(error => {
+
+                        console.error(
+                            "Ошибка проверки сети:",
+                            error
+                        );
+
+                        window.updateConnectionInfo(false);
+
+                    });
+
+            } else {
+
+                window.updateConnectionInfo(false);
+
+            }
+
+        });
+
+    </script>
 
 </body>
 

@@ -27,6 +27,7 @@
 
             <a href="index.html" class="logo">
                 🐾 RescueDAO
+
                 <span class="badge badge-green">
                     Local Geth · 1337
                 </span>
@@ -52,6 +53,7 @@
                 <button
                     id="connectBtn"
                     class="btn btn-primary"
+                    type="button"
                     onclick="connectWallet()"
                 >
                     Подключить MetaMask
@@ -69,7 +71,9 @@
 
     <main>
 
-        <!-- Заголовок страницы -->
+        <!-- =================================================
+             ЗАГОЛОВОК СТРАНИЦЫ
+        ================================================== -->
 
         <div class="page-header">
 
@@ -85,6 +89,49 @@
             </p>
 
         </div>
+
+
+        <!-- =================================================
+             СТАТУС ПОДКЛЮЧЕНИЯ
+        ================================================== -->
+
+        <section
+            class="box"
+            id="connectionInfo"
+            style="margin-bottom: 1.5rem;"
+        >
+
+            <div class="row-between">
+
+                <div>
+
+                    <h3 style="margin-bottom: 0.35rem;">
+                        Подключение к блокчейну
+                    </h3>
+
+                    <p
+                        id="connectionStatus"
+                        style="
+                            font-size: 0.9rem;
+                            color: var(--text-muted);
+                            margin: 0;
+                        "
+                    >
+                        Проверка подключения к локальной сети Geth...
+                    </p>
+
+                </div>
+
+                <span
+                    id="networkBadge"
+                    class="badge badge-gray"
+                >
+                    Проверка сети
+                </span>
+
+            </div>
+
+        </section>
 
 
         <!-- =================================================
@@ -167,7 +214,9 @@
         <section class="two-col">
 
 
-            <!-- ПОЖЕРТВОВАНИЕ -->
+            <!-- =============================================
+                 ПОЖЕРТВОВАНИЕ
+            ============================================== -->
 
             <div class="box">
 
@@ -225,12 +274,15 @@
                 >
                     Для отправки пожертвования необходимо подключить
                     MetaMask и выбрать локальную сеть Geth.
+                    Транзакция выполняется через основной контракт DAO.
                 </p>
 
             </div>
 
 
-            <!-- СОЗДАНИЕ ЗАЯВКИ -->
+            <!-- =============================================
+                 СОЗДАНИЕ ЗАЯВКИ
+            ============================================== -->
 
             <div class="box">
 
@@ -513,18 +565,110 @@
 
     <script src="https://cdnjs.cloudflare.com/ajax/libs/ethers/6.13.1/ethers.umd.min.js"></script>
 
-    <!-- Конфигурация контрактов -->
+
+    <!-- Конфигурация адресов и ABI пяти контрактов -->
 
     <script src="js/config.js"></script>
 
-    <!-- Подключение MetaMask и Web3 -->
+
+    <!-- Подключение MetaMask и инициализация контрактов -->
 
     <script src="js/wallet.js"></script>
+
 
     <!-- Логика главной страницы -->
 
     <script src="js/home.js"></script>
 
+
+    <!-- =================================================
+         ОБНОВЛЕНИЕ ИНДИКАТОРА СЕТИ
+    ================================================== -->
+
+    <script>
+
+        window.addEventListener("DOMContentLoaded", () => {
+
+            const originalInitWeb3 = window.initWeb3;
+
+            if (typeof originalInitWeb3 !== "function") {
+                return;
+            }
+
+            const connectionStatus =
+                document.getElementById("connectionStatus");
+
+            const networkBadge =
+                document.getElementById("networkBadge");
+
+
+            if (!connectionStatus || !networkBadge) {
+                return;
+            }
+
+
+            // Обновление информации о подключении.
+            function updateConnectionInfo(connected) {
+
+                if (connected) {
+
+                    connectionStatus.textContent =
+                        userAddress
+                            ? "Кошелёк подключён. Доступны операции с блокчейном."
+                            : "Сеть Geth доступна. Для транзакций подключите MetaMask.";
+
+                    networkBadge.textContent =
+                        "Geth · 1337";
+
+                    networkBadge.className =
+                        "badge badge-green";
+
+                } else {
+
+                    connectionStatus.textContent =
+                        "Не удалось подключиться к локальной сети Geth.";
+
+                    networkBadge.textContent =
+                        "Нет подключения";
+
+                    networkBadge.className =
+                        "badge badge-red";
+                }
+            }
+
+
+            // Сохраняем исходную функцию инициализации.
+            window.initWeb3 = async function () {
+
+                const result = await originalInitWeb3();
+
+                updateConnectionInfo(result);
+
+                return result;
+            };
+
+
+            // Обновляем индикатор после инициализации.
+            if (typeof provider !== "undefined" && provider) {
+
+                provider.getNetwork()
+                    .then(network => {
+
+                        updateConnectionInfo(
+                            network.chainId === 1337n
+                        );
+
+                    })
+                    .catch(() => {
+
+                        updateConnectionInfo(false);
+
+                    });
+            }
+
+        });
+
+    </script>
 
 </body>
 </html>

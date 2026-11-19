@@ -1,121 +1,446 @@
+
 window.addEventListener("DOMContentLoaded", async () => {
-    const ready = await initWeb3();
-    if (!ready) return;
-    await loadPoolStats();
-    await loadAllRequests();
+    try {
+        const ready = await initWeb3();
+
+        if (!ready) return;
+
+        await loadPoolStats();
+        await loadAllRequests();
+
+    } catch (err) {
+        console.error("Ошибка запуска главной страницы:", err);
+    }
 });
+
+
+// =========================================================
+// ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ
+// =========================================================
+
+/**
+ * Проверка доступности контракта.
+ */
+function requireContract(instance, name) {
+    if (!instance) {
+        throw new Error(`${name} не инициализирован.`);
+    }
+}
+
+/**
+ * Экранирование текста перед вставкой в HTML.
+ */
+function escapeHtml(value) {
+    return String(value ?? "").replace(/[&<>"']/g, char => {
+        const entities = {
+            "&": "&amp;",
+            "<": "&lt;",
+            ">": "&gt;",
+            '"': "&quot;",
+            "'": "&#039;"
+        };
+
+        return entities[char];
+    });
+}
+
+/**
+ * Получение статуса заявки.
+ */
+function getRequestStatus(status) {
+    const statusNum = Number(status);
+
+    if (
+        typeof STATUS_LABELS !== "undefined" &&
+        STATUS_LABELS[statusNum]
+    ) {
+        return STATUS_LABELS[statusNum];
+    }
+
+    return {
+        text: "Неизвестный статус",
+        cls: "badge-gray"
+    };
+}
+
+/**
+ * Проверка наличия обязательных элементов страницы.
+ */
+function getElement(id) {
+    const element = document.getElementById(id);
+
+    if (!element) {
+        throw new Error(`Не найден HTML-элемент #${id}.`);
+    }
+
+    return element;
+}
+
+
+// =========================================================
+// 1. СТАТИСТИКА ОБЩЕГО ФОНДА
+// =========================================================
 
 async function loadPoolStats() {
     try {
-        const [donated, reserved, spent, available] = await Promise.all([
-            contract.totalDonated(),
-            contract.totalReserved(),
-            contract.totalSpent(),
-            contract.getAvailableBalance()
+        requireContract(
+            treasuryContract,
+            "RescueTreasury"
+        );
+
+        const [
+            donated,
+            reserved,
+            spent,
+            available
+        ] = await Promise.all([
+            treasuryContract.totalDonated(),
+            treasuryContract.totalReserved(),
+            treasuryContract.totalSpent(),
+            treasuryContract.getAvailableBalance()
         ]);
 
-        document.getElementById("statDonated").textContent = `${ethers.formatEther(donated)} ETH`; 
-        document.getElementById("statAvailable").textContent = `${ethers.formatEther(available)} ETH`;
-        document.getElementById("statReserved").textContent = `${ethers.formatEther(reserved)} ETH`; 
-        document.getElementById("statSpent").textContent = `${ethers.formatEther(spent)} ETH`;
+        getElement("statDonated").textContent =
+            `${ethers.formatEther(donated)} ETH`;
+
+        getElement("statAvailable").textContent =
+            `${ethers.formatEther(available)} ETH`;
+
+        getElement("statReserved").textContent =
+            `${ethers.formatEther(reserved)} ETH`;
+
+        getElement("statSpent").textContent =
+            `${ethers.formatEther(spent)} ETH`;
+
     } catch (err) {
-        console.error("Ошибка загрузки статистики фонда:", err);
+        console.error(
+            "Ошибка загрузки статистики фонда:",
+            err
+        );
     }
 }
+
+
+// =========================================================
+// 2. ПОЖЕРТВОВАНИЕ В ОБЩИЙ ФОНД
+// =========================================================
 
 async function donateToPool() {
-    if (!signer) return alert("Сначала подключите MetaMask!");
-    const val = document.getElementById("donateAmount").value;
-    if (!val || Number(val) <= 0) return alert("Введите сумму больше 0 ETH");
+
+    // -----------------------------------------------------
+    // Проверка подключения кошелька
+    // -----------------------------------------------------
+
+    if (!signer || !userAddress) {
+        alert("Сначала подключите MetaMask!");
+        return;
+    }
+
+    // -----------------------------------------------------
+    // Проверка основного контракта DAO
+    // -----------------------------------------------------
+
+    if (!contract) {
+        alert("Контракт RescueDAO не инициализирован.");
+        return;
+    }
+
+    if (typeof contract.donate !== "function") {
+        alert(
+            "В ABI RescueDAO отсутствует функция donate(). " +
+            "Проверьте ABI и исходный код контракта."
+        );
+        return;
+    }
+
+    // -----------------------------------------------------
+    // Получение суммы пожертвования
+    // -----------------------------------------------------
+
+    const amountInput = getElement("donateAmount");
+
+    const val = amountInput.value.trim();
+
+    if (
+        !val ||
+        !Number.isFinite(Number(val)) ||
+        Number(val) <= 0
+    ) {
+        alert("Введите корректную сумму больше 0 ETH.");
+        return;
+    }
 
     try {
-        const tx = await contract.donate({ value: ethers.parseEther(val) });
-        alert("Пожертвование отправлено! Ожидаем подтверждения транзакции...");
-        await tx.wait();
-        alert("Спасибо! Средства зачислены в общий фонд RescueDAO.");
-        window.location.reload();
+
+        const amountWei = ethers.parseEther(val);
+
+        // -------------------------------------------------
+        // Отправка пожертвования через RescueDAO
+        // -------------------------------------------------
+
+        /*
+         * Пользователь отправляет ETH основному DAO.
+         * DAO должен переслать средства в RescueTreasury
+         * и вызвать соответствующую функцию казначейства.
+         */
+
+        const tx = await contract.donate({
+            value: amountWei
+        });
+
+        alert(
+            "Пожертвование отправлено! " +
+            "Ожидаем подтверждения транзакции..."
+        );
+
+        const receipt = await tx.wait();
+
+        if (!receipt || receipt.status !== 1) {
+            throw new Error(
+                "Транзакция пожертвования не подтверждена."
+            );
+        }
+
+        alert(
+            "Спасибо! Средства зачислены в общий фонд RescueDAO."
+        );
+
+        amountInput.value = "";
+
+        // Обновляем статистику фонда.
+        await loadPoolStats();
+
     } catch (err) {
-        console.error(err);
-        alert("Ошибка: " + (err.reason || err.message));
+
+        console.error(
+            "Ошибка пожертвования:",
+            err
+        );
+
+        alert(
+            "Ошибка пожертвования: " +
+            getErrorMessage(err)
+        );
     }
 }
 
+
+// =========================================================
+// 3. СОЗДАНИЕ ЗАЯВКИ
+// =========================================================
+
 async function submitAidRequest() {
-    if (!signer) {
-        return alert("Подключите MetaMask!");
+
+    // -----------------------------------------------------
+    // Проверка подключения
+    // -----------------------------------------------------
+
+    if (!signer || !userAddress) {
+        alert("Подключите MetaMask!");
+        return;
     }
 
-    if (!userRoles.isMember) {
-        return alert("Создавать заявки могут только зарегистрированные участники DAO.");
+    // -----------------------------------------------------
+    // Проверка основного DAO
+    // -----------------------------------------------------
+
+    if (!contract) {
+        alert("Контракт RescueDAO не инициализирован.");
+        return;
     }
 
-    const name = document.getElementById("reqAnimalName").value.trim();
-    const desc = document.getElementById("reqDescription").value.trim();
-    const amountEth = document.getElementById("reqAmount").value;
-    const durationMin = Number(document.getElementById("reqDuration").value);
-    const uri = document.getElementById("reqEvidenceUri").value.trim();
+    if (typeof contract.createAidRequest !== "function") {
+        alert(
+            "В ABI RescueDAO отсутствует функция createAidRequest()."
+        );
+        return;
+    }
 
-    const fileInput = document.getElementById("reqEvidenceFile");
-    const photoInput = document.getElementById("reqPhotoFile");
+    // -----------------------------------------------------
+    // Проверка роли участника
+    // -----------------------------------------------------
+
+    if (!userRoles || !userRoles.isMember) {
+        alert(
+            "Создавать заявки могут только " +
+            "зарегистрированные участники DAO."
+        );
+        return;
+    }
+
+    // -----------------------------------------------------
+    // Получение данных формы
+    // -----------------------------------------------------
+
+    const name = getElement("reqAnimalName").value.trim();
+
+    const desc = getElement("reqDescription").value.trim();
+
+    const amountEth = getElement("reqAmount").value.trim();
+
+    const durationMin = Number(
+        getElement("reqDuration").value
+    );
+
+    const uri = getElement("reqEvidenceUri").value.trim();
+
+    const fileInput = document.getElementById(
+        "reqEvidenceFile"
+    );
+
+    const photoInput = document.getElementById(
+        "reqPhotoFile"
+    );
 
     const evidenceFile = fileInput?.files?.[0];
+
     const photoFile = photoInput?.files?.[0];
 
+
+    // -----------------------------------------------------
+    // Проверка обязательных полей
+    // -----------------------------------------------------
+
+    if (!name) {
+        alert("Укажите имя животного.");
+        return;
+    }
+
+    if (!desc) {
+        alert("Укажите описание проблемы и лечения.");
+        return;
+    }
+
+    if (!uri) {
+        alert("Укажите ссылку на подтверждающие документы.");
+        return;
+    }
+
     if (
-        !name ||
-        !desc ||
         !amountEth ||
-        Number(amountEth) <= 0 ||
-        !Number.isFinite(durationMin) ||
-        durationMin < 1
+        !Number.isFinite(Number(amountEth)) ||
+        Number(amountEth) <= 0
     ) {
-        return alert("Заполните все обязательные поля корректно.");
+        alert("Введите корректную сумму заявки.");
+        return;
+    }
+
+    if (
+        !Number.isInteger(durationMin) ||
+        durationMin < 1 ||
+        durationMin > 43200
+    ) {
+        alert(
+            "Срок голосования должен составлять " +
+            "от 1 до 43200 минут."
+        );
+        return;
     }
 
     try {
-        // 1. Вычисляем хэш документа
+
+        // -------------------------------------------------
+        // ШАГ 1. Вычисление хэша документа
+        // -------------------------------------------------
 
         const docHash = await hashFileOrDefault(
             fileInput,
             `${name}-${Date.now()}`
         );
 
-        // 2. Создаём заявку в блокчейне
-        // Текущий Solidity принимает 6 аргументов
+        if (
+            !docHash ||
+            docHash === ethers.ZeroHash
+        ) {
+            throw new Error(
+                "Не удалось сформировать хэш документа."
+            );
+        }
+
+
+        // -------------------------------------------------
+        // ШАГ 2. Создание заявки в RescueDAO
+        // -------------------------------------------------
+
+        const requestedAmount =
+            ethers.parseEther(amountEth);
+
+        const votingDuration =
+            BigInt(durationMin) * 60n;
+
         const tx = await contract.createAidRequest(
             name,
             desc,
             uri,
             docHash,
-            ethers.parseEther(amountEth),
-            BigInt(durationMin * 60)
+            requestedAmount,
+            votingDuration
         );
 
-        alert("Заявка отправлена в блокчейн. Ожидаем подтверждения...");
+        alert(
+            "Заявка отправлена в блокчейн. " +
+            "Ожидаем подтверждения транзакции..."
+        );
 
         const receipt = await tx.wait();
 
         if (!receipt || receipt.status !== 1) {
-            throw new Error("Транзакция создания заявки не подтверждена.");
+            throw new Error(
+                "Транзакция создания заявки не подтверждена."
+            );
         }
 
-        // 3. Получаем ID созданной заявки
-        const newId = Number(await contract.requestCount());
 
-        // 4. Сохраняем фотографию, документ и расширенную историю
+        // -------------------------------------------------
+        // ШАГ 3. Получение ID новой заявки через DAOView
+        // -------------------------------------------------
+
+        requireContract(
+            daoViewContract,
+            "RescueDAOView"
+        );
+
+        const newId = Number(
+            await daoViewContract.getRequestCount()
+        );
+
+        if (
+            !Number.isInteger(newId) ||
+            newId <= 0
+        ) {
+            throw new Error(
+                "Не удалось определить ID созданной заявки."
+            );
+        }
+
+
+        // -------------------------------------------------
+        // ШАГ 4. Сохранение медиафайлов на backend
+        // -------------------------------------------------
+
         const formData = new FormData();
 
-        formData.append("fullStory", desc);
+        formData.append(
+            "fullStory",
+            desc
+        );
 
         if (photoFile) {
-            formData.append("photo", photoFile);
+            formData.append(
+                "photo",
+                photoFile
+            );
         }
 
         if (evidenceFile) {
-            formData.append("document", evidenceFile);
+            formData.append(
+                "document",
+                evidenceFile
+            );
         }
 
         try {
+
             const response = await fetch(
                 `${API_URL}/requests/${newId}`,
                 {
@@ -125,102 +450,387 @@ async function submitAidRequest() {
             );
 
             if (!response.ok) {
-                throw new Error(`Ошибка backend: ${response.status}`);
+
+                const errorText =
+                    await response.text();
+
+                throw new Error(
+                    `Ошибка backend (${response.status}): ${errorText}`
+                );
             }
 
             const result = await response.json();
 
             if (!result.success) {
-                throw new Error("Backend не подтвердил сохранение данных.");
+                throw new Error(
+                    "Backend не подтвердил сохранение данных."
+                );
             }
 
-            console.log("Медиафайлы заявки сохранены:", result.data);
+            console.log(
+                "Медиафайлы заявки сохранены:",
+                result.data
+            );
 
         } catch (apiErr) {
+
             console.error(
-                "Заявка создана в блокчейне, но медиафайлы не сохранены:",
+                "Заявка создана в блокчейне, " +
+                "но медиафайлы не сохранены:",
                 apiErr
             );
 
             alert(
-                "Заявка создана в блокчейне, но не удалось сохранить фотографии или документы на сервере. Проверьте, запущен ли backend."
+                "Заявка создана в блокчейне, но не удалось " +
+                "сохранить фотографии или документы на сервере. " +
+                "Проверьте, запущен ли backend."
             );
         }
 
+
+        // -------------------------------------------------
+        // ШАГ 5. Завершение
+        // -------------------------------------------------
+
         alert(
-            `Заявка #${newId} успешно опубликована! Теперь можно добавить этапы финансирования.`
+            `Заявка #${newId} успешно опубликована! ` +
+            "Теперь можно добавить этапы финансирования."
         );
 
         window.location.reload();
 
     } catch (err) {
-        console.error("Ошибка создания заявки:", err);
+
+        console.error(
+            "Ошибка создания заявки:",
+            err
+        );
 
         alert(
             "Ошибка создания заявки: " +
-            (err.reason || err.shortMessage || err.message)
+            getErrorMessage(err)
         );
     }
 }
 
+
+// =========================================================
+// 4. ЗАГРУЗКА ВСЕХ ЗАЯВОК
+// =========================================================
+
 async function loadAllRequests() {
+
     const grid = document.getElementById("requestsGrid");
+
+    if (!grid) {
+        console.error(
+            "Не найден элемент requestsGrid."
+        );
+        return;
+    }
+
     try {
-        const count = Number(await contract.requestCount());
+
+        // -------------------------------------------------
+        // Проверка DAOView
+        // -------------------------------------------------
+
+        requireContract(
+            daoViewContract,
+            "RescueDAOView"
+        );
+
+        // -------------------------------------------------
+        // Получение количества заявок
+        // -------------------------------------------------
+
+        const count = Number(
+            await daoViewContract.getRequestCount()
+        );
+
         if (count === 0) {
-            grid.innerHTML = "<p>Заявок пока нет. Создайте первую заявку выше!</p>";
+
+            grid.innerHTML =
+                "<p>Заявок пока нет. Создайте первую заявку выше!</p>";
+
             return;
         }
 
         grid.innerHTML = "";
+
+
+        // -------------------------------------------------
+        // Отображение от новых заявок к старым
+        // -------------------------------------------------
+
         for (let i = count; i >= 1; i--) {
+
+            // ---------------------------------------------
+            // Получение информации через RescueDAOView
+            // ---------------------------------------------
+
             const [info, stats] = await Promise.all([
-                contract.getAidRequestInfo(i),
-                contract.getAidRequestStats(i)
+
+                daoViewContract.getAidRequestInfo(i),
+
+                daoViewContract.getAidRequestStats(i)
+
             ]);
 
-            // Подтягиваем метаданные (фото) с Node.js сервера
-            let meta = { photoUrl: "" };
+
+            // ---------------------------------------------
+            // Получение дополнительных данных с backend
+            // ---------------------------------------------
+
+            let meta = {
+                photoUrl: ""
+            };
+
             try {
-                const res = await fetch(`${API_URL}/requests/${i}`);
-                if (res.ok) meta = await res.json();
-            } catch {}
 
-            const imgTag = meta.photoUrl
-                ? `<img src="${meta.photoUrl}" alt="${info.animalName}" style="width:100%; height:180px; object-fit:cover; border-radius:0.65rem; margin-bottom:0.75rem;">`
-                : "";
+                const res = await fetch(
+                    `${API_URL}/requests/${i}`
+                );
 
-            const statusObj = STATUS_LABELS[Number(stats.status)] || STATUS_LABELS[0];
-            const reqEth = ethers.formatEther(stats.requestedAmount);
-            const relEth = ethers.formatEther(stats.releasedAmount);
+                if (res.ok) {
 
-            grid.innerHTML += `
-                <div class="card">
-                    <div>
-                        ${imgTag}
-                        <div class="row-between" style="margin-bottom: 0.75rem;">
-                            <strong style="font-size: 1.2rem;">#${i} · ${info.animalName}</strong>
-                            <span class="badge ${statusObj.cls}">${statusObj.text}</span>
-                        </div>
-                        <p style="font-size: 0.92rem; color: #334155; margin-bottom: 0.9rem;">${info.description}</p>
-                        <div style="font-size: 0.85rem; color: var(--text-muted); display: flex; flex-direction: column; gap: 0.25rem;">
-                            <div>Запрошено: <strong style="color: var(--text-main);">${reqEth} ETH</strong> (Выплачено: ${relEth} ETH)</div>
-                            <div>Голоса DAO: <strong style="color: var(--primary);">За: ${stats.yesVotes}</strong> / <strong style="color: var(--danger);">Против: ${stats.noVotes}</strong></div>
-                            <div>Этапов: <strong>${stats.completedMilestones} из ${stats.milestoneCount}</strong></div>
-                        </div>
+                    const responseData =
+                        await res.json();
+
+                    meta = responseData.data || responseData;
+
+                }
+
+            } catch (apiErr) {
+
+                console.warn(
+                    `Не удалось загрузить медиафайлы заявки #${i}:`,
+                    apiErr
+                );
+            }
+
+
+            // ---------------------------------------------
+            // Подготовка изображения
+            // ---------------------------------------------
+
+            let imgTag = "";
+
+            if (meta.photoUrl) {
+
+                const photoUrl =
+                    escapeHtml(meta.photoUrl);
+
+                imgTag = `
+                    <img
+                        src="${photoUrl}"
+                        alt="${escapeHtml(info.animalName)}"
+                        style="
+                            width:100%;
+                            height:180px;
+                            object-fit:cover;
+                            border-radius:0.65rem;
+                            margin-bottom:0.75rem;
+                        "
+                    >
+                `;
+            }
+
+
+            // ---------------------------------------------
+            // Подготовка статуса
+            // ---------------------------------------------
+
+            const statusObj = getRequestStatus(
+                stats.status
+            );
+
+
+            // ---------------------------------------------
+            // Форматирование числовых данных
+            // ---------------------------------------------
+
+            const reqEth = ethers.formatEther(
+                stats.requestedAmount
+            );
+
+            const relEth = ethers.formatEther(
+                stats.releasedAmount
+            );
+
+            const yesVotes =
+                stats.yesVotes.toString();
+
+            const noVotes =
+                stats.noVotes.toString();
+
+            const completedMilestones =
+                stats.completedMilestones.toString();
+
+            const milestoneCount =
+                stats.milestoneCount.toString();
+
+
+            // ---------------------------------------------
+            // Подготовка текста
+            // ---------------------------------------------
+
+            const animalName =
+                escapeHtml(info.animalName);
+
+            const description =
+                escapeHtml(info.description);
+
+            const statusText =
+                escapeHtml(statusObj.text);
+
+            const statusClass =
+                escapeHtml(statusObj.cls);
+
+
+            // ---------------------------------------------
+            // Формирование карточки заявки
+            // ---------------------------------------------
+
+            const card = document.createElement("div");
+
+            card.className = "card";
+
+            card.innerHTML = `
+                <div>
+
+                    ${imgTag}
+
+                    <div
+                        class="row-between"
+                        style="margin-bottom:0.75rem;"
+                    >
+
+                        <strong style="font-size:1.2rem;">
+                            #${i} · ${animalName}
+                        </strong>
+
+                        <span class="badge ${statusClass}">
+                            ${statusText}
+                        </span>
+
                     </div>
-                    <a href="request.html?id=${i}" class="btn btn-dark" style="width: 100%; margin-top: 1rem;">Открыть заявку / Паспорт</a>
+
+
+                    <p
+                        style="
+                            font-size:0.92rem;
+                            color:#334155;
+                            margin-bottom:0.9rem;
+                            white-space:pre-wrap;
+                        "
+                    >
+                        ${description}
+                    </p>
+
+
+                    <div
+                        style="
+                            font-size:0.85rem;
+                            color:var(--text-muted);
+                            display:flex;
+                            flex-direction:column;
+                            gap:0.25rem;
+                        "
+                    >
+
+                        <div>
+                            Запрошено:
+
+                            <strong style="color:var(--text-main);">
+                                ${reqEth} ETH
+                            </strong>
+
+                            (Выплачено: ${relEth} ETH)
+                        </div>
+
+
+                        <div>
+                            Голоса DAO:
+
+                            <strong style="color:var(--primary);">
+                                За: ${yesVotes}
+                            </strong>
+
+                            /
+
+                            <strong style="color:var(--danger);">
+                                Против: ${noVotes}
+                            </strong>
+                        </div>
+
+
+                        <div>
+                            Этапов:
+
+                            <strong>
+                                ${completedMilestones}
+                                из
+                                ${milestoneCount}
+                            </strong>
+                        </div>
+
+                    </div>
+
                 </div>
+
+
+                <a
+                    href="request.html?id=${i}"
+                    class="btn btn-dark"
+                    style="
+                        width:100%;
+                        margin-top:1rem;
+                    "
+                >
+                    Открыть заявку / Паспорт
+                </a>
             `;
+
+            grid.appendChild(card);
         }
+
     } catch (err) {
-        console.error(err);
+
+        console.error(
+            "Ошибка загрузки заявок:",
+            err
+        );
+
         grid.innerHTML = `
-            <p style="color:red;">
-                Ошибка загрузки заявок. Проверьте адрес RescueDAO,
-                подключение MetaMask к локальной сети Geth
-                и доступность RPC-узла.
-            </p>
+            <div class="box">
+
+                <p style="color:var(--danger);">
+                    Не удалось загрузить заявки из блокчейна.
+                </p>
+
+                <p
+                    style="
+                        font-size:0.85rem;
+                        color:var(--text-muted);
+                        margin-top:0.5rem;
+                    "
+                >
+                    Проверьте адрес RescueDAOView, ABI контракта,
+                    подключение к Geth и доступность RPC-узла.
+                </p>
+
+                <p
+                    style="
+                        font-size:0.8rem;
+                        color:var(--text-muted);
+                        margin-top:0.5rem;
+                    "
+                >
+                    ${escapeHtml(getErrorMessage(err))}
+                </p>
+
+            </div>
         `;
     }
 }

@@ -1,129 +1,432 @@
+
+// =========================================================
+// 1. ПАРАМЕТРЫ СТРАНИЦЫ
+// =========================================================
+
 const urlParams = new URLSearchParams(window.location.search);
 const requestId = Number(urlParams.get("id"));
+
 let currentEvidenceHash = "";
 
 
+// =========================================================
+// 2. ИНИЦИАЛИЗАЦИЯ
+// =========================================================
+
 window.addEventListener("DOMContentLoaded", async () => {
-    if (!requestId) {
-        document.getElementById("campaignContent").innerHTML = "<p>Не указан ID заявки.</p>";
+    if (!requestId || !Number.isInteger(requestId) || requestId <= 0) {
+        document.getElementById("campaignContent").innerHTML =
+            "<p>Не указан корректный ID заявки.</p>";
         return;
     }
+
     const ready = await initWeb3();
+
     if (!ready) return;
+
     await loadRequestDetails();
 });
 
+
+// =========================================================
+// 3. ЗАГРУЗКА ИНФОРМАЦИИ О ЗАЯВКЕ
+// =========================================================
+
 async function loadRequestDetails() {
-    // Используем контейнер с id="campaignContent", чтобы не менять HTML-разметку страницы details.html
     const container = document.getElementById("campaignContent");
 
     try {
+        // Проверяем, существует ли заявка.
+        const exists = await daoViewContract.requestExists(requestId);
+
+        if (!exists) {
+            container.innerHTML = `
+                <p style="color:var(--danger);">
+                    Заявка #${requestId} не найдена.
+                </p>
+            `;
+            return;
+        }
+
+        // DAOView используется только для чтения информации о заявке.
         const [info, stats] = await Promise.all([
-            contract.getAidRequestInfo(requestId),
-            contract.getAidRequestStats(requestId)
+            daoViewContract.getAidRequestInfo(requestId),
+            daoViewContract.getAidRequestStats(requestId)
         ]);
 
-        // Загружаем фото и ссылку на документ с Node.js бэкенда
-        let meta = { photoUrl: "", docUrl: "", fullStory: "" };
+        // Загружаем дополнительные данные с Node.js backend.
+        let meta = {
+            photoUrl: "",
+            docUrl: "",
+            fullStory: ""
+        };
+
         try {
             const res = await fetch(`${API_URL}/requests/${requestId}`);
-            if (res.ok) meta = await res.json();
-        } catch {}
+
+            if (res.ok) {
+                meta = await res.json();
+            }
+        } catch (err) {
+            console.warn("Не удалось загрузить дополнительные данные:", err);
+        }
 
         currentEvidenceHash = info.evidenceHash;
+
         const statusNum = Number(stats.status);
-        const statusObj = STATUS_LABELS[statusNum] || STATUS_LABELS[0];
-        const endsDate = new Date(Number(stats.votingEndsAt) * 1000).toLocaleString("ru-RU");
+        const statusObj =
+            STATUS_LABELS[statusNum] || STATUS_LABELS[0];
+
+        const endsDate = new Date(
+            Number(stats.votingEndsAt) * 1000
+        ).toLocaleString("ru-RU");
+
         const nowSec = Math.floor(Date.now() / 1000);
-        const votingEnded = nowSec >= Number(stats.votingEndsAt);
 
-        const isRequester = userAddress && info.requester.toLowerCase() === userAddress.toLowerCase();
-        const voted = userAddress ? await contract.hasParticipantVoted(requestId, userAddress) : false;
+        const votingEnded =
+            nowSec >= Number(stats.votingEndsAt);
 
-        // Фото животного (если есть на сервере)
+        const isRequester =
+            !!userAddress &&
+            info.requester.toLowerCase() === userAddress.toLowerCase();
+
+        // Проверяем, голосовал ли пользователь.
+        const voted = userAddress
+            ? await daoViewContract.hasParticipantVoted(
+                requestId,
+                userAddress
+            )
+            : false;
+
+        // =================================================
+        // ФОТО ЖИВОТНОГО
+        // =================================================
+
         const photoBlock = meta.photoUrl
-            ? `<img src="${meta.photoUrl}" alt="${info.animalName}" class="details-hero-img" style="width:100%; max-height:340px; object-fit:cover; border-radius:0.75rem; margin: 1rem 0;">`
-            : `<div class="card-img" style="border-radius: 0.75rem; margin: 1rem 0; text-align:center; padding:2rem; background:#f1f5f9;">🐾</div>`;
+            ? `
+                <img
+                    src="${meta.photoUrl}"
+                    alt="${info.animalName}"
+                    class="details-hero-img"
+                    style="
+                        width:100%;
+                        max-height:340px;
+                        object-fit:cover;
+                        border-radius:0.75rem;
+                        margin:1rem 0;
+                    "
+                >
+            `
+            : `
+                <div
+                    class="card-img"
+                    style="
+                        border-radius:0.75rem;
+                        margin:1rem 0;
+                        text-align:center;
+                        padding:2rem;
+                        background:#f1f5f9;
+                    "
+                >
+                    🐾
+                </div>
+            `;
 
-        // Кнопка скачивания документа с сервера для последующей сверки хэша
+        // =================================================
+        // ССЫЛКА НА ДОКУМЕНТ
+        // =================================================
+
         const downloadDocLink = meta.docUrl
-            ? `<div style="margin-top:0.4rem;"><a href="${meta.docUrl}" target="_blank" class="tx-link">📄 Скачать документ с сервера для проверки хэша &nearr;</a></div>`
+            ? `
+                <div style="margin-top:0.4rem;">
+                    <a
+                        href="${meta.docUrl}"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        class="tx-link"
+                    >
+                        📄 Скачать документ с сервера для проверки хэша &nearr;
+                    </a>
+                </div>
+            `
             : "";
 
-        // Блок голосования DAO
+        // =================================================
+        // БЛОК ГОЛОСОВАНИЯ DAO
+        // =================================================
+
         let votingControls = "";
+
         if (statusNum === 0) {
+
             if (!votingEnded && userRoles.isMember && !voted) {
                 votingControls = `
-                    <div style="display: flex; gap: 0.75rem; margin-top: 1rem;">
-                        <button class="btn btn-primary" style="flex:1;" onclick="castVote(true)">👍 Голосовать ЗА</button>
-                        <button class="btn btn-danger" style="flex:1;" onclick="castVote(false)">👎 Голосовать ПРОТИВ</button>
+                    <div
+                        style="
+                            display:flex;
+                            gap:0.75rem;
+                            margin-top:1rem;
+                        "
+                    >
+                        <button
+                            class="btn btn-primary"
+                            style="flex:1;"
+                            onclick="castVote(true)"
+                        >
+                            👍 Голосовать ЗА
+                        </button>
+
+                        <button
+                            class="btn btn-danger"
+                            style="flex:1;"
+                            onclick="castVote(false)"
+                        >
+                            👎 Голосовать ПРОТИВ
+                        </button>
                     </div>
                 `;
             } else if (voted) {
-                votingControls = `<p style="margin-top:0.75rem;" class="badge badge-blue">Вы уже проголосовали по этой заявке</p>`;
+                votingControls = `
+                    <p
+                        style="margin-top:0.75rem;"
+                        class="badge badge-blue"
+                    >
+                        Вы уже проголосовали по этой заявке
+                    </p>
+                `;
             }
 
             if (votingEnded) {
                 votingControls += `
-                    <button class="btn btn-dark" style="width:100%; margin-top:1rem;" onclick="finalizeReq()">
+                    <button
+                        class="btn btn-dark"
+                        style="width:100%; margin-top:1rem;"
+                        onclick="finalizeReq()"
+                    >
                         Подвести итоги голосования (Finalize)
                     </button>
                 `;
             }
         }
 
-        // Форма добавления этапа (доступна инициатору во время голосования)
-        const addMilestoneBlock = (statusNum === 0 && !votingEnded && isRequester) ? `
-            <div class="box" style="margin-top: 1rem;">
-                <h3>Добавить этап финансирования</h3>
-                <p style="font-size:0.85rem; color:var(--text-muted); margin-bottom:0.75rem;">
-                    Распределено по этапам: <strong>${ethers.formatEther(stats.milestoneTotal)} / ${ethers.formatEther(stats.requestedAmount)} ETH</strong>.
-                    Для одобрения заявки сумма этапов должна совпасть с запрошенной суммой!
-                </p>
-                <div class="form-group" style="margin-bottom:0.75rem;">
-                    <label>Название этапа</label>
-                    <input type="text" id="msDesc" class="input-field" placeholder="Например: Операция в ветклинике" style="width:100%; padding:0.5rem; margin-top:0.25rem;">
-                </div>
-                <div class="form-group" style="margin-bottom:0.75rem;">
-                    <label>Адрес получателя (клиника / аптека)</label>
-                    <input type="text" id="msRecipient" class="input-field" placeholder="0x..." style="width:100%; padding:0.5rem; margin-top:0.25rem;">
-                </div>
-                <div class="form-group" style="margin-bottom:0.75rem;">
-                    <label>Сумма этапа (ETH)</label>
-                    <input type="number" id="msAmount" class="input-field" step="0.001" placeholder="0.003" style="width:100%; padding:0.5rem; margin-top:0.25rem;">
-                </div>
-                <button class="btn btn-primary" style="width:100%;" onclick="createNewMilestone()">Добавить этап</button>
-            </div>
-        ` : "";
+        // =================================================
+        // ФОРМА ДОБАВЛЕНИЯ ЭТАПА
+        // =================================================
+
+        const addMilestoneBlock =
+            (statusNum === 0 && !votingEnded && isRequester)
+                ? `
+                    <div class="box" style="margin-top:1rem;">
+                        <h3>Добавить этап финансирования</h3>
+
+                        <p
+                            style="
+                                font-size:0.85rem;
+                                color:var(--text-muted);
+                                margin-bottom:0.75rem;
+                            "
+                        >
+                            Распределено по этапам:
+                            <strong>
+                                ${ethers.formatEther(stats.milestoneTotal)}
+                                /
+                                ${ethers.formatEther(stats.requestedAmount)}
+                                ETH
+                            </strong>.
+
+                            Для одобрения заявки сумма этапов должна
+                            совпасть с запрашиваемой суммой!
+                        </p>
+
+                        <div
+                            class="form-group"
+                            style="margin-bottom:0.75rem;"
+                        >
+                            <label>Название этапа</label>
+
+                            <input
+                                type="text"
+                                id="msDesc"
+                                class="input-field"
+                                placeholder="Например: Операция в ветклинике"
+                                style="
+                                    width:100%;
+                                    padding:0.5rem;
+                                    margin-top:0.25rem;
+                                "
+                            >
+                        </div>
+
+                        <div
+                            class="form-group"
+                            style="margin-bottom:0.75rem;"
+                        >
+                            <label>
+                                Адрес получателя (клиника / аптека)
+                            </label>
+
+                            <input
+                                type="text"
+                                id="msRecipient"
+                                class="input-field"
+                                placeholder="0x..."
+                                style="
+                                    width:100%;
+                                    padding:0.5rem;
+                                    margin-top:0.25rem;
+                                "
+                            >
+                        </div>
+
+                        <div
+                            class="form-group"
+                            style="margin-bottom:0.75rem;"
+                        >
+                            <label>Сумма этапа (ETH)</label>
+
+                            <input
+                                type="number"
+                                id="msAmount"
+                                class="input-field"
+                                step="0.001"
+                                placeholder="0.003"
+                                style="
+                                    width:100%;
+                                    padding:0.5rem;
+                                    margin-top:0.25rem;
+                                "
+                            >
+                        </div>
+
+                        <button
+                            class="btn btn-primary"
+                            style="width:100%;"
+                            onclick="createNewMilestone()"
+                        >
+                            Добавить этап
+                        </button>
+                    </div>
+                `
+                : "";
+
+        // =================================================
+        // ОСНОВНАЯ РАЗМЕТКА СТРАНИЦЫ
+        // =================================================
 
         container.innerHTML = `
             <div class="details-layout">
-                <div>
-                    <!-- Карточка заявки -->
-                    <div class="box">
-                        <div class="card-title-row" style="display:flex; justify-content:space-between; align-items:center; margin-bottom:0.75rem;">
-                            <h1>Заявка #${requestId}: ${info.animalName}</h1>
-                            <span class="badge ${statusObj.cls}" style="padding:0.3rem 0.6rem; border-radius:4px;">${statusObj.text}</span>
-                        </div>
-                        <p class="mono">Инициатор: ${info.requester}</p>
-                        ${photoBlock}
-                        <h3 style="margin-top:1rem;">Описание ситуации</h3>
-                        <p style="margin: 0.5rem 0; color: #334155;">${meta.fullStory || info.description}</p>
-                        
-                        <!-- Блок NFT-паспорта -->
-                        <div id="nftPassportSection" style="margin-top: 1.25rem;"></div>
 
-                        <div style="font-size: 0.88rem; background: #f1f5f9; padding: 0.85rem; border-radius: 0.6rem; margin-top: 1rem;">
-                            <div><strong>Документы (URI):</strong> ${info.evidenceURI}</div>
-                            <div class="mono" style="margin-top:0.25rem;"><strong>Хэш в блокчейне:</strong> ${info.evidenceHash}</div>
+                <div>
+
+                    <!-- Карточка заявки -->
+
+                    <div class="box">
+
+                        <div
+                            class="card-title-row"
+                            style="
+                                display:flex;
+                                justify-content:space-between;
+                                align-items:center;
+                                margin-bottom:0.75rem;
+                            "
+                        >
+                            <h1>
+                                Заявка #${requestId}: ${info.animalName}
+                            </h1>
+
+                            <span
+                                class="badge ${statusObj.cls}"
+                                style="
+                                    padding:0.3rem 0.6rem;
+                                    border-radius:4px;
+                                "
+                            >
+                                ${statusObj.text}
+                            </span>
+                        </div>
+
+                        <p class="mono">
+                            Инициатор: ${info.requester}
+                        </p>
+
+                        ${photoBlock}
+
+                        <h3 style="margin-top:1rem;">
+                            Описание ситуации
+                        </h3>
+
+                        <p style="margin:0.5rem 0; color:#334155;">
+                            ${meta.fullStory || info.description}
+                        </p>
+
+                        <!-- NFT-паспорт -->
+
+                        <div
+                            id="nftPassportSection"
+                            style="margin-top:1.25rem;"
+                        ></div>
+
+                        <!-- Документы и проверка хэша -->
+
+                        <div
+                            style="
+                                font-size:0.88rem;
+                                background:#f1f5f9;
+                                padding:0.85rem;
+                                border-radius:0.6rem;
+                                margin-top:1rem;
+                            "
+                        >
+
+                            <div>
+                                <strong>Документы (URI):</strong>
+                                ${info.evidenceURI}
+                            </div>
+
+                            <div
+                                class="mono"
+                                style="margin-top:0.25rem;"
+                            >
+                                <strong>Хэш в блокчейне:</strong>
+                                ${info.evidenceHash}
+                            </div>
+
                             ${downloadDocLink}
-                            <div style="margin-top: 0.75rem; padding-top: 0.6rem; border-top: 1px solid #cbd5e1;">
-                                <label style="display:block; font-size:0.8rem; font-weight:600; margin-bottom:0.25rem;">
-                                    Проверить подлинность файла по хэшу в блокчейне:
+
+                            <div
+                                style="
+                                    margin-top:0.75rem;
+                                    padding-top:0.6rem;
+                                    border-top:1px solid #cbd5e1;
+                                "
+                            >
+                                <label
+                                    style="
+                                        display:block;
+                                        font-size:0.8rem;
+                                        font-weight:600;
+                                        margin-bottom:0.25rem;
+                                    "
+                                >
+                                    Проверить подлинность файла по хэшу
+                                    в блокчейне:
                                 </label>
-                                <input type="file" id="verifyFileInput" onchange="verifyDocumentHash()">
-                                <span id="verifyResult" style="font-weight:600; font-size:0.85rem; margin-left:0.5rem;"></span>
+
+                                <input
+                                    type="file"
+                                    id="verifyFileInput"
+                                    onchange="verifyDocumentHash()"
+                                >
+
+                                <span
+                                    id="verifyResult"
+                                    style="
+                                        font-weight:600;
+                                        font-size:0.85rem;
+                                        margin-left:0.5rem;
+                                    "
+                                ></span>
                             </div>
                         </div>
                     </div>
@@ -131,44 +434,167 @@ async function loadRequestDetails() {
                     ${addMilestoneBlock}
 
                     <!-- Список этапов финансирования -->
-                    <div class="box" style="margin-top: 1rem;">
-                        <h3 style="margin-bottom: 1rem;">Этапы финансирования (Milestones)</h3>
-                        <div id="milestonesContainer">Загрузка этапов...</div>
+
+                    <div class="box" style="margin-top:1rem;">
+
+                        <h3 style="margin-bottom:1rem;">
+                            Этапы финансирования (Milestones)
+                        </h3>
+
+                        <div id="milestonesContainer">
+                            Загрузка этапов...
+                        </div>
                     </div>
+
                 </div>
 
-                <!-- Правая колонка: Бюджет и DAO-голосование -->
-                <div class="box" style="position: sticky; top: 90px;">
-                    <h3>Статус и Голосование DAO</h3>
-                    <div style="display:flex; flex-direction:column; gap:0.5rem; font-size:0.92rem; margin: 1rem 0;">
-                        <div style="display:flex; justify-content:space-between;"><span>Запрошено:</span><strong>${ethers.formatEther(stats.requestedAmount)} ETH</strong></div>
-                        <div style="display:flex; justify-content:space-between;"><span>Запланировано этапов:</span><strong>${ethers.formatEther(stats.milestoneTotal)} ETH</strong></div>
-                        <div style="display:flex; justify-content:space-between;"><span>Выплачено:</span><strong style="color:var(--primary);">${ethers.formatEther(stats.releasedAmount)} ETH</strong></div>
-                        <div style="display:flex; justify-content:space-between;"><span>Окончание голосования:</span><strong>${endsDate}</strong></div>
-                        <div style="display:flex; justify-content:space-between;"><span>Голоса ЗА:</span><strong style="color:var(--primary);">${stats.yesVotes}</strong></div>
-                        <div style="display:flex; justify-content:space-between;"><span>Голоса ПРОТИВ:</span><strong style="color:var(--danger);">${stats.noVotes}</strong></div>
+                <!-- Правая колонка -->
+
+                <div
+                    class="box"
+                    style="position:sticky; top:90px;"
+                >
+
+                    <h3>Статус и голосование DAO</h3>
+
+                    <div
+                        style="
+                            display:flex;
+                            flex-direction:column;
+                            gap:0.5rem;
+                            font-size:0.92rem;
+                            margin:1rem 0;
+                        "
+                    >
+
+                        <div
+                            style="
+                                display:flex;
+                                justify-content:space-between;
+                            "
+                        >
+                            <span>Запрошено:</span>
+
+                            <strong>
+                                ${ethers.formatEther(stats.requestedAmount)}
+                                ETH
+                            </strong>
+                        </div>
+
+                        <div
+                            style="
+                                display:flex;
+                                justify-content:space-between;
+                            "
+                        >
+                            <span>Запланировано этапов:</span>
+
+                            <strong>
+                                ${ethers.formatEther(stats.milestoneTotal)}
+                                ETH
+                            </strong>
+                        </div>
+
+                        <div
+                            style="
+                                display:flex;
+                                justify-content:space-between;
+                            "
+                        >
+                            <span>Выплачено:</span>
+
+                            <strong style="color:var(--primary);">
+                                ${ethers.formatEther(stats.releasedAmount)}
+                                ETH
+                            </strong>
+                        </div>
+
+                        <div
+                            style="
+                                display:flex;
+                                justify-content:space-between;
+                            "
+                        >
+                            <span>Окончание голосования:</span>
+
+                            <strong>${endsDate}</strong>
+                        </div>
+
+                        <div
+                            style="
+                                display:flex;
+                                justify-content:space-between;
+                            "
+                        >
+                            <span>Голоса ЗА:</span>
+
+                            <strong style="color:var(--primary);">
+                                ${stats.yesVotes}
+                            </strong>
+                        </div>
+
+                        <div
+                            style="
+                                display:flex;
+                                justify-content:space-between;
+                            "
+                        >
+                            <span>Голоса ПРОТИВ:</span>
+
+                            <strong style="color:var(--danger);">
+                                ${stats.noVotes}
+                            </strong>
+                        </div>
+
                     </div>
+
                     ${votingControls}
+
                 </div>
             </div>
         `;
 
-        await loadMilestonesList(Number(stats.milestoneCount), statusNum, isRequester);
+        // Загружаем этапы из RescueMilestones.
+        await loadMilestonesList(
+            Number(stats.milestoneCount),
+            statusNum,
+            isRequester
+        );
+
+        // Загружаем NFT-паспорт.
         await loadNftPassport(requestId);
+
     } catch (err) {
-        console.error(err);
-        container.innerHTML = "<p style='color:red;'>Ошибка загрузки заявки.</p>";
+        console.error("Ошибка загрузки заявки:", err);
+
+        container.innerHTML = `
+            <p style="color:red;">
+                Ошибка загрузки заявки:
+                ${err.shortMessage || err.reason || err.message}
+            </p>
+        `;
     }
 }
 
+
+// =========================================================
+// 4. ЗАГРУЗКА NFT-ПАСПОРТА
+// =========================================================
+
 async function loadNftPassport(requestId) {
-    const nftContainer = document.getElementById("nftPassportSection");
+    const nftContainer =
+        document.getElementById("nftPassportSection");
+
     if (!nftContainer) return;
 
     try {
-        const nftAddress = await contract.rescueNftContract();
+        // Получаем адрес NFT, привязанный к DAO.
+        const nftAddress = await daoContract.rescueNftContract();
 
-        if (!nftAddress || nftAddress === ethers.ZeroAddress) {
+        if (
+            !nftAddress ||
+            nftAddress.toLowerCase() === ethers.ZeroAddress.toLowerCase()
+        ) {
             nftContainer.innerHTML = `
                 <p style="color:var(--text-muted);">
                     NFT-контракт пока не привязан к DAO.
@@ -177,25 +603,35 @@ async function loadNftPassport(requestId) {
             return;
         }
 
-        const nftContract = new ethers.Contract(
-            nftAddress,
-            NFT_ABI,
-            provider
-        );
-
-        // Получаем ID NFT именно по ID заявки DAO
-        const tokenId = await nftContract.getTokenIdForRequest(requestId);
-
-        if (tokenId === 0n) {
+        // Проверяем, что адрес в DAO совпадает с конфигурацией.
+        if (
+            ethers.getAddress(nftAddress) !==
+            ethers.getAddress(NFT_ADDRESS)
+        ) {
             nftContainer.innerHTML = `
-                <p style="color:var(--text-muted);">
-                    NFT-паспорт для заявки #${requestId} ещё не выпущен.
+                <p style="color:var(--danger);">
+                    Адрес NFT в DAO не совпадает с NFT_ADDRESS
+                    в config.js. Проверьте настройки контрактов.
                 </p>
             `;
             return;
         }
 
-        // Теперь используем настоящий tokenId
+        // Используем отдельный NFT-контракт.
+        const tokenId =
+            await nftContract.getTokenIdForRequest(requestId);
+
+        if (tokenId === 0n) {
+            nftContainer.innerHTML = `
+                <p style="color:var(--text-muted);">
+                    NFT-паспорт для заявки #${requestId}
+                    ещё не выпущен.
+                </p>
+            `;
+            return;
+        }
+
+        // Получаем владельца и метаданные NFT.
         const [owner, uri] = await Promise.all([
             nftContract.ownerOf(tokenId),
             nftContract.tokenURI(tokenId)
@@ -204,14 +640,16 @@ async function loadNftPassport(requestId) {
         if (!uri.startsWith("data:application/json;base64,")) {
             nftContainer.innerHTML = `
                 <p class="mono">
-                    NFT #${tokenId} выпущен. URI: ${uri}
+                    NFT #${tokenId} выпущен.
+                    URI: ${uri}
                 </p>
             `;
             return;
         }
 
-        // Декодируем JSON-метаданные из Base64
+        // Декодируем JSON из Base64.
         const base64Json = uri.split(",")[1];
+
         const binaryString = window.atob(base64Json);
 
         const bytes = Uint8Array.from(
@@ -220,47 +658,109 @@ async function loadNftPassport(requestId) {
         );
 
         const jsonString = new TextDecoder().decode(bytes);
+
         const metadata = JSON.parse(jsonString);
 
+        // Формируем атрибуты NFT.
         const attributesHtml = (metadata.attributes || [])
             .map(attr => `
-                <span class="badge badge-blue"
-                      style="margin-right:0.4rem; margin-bottom:0.3rem; display:inline-block;">
+                <span
+                    class="badge badge-blue"
+                    style="
+                        margin-right:0.4rem;
+                        margin-bottom:0.3rem;
+                        display:inline-block;
+                    "
+                >
                     ${attr.trait_type}: ${attr.value}
                 </span>
             `)
             .join("");
 
         nftContainer.innerHTML = `
-            <div style="border:1px solid #cbd5e1; border-radius:0.75rem; padding:1rem; background:#ffffff;">
-                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:0.75rem;">
+            <div
+                style="
+                    border:1px solid #cbd5e1;
+                    border-radius:0.75rem;
+                    padding:1rem;
+                    background:#ffffff;
+                "
+            >
+
+                <div
+                    style="
+                        display:flex;
+                        justify-content:space-between;
+                        align-items:center;
+                        margin-bottom:0.75rem;
+                    "
+                >
                     <h4 style="margin:0;">
                         🐾 Цифровой NFT-паспорт #${tokenId}
                     </h4>
-                    <span class="badge badge-green">On-Chain SVG</span>
+
+                    <span class="badge badge-green">
+                        On-Chain SVG
+                    </span>
                 </div>
 
-                <div style="display:flex; gap:1rem; flex-wrap:wrap; align-items:center;">
+                <div
+                    style="
+                        display:flex;
+                        gap:1rem;
+                        flex-wrap:wrap;
+                        align-items:center;
+                    "
+                >
+
                     <img
                         src="${metadata.image}"
                         alt="${metadata.name || "NFT-паспорт"}"
-                        style="width:200px; height:auto; border-radius:0.5rem; border:1px solid #e2e8f0;"
+                        style="
+                            width:200px;
+                            height:auto;
+                            border-radius:0.5rem;
+                            border:1px solid #e2e8f0;
+                        "
                     >
 
                     <div style="flex:1; min-width:200px;">
-                        <div style="font-weight:600; font-size:1.05rem; margin-bottom:0.35rem;">
+
+                        <div
+                            style="
+                                font-weight:600;
+                                font-size:1.05rem;
+                                margin-bottom:0.35rem;
+                            "
+                        >
                             ${metadata.name || "NFT-паспорт животного"}
                         </div>
 
-                        <p style="font-size:0.88rem; color:#475569; margin-bottom:0.6rem;">
+                        <p
+                            style="
+                                font-size:0.88rem;
+                                color:#475569;
+                                margin-bottom:0.6rem;
+                            "
+                        >
                             ${metadata.description || ""}
                         </p>
 
-                        <div class="mono" style="font-size:0.78rem; margin-bottom:0.6rem; word-break:break-all;">
+                        <div
+                            class="mono"
+                            style="
+                                font-size:0.78rem;
+                                margin-bottom:0.6rem;
+                                word-break:break-all;
+                            "
+                        >
                             Владелец: ${owner}
                         </div>
 
-                        <div>${attributesHtml}</div>
+                        <div>
+                            ${attributesHtml}
+                        </div>
+
                     </div>
                 </div>
             </div>
@@ -273,119 +773,404 @@ async function loadNftPassport(requestId) {
         );
 
         nftContainer.innerHTML = `
-            <div style="font-size:0.85rem; color:var(--text-muted); padding:0.5rem 0;">
-                Не удалось загрузить NFT-паспорт. Проверьте привязку NFT-контракта и наличие токена.
+            <div
+                style="
+                    font-size:0.85rem;
+                    color:var(--text-muted);
+                    padding:0.5rem 0;
+                "
+            >
+                Не удалось загрузить NFT-паспорт.
+                Проверьте привязку NFT-контракта и наличие токена.
             </div>
         `;
     }
 }
 
+
+// =========================================================
+// 5. ПРОВЕРКА ХЭША ДОКУМЕНТА
+// =========================================================
+
 async function verifyDocumentHash() {
     const input = document.getElementById("verifyFileInput");
+
     const resSpan = document.getElementById("verifyResult");
-    if (!input.files.length) return;
 
-    const buffer = await input.files[0].arrayBuffer();
-    const calculatedHash = ethers.keccak256(new Uint8Array(buffer));
+    if (!input.files || !input.files.length) return;
 
-    if (calculatedHash.toLowerCase() === currentEvidenceHash.toLowerCase()) {
-        resSpan.textContent = "✅ Документ подлинный (хэш совпал)";
-        resSpan.style.color = "var(--primary)";
-    } else {
-        resSpan.textContent = "❌ Внимание: хэш не совпадает!";
+    try {
+        const buffer = await input.files[0].arrayBuffer();
+
+        const calculatedHash = ethers.keccak256(
+            new Uint8Array(buffer)
+        );
+
+        if (
+            calculatedHash.toLowerCase() ===
+            currentEvidenceHash.toLowerCase()
+        ) {
+            resSpan.textContent =
+                "✅ Документ подлинный (хэш совпал)";
+
+            resSpan.style.color = "var(--primary)";
+
+        } else {
+            resSpan.textContent =
+                "❌ Внимание: хэш не совпадает!";
+
+            resSpan.style.color = "var(--danger)";
+        }
+
+    } catch (err) {
+        console.error("Ошибка проверки документа:", err);
+
+        resSpan.textContent =
+            "Не удалось проверить файл.";
+
         resSpan.style.color = "var(--danger)";
     }
 }
 
+
+// =========================================================
+// 6. ГОЛОСОВАНИЕ
+// =========================================================
+
 async function castVote(support) {
     try {
-        const tx = await contract.vote(requestId, support);
-        alert("Голос отправлен! Ожидаем подтверждения...");
-        await tx.wait();
+        if (!userAddress) {
+            throw new Error("Сначала подключите кошелёк.");
+        }
+
+        // Голосование выполняется через RescueDAO.
+        const tx = await daoContract.vote(
+            requestId,
+            support
+        );
+
+        alert(
+            "Голос отправлен! Ожидаем подтверждения..."
+        );
+
+        const receipt = await tx.wait();
+
+        if (!receipt || receipt.status !== 1) {
+            throw new Error(
+                "Транзакция голосования не выполнена."
+            );
+        }
+
         window.location.reload();
+
     } catch (err) {
-        alert("Ошибка голосования: " + (err.reason || err.message));
+        console.error("Ошибка голосования:", err);
+
+        alert(
+            "Ошибка голосования: " +
+            (err.reason || err.shortMessage || err.message)
+        );
     }
 }
+
+
+// =========================================================
+// 7. ЗАВЕРШЕНИЕ ГОЛОСОВАНИЯ
+// =========================================================
 
 async function finalizeReq() {
     try {
-        const tx = await contract.finalizeRequest(requestId);
+        // Финализация выполняется через RescueDAO.
+        const tx = await daoContract.finalizeRequest(
+            requestId
+        );
+
         alert("Подводим итоги голосования...");
-        await tx.wait();
+
+        const receipt = await tx.wait();
+
+        if (!receipt || receipt.status !== 1) {
+            throw new Error(
+                "Транзакция финализации не выполнена."
+            );
+        }
+
         window.location.reload();
+
     } catch (err) {
-        alert("Ошибка финализации: " + (err.reason || err.message));
+        console.error("Ошибка финализации:", err);
+
+        alert(
+            "Ошибка финализации: " +
+            (err.reason || err.shortMessage || err.message)
+        );
     }
 }
 
-async function createNewMilestone() {
-    const desc = document.getElementById("msDesc").value.trim();
-    const recipient = document.getElementById("msRecipient").value.trim();
-    const amount = document.getElementById("msAmount").value;
 
-    if (!desc || !ethers.isAddress(recipient) || !amount || Number(amount) <= 0) {
-        return alert("Проверьте описание, корректность 0x-адреса получателя и сумму.");
+// =========================================================
+// 8. ДОБАВЛЕНИЕ ЭТАПА ФИНАНСИРОВАНИЯ
+// =========================================================
+
+async function createNewMilestone() {
+    const desc =
+        document.getElementById("msDesc").value.trim();
+
+    const recipient =
+        document.getElementById("msRecipient").value.trim();
+
+    const amount =
+        document.getElementById("msAmount").value;
+
+    if (
+        !desc ||
+        !ethers.isAddress(recipient) ||
+        !amount ||
+        !Number.isFinite(Number(amount)) ||
+        Number(amount) <= 0
+    ) {
+        return alert(
+            "Проверьте описание, корректность 0x-адреса получателя и сумму."
+        );
     }
 
     try {
-        const tx = await contract.addMilestone(requestId, desc, recipient, ethers.parseEther(amount));
+        if (!userAddress) {
+            throw new Error("Сначала подключите кошелёк.");
+        }
+
+        // Добавление этапа теперь выполняется через RescueMilestones,
+        // а не через основной DAO.
+        const tx = await milestonesContract.addMilestone(
+            requestId,
+            desc,
+            recipient,
+            ethers.parseEther(amount)
+        );
+
         alert("Этап добавляется в блокчейн...");
-        await tx.wait();
+
+        const receipt = await tx.wait();
+
+        if (!receipt || receipt.status !== 1) {
+            throw new Error(
+                "Транзакция добавления этапа не выполнена."
+            );
+        }
+
         window.location.reload();
+
     } catch (err) {
-        alert("Ошибка добавления этапа: " + (err.reason || err.message));
+        console.error("Ошибка добавления этапа:", err);
+
+        alert(
+            "Ошибка добавления этапа: " +
+            (err.reason || err.shortMessage || err.message)
+        );
     }
 }
 
-async function loadMilestonesList(mCount, reqStatus, isRequester) {
-    const box = document.getElementById("milestonesContainer");
+
+// =========================================================
+// 9. ЗАГРУЗКА СПИСКА ЭТАПОВ
+// =========================================================
+
+async function loadMilestonesList(
+    mCount,
+    reqStatus,
+    isRequester
+) {
+    const box =
+        document.getElementById("milestonesContainer");
+
+    if (!box) return;
+
     if (mCount === 0) {
-        box.innerHTML = "<p style='color:var(--text-muted); font-size:0.9rem;'>Этапы ещё не добавлены.</p>";
+        box.innerHTML = `
+            <p
+                style="
+                    color:var(--text-muted);
+                    font-size:0.9rem;
+                "
+            >
+                Этапы ещё не добавлены.
+            </p>
+        `;
         return;
     }
 
     box.innerHTML = "";
+
+    // Этапы нумеруются с 1.
     for (let m = 1; m <= mCount; m++) {
-        const ms = await contract.getMilestone(requestId, m);
-        let statusBadge = `<span class="badge badge-gray">Ожидает одобрения заявки</span>`;
+
+        // Получаем этап из RescueMilestones.
+        const ms = await milestonesContract.getMilestone(
+            requestId,
+            m
+        );
+
+        let statusBadge = `
+            <span class="badge badge-gray">
+                Ожидает одобрения заявки
+            </span>
+        `;
+
         if (ms.released) {
-            statusBadge = `<span class="badge badge-green">Оплачено (${ms.approvalCount}/2)</span>`;
+            statusBadge = `
+                <span class="badge badge-green">
+                    Оплачено (${ms.approvalCount}/2)
+                </span>
+            `;
+
         } else if (ms.evidenceSubmitted) {
-            statusBadge = `<span class="badge badge-blue">Отчёт загружен (${ms.approvalCount}/2 подтверждений)</span>`;
+            statusBadge = `
+                <span class="badge badge-blue">
+                    Отчёт загружен (${ms.approvalCount}/2 подтверждений)
+                </span>
+            `;
+
         } else if (reqStatus === 1) {
-            statusBadge = `<span class="badge badge-yellow">Ожидает отчёт инициатора</span>`;
+            statusBadge = `
+                <span class="badge badge-yellow">
+                    Ожидает отчёт инициатора
+                </span>
+            `;
         }
 
-        const evidenceForm = (reqStatus === 1 && isRequester && !ms.released) ? `
-            <div style="width:100%; margin-top:0.75rem; padding-top:0.75rem; border-top:1px dashed var(--border); display:flex; gap:0.5rem; flex-wrap:wrap;">
-                <input type="text" id="evUri_${m}" placeholder="Ссылка на чек/акт (ipfs://...)" style="flex:1; min-width:200px; padding:0.4rem;">
-                <input type="file" id="evFile_${m}">
-                <button class="btn btn-primary" onclick="submitEvidence(${m})">Отправить отчёт</button>
-            </div>
-        ` : "";
+        // Форма отправки доказательства выполнения этапа.
+        const evidenceForm =
+            (
+                reqStatus === 1 &&
+                isRequester &&
+                !ms.released
+            )
+                ? `
+                    <div
+                        style="
+                            width:100%;
+                            margin-top:0.75rem;
+                            padding-top:0.75rem;
+                            border-top:1px dashed var(--border);
+                            display:flex;
+                            gap:0.5rem;
+                            flex-wrap:wrap;
+                        "
+                    >
+
+                        <input
+                            type="text"
+                            id="evUri_${m}"
+                            placeholder="Ссылка на чек/акт (ipfs://...)"
+                            style="
+                                flex:1;
+                                min-width:200px;
+                                padding:0.4rem;
+                            "
+                        >
+
+                        <input
+                            type="file"
+                            id="evFile_${m}"
+                        >
+
+                        <button
+                            class="btn btn-primary"
+                            onclick="submitEvidence(${m})"
+                        >
+                            Отправить отчёт
+                        </button>
+
+                    </div>
+                `
+                : "";
+
+        // Информация о доказательстве.
+        const evidenceInfo = ms.evidenceSubmitted
+            ? `
+                <div
+                    class="mono"
+                    style="
+                        margin-top:0.25rem;
+                        font-size:0.8rem;
+                    "
+                >
+                    Отчёт: ${ms.evidenceURI}
+                    | Hash: ${shortAddr(ms.evidenceHash)}
+                </div>
+            `
+            : "";
 
         box.innerHTML += `
-            <div class="list-item" style="padding:0.75rem 0; border-bottom:1px solid #e2e8f0;">
+            <div
+                class="list-item"
+                style="
+                    padding:0.75rem 0;
+                    border-bottom:1px solid #e2e8f0;
+                "
+            >
+
                 <div style="flex:1;">
-                    <div style="display:flex; justify-content:space-between; align-items:center;">
-                        <strong>Этап #${m}: ${ms.description}</strong>
+
+                    <div
+                        style="
+                            display:flex;
+                            justify-content:space-between;
+                            align-items:center;
+                        "
+                    >
+
+                        <strong>
+                            Этап #${m}: ${ms.description}
+                        </strong>
+
                         ${statusBadge}
+
                     </div>
-                    <div style="font-size:0.88rem; margin-top:0.35rem;">
-                        Сумма: <strong>${ethers.formatEther(ms.amount)} ETH</strong> · Получатель: <span class="mono">${ms.recipient}</span>
+
+                    <div
+                        style="
+                            font-size:0.88rem;
+                            margin-top:0.35rem;
+                        "
+                    >
+                        Сумма:
+
+                        <strong>
+                            ${ethers.formatEther(ms.amount)} ETH
+                        </strong>
+
+                        · Получатель:
+
+                        <span class="mono">
+                            ${ms.recipient}
+                        </span>
                     </div>
-                    ${ms.evidenceSubmitted ? `<div class="mono" style="margin-top:0.25rem; font-size:0.8rem;">Отчёт: ${ms.evidenceURI} | Hash: ${shortAddr(ms.evidenceHash)}</div>` : ""}
+
+                    ${evidenceInfo}
+
                 </div>
+
                 ${evidenceForm}
+
             </div>
         `;
     }
 }
 
+
+// =========================================================
+// 10. ОТПРАВКА ДОКАЗАТЕЛЬСТВА ВЫПОЛНЕНИЯ ЭТАПА
+// =========================================================
+
 async function submitEvidence(milestoneId) {
-    const uriInput = document.getElementById(`evUri_${milestoneId}`).value.trim();
-    const fileInput = document.getElementById(`evFile_${milestoneId}`);
+
+    const uriInput =
+        document.getElementById(`evUri_${milestoneId}`).value.trim();
+
+    const fileInput =
+        document.getElementById(`evFile_${milestoneId}`);
+
     const file = fileInput?.files?.[0];
 
     try {
@@ -394,54 +1179,106 @@ async function submitEvidence(milestoneId) {
             return;
         }
 
+        if (!userAddress) {
+            throw new Error(
+                "Не определён адрес подключённого кошелька."
+            );
+        }
+
         let finalUri = uriInput;
 
-        // Если прикреплен файл, отправляем его на специальный эндпоинт этапа
+        // ---------------------------------------------
+        // Загрузка файла на Node.js backend
+        // ---------------------------------------------
+
         if (file) {
             const formData = new FormData();
+
             formData.append("milestoneDoc", file);
 
-            const response = await fetch(`${API_URL}/requests/${requestId}/milestones/${milestoneId}`, {
-                method: "POST",
-                body: formData
-            });
+            const response = await fetch(
+                `${API_URL}/requests/${requestId}/milestones/${milestoneId}`,
+                {
+                    method: "POST",
+                    body: formData
+                }
+            );
 
             if (!response.ok) {
                 const errorText = await response.text();
-                throw new Error(`Ошибка сервера (${response.status}): ${errorText}`);
+
+                throw new Error(
+                    `Ошибка сервера (${response.status}): ${errorText}`
+                );
             }
 
             const saved = await response.json();
+
             finalUri = uriInput || saved.docUrl;
         }
 
         if (!finalUri) {
-            throw new Error("Не удалось получить ссылку на документ отчёта.");
+            throw new Error(
+                "Не удалось получить ссылку на документ отчёта."
+            );
         }
 
-        // Вычисляем хэш файла для блокчейна (если файл есть, иначе заглушка)
-        let hash = ethers.keccak256(ethers.toUtf8Bytes(finalUri));
+        // ---------------------------------------------
+        // Вычисление хэша
+        // ---------------------------------------------
+
+        let hash = ethers.keccak256(
+            ethers.toUtf8Bytes(finalUri)
+        );
+
         if (file) {
             const buffer = await file.arrayBuffer();
-            hash = ethers.keccak256(new Uint8Array(buffer));
+
+            hash = ethers.keccak256(
+                new Uint8Array(buffer)
+            );
         }
 
-        if (!contract) throw new Error("Смарт-контракт не инициализирован.");
-        if (!userAddress) throw new Error("Не определён адрес подключённого кошелька.");
+        // ---------------------------------------------
+        // Отправка доказательства в RescueMilestones
+        // ---------------------------------------------
 
-        const tx = await contract.submitMilestoneEvidence(requestId, milestoneId, finalUri, hash);
-        alert("Транзакция отправлена. Ожидаем подтверждения в блокчейне...");
-        
+        const tx =
+            await milestonesContract.submitMilestoneEvidence(
+                requestId,
+                milestoneId,
+                finalUri,
+                hash
+            );
+
+        alert(
+            "Транзакция отправлена. Ожидаем подтверждения в блокчейне..."
+        );
+
         const receipt = await tx.wait();
+
         if (!receipt || receipt.status !== 1) {
-            throw new Error("Транзакция не была успешно подтверждена.");
+            throw new Error(
+                "Транзакция не была успешно подтверждена."
+            );
         }
 
-        alert("Отчёт успешно отправлен и записан в блокчейн!");
+        alert(
+            "Отчёт успешно отправлен и записан в блокчейн!"
+        );
+
         window.location.reload();
 
     } catch (err) {
         console.error("Ошибка отправки отчёта:", err);
-        alert("Не удалось отправить отчёт:\n" + (err.reason || err.shortMessage || err.message));
+
+        alert(
+            "Не удалось отправить отчёт:\n" +
+            (
+                err.reason ||
+                err.shortMessage ||
+                err.message
+            )
+        );
     }
 }

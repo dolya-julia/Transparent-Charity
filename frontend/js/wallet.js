@@ -3,11 +3,19 @@
 // ГЛОБАЛЬНЫЕ ПЕРЕМЕННЫЕ
 // ======================================================
 
+// Web3
 let provider = null;
 let signer = null;
-let contract = null;
 let userAddress = null;
 
+// Основные контракты
+let contract = null;
+let daoViewContract = null;
+let treasuryContract = null;
+let milestonesContract = null;
+let nftContract = null;
+
+// Роли пользователя
 let userRoles = {
     isAdmin: false,
     isMember: false,
@@ -40,17 +48,141 @@ function resetWalletState() {
 
 
 // ======================================================
+// СОЗДАНИЕ ЭКЗЕМПЛЯРОВ КОНТРАКТОВ
+// ======================================================
+
+function initializeContracts(connection) {
+
+    if (!connection) {
+        throw new Error(
+            "Не передан Web3 provider или signer."
+        );
+    }
+
+    // --------------------------------------------------
+    // RescueDAO
+    // --------------------------------------------------
+
+    // Основной контракт.
+    // Используется для создания заявок, голосования,
+    // регистрации участников и финализации.
+    contract = new ethers.Contract(
+        DAO_ADDRESS,
+        DAO_ABI,
+        connection
+    );
+
+
+    // --------------------------------------------------
+    // RescueDAOView
+    // --------------------------------------------------
+
+    // Контракт для чтения информации о заявках,
+    // статистики голосования и финансовых показателей.
+    daoViewContract = new ethers.Contract(
+        DAO_VIEW_ADDRESS,
+        DAO_VIEW_ABI,
+        provider
+    );
+
+
+    // --------------------------------------------------
+    // RescueTreasury
+    // --------------------------------------------------
+
+    // Контракт казначейства.
+    // Используется преимущественно для чтения балансов,
+    // резервов, пожертвований и выплат.
+    treasuryContract = new ethers.Contract(
+        TREASURY_ADDRESS,
+        TREASURY_ABI,
+        provider
+    );
+
+
+    // --------------------------------------------------
+    // RescueMilestones
+    // --------------------------------------------------
+
+    // Контракт этапов финансирования.
+    // Используется для добавления этапов,
+    // отправки отчётов и подтверждения выплат.
+    milestonesContract = new ethers.Contract(
+        MILESTONES_ADDRESS,
+        MILESTONES_ABI,
+        connection
+    );
+
+
+    // --------------------------------------------------
+    // RescueNFT
+    // --------------------------------------------------
+
+    // NFT-контракт.
+    // Используется для чтения выпущенных NFT-паспортов.
+    nftContract = new ethers.Contract(
+        NFT_ADDRESS,
+        NFT_ABI,
+        provider
+    );
+}
+
+
+// ======================================================
+// ПРОВЕРКА АДРЕСОВ КОНТРАКТОВ
+// ======================================================
+
+function validateContractAddresses() {
+
+    const addresses = {
+        RescueDAO: DAO_ADDRESS,
+        RescueDAOView: DAO_VIEW_ADDRESS,
+        RescueTreasury: TREASURY_ADDRESS,
+        RescueMilestones: MILESTONES_ADDRESS,
+        RescueNFT: NFT_ADDRESS
+    };
+
+    for (const [name, address] of Object.entries(addresses)) {
+
+        if (!ethers.isAddress(address)) {
+
+            console.error(
+                `Некорректный адрес ${name}:`,
+                address
+            );
+
+            throw new Error(
+                `Некорректный адрес контракта ${name}.`
+            );
+        }
+
+        if (address === ethers.ZeroAddress) {
+            throw new Error(
+                `Для ${name} указан нулевой адрес.`
+            );
+        }
+    }
+
+    return true;
+}
+
+
+// ======================================================
 // ПРОВЕРКА СЕТИ
 // ======================================================
 
 async function checkNetwork() {
+
     if (!provider) {
-        throw new Error("Web3-провайдер не инициализирован.");
+        throw new Error(
+            "Web3-провайдер не инициализирован."
+        );
     }
 
     const network = await provider.getNetwork();
 
     if (network.chainId !== EXPECTED_CHAIN_ID) {
+
         alert(
             "Вы подключены к неправильной сети MetaMask.\n\n" +
             "Для работы RescueDAO выберите локальную сеть Geth " +
@@ -69,10 +201,15 @@ async function checkNetwork() {
 // ======================================================
 
 async function initWeb3() {
+
     try {
 
-        // Проверяем наличие MetaMask
+        // --------------------------------------------------
+        // 1. Проверяем наличие MetaMask
+        // --------------------------------------------------
+
         if (!window.ethereum) {
+
             alert(
                 "Установите расширение MetaMask и откройте сайт " +
                 "через локальный сервер (например, Live Server)."
@@ -81,52 +218,71 @@ async function initWeb3() {
             return false;
         }
 
-        // Проверяем адрес смарт-контракта
-        if (!ethers.isAddress(CONTRACT_ADDRESS)) {
-            console.error("Некорректный адрес RescueDAO:", CONTRACT_ADDRESS);
 
-            alert("Ошибка конфигурации: некорректный адрес RescueDAO.");
+        // --------------------------------------------------
+        // 2. Проверяем адреса контрактов
+        // --------------------------------------------------
 
-            return false;
-        }
+        validateContractAddresses();
 
-        // Создаём провайдер
-        provider = new ethers.BrowserProvider(window.ethereum);
 
-        // Проверяем подключённую сеть
+        // --------------------------------------------------
+        // 3. Создаём provider
+        // --------------------------------------------------
+
+        provider = new ethers.BrowserProvider(
+            window.ethereum
+        );
+
+
+        // --------------------------------------------------
+        // 4. Проверяем сеть
+        // --------------------------------------------------
+
         const networkReady = await checkNetwork();
 
         if (!networkReady) {
             return false;
         }
 
-        // Проверяем, подключён ли кошелёк
-        const accounts = await provider.send("eth_accounts", []);
+
+        // --------------------------------------------------
+        // 5. Проверяем подключённый аккаунт
+        // --------------------------------------------------
+
+        const accounts = await provider.send(
+            "eth_accounts",
+            []
+        );
+
+
+        // --------------------------------------------------
+        // 6. Инициализируем контракты
+        // --------------------------------------------------
 
         if (accounts.length > 0) {
 
-            // Если аккаунт уже подключён
+            // Кошелёк уже подключён.
             await setupSigner();
 
         } else {
 
-            // Если кошелёк не подключён,
-            // создаём контракт только для чтения
-            signer = null;
-            userAddress = null;
-
-            contract = new ethers.Contract(
-                CONTRACT_ADDRESS,
-                CONTRACT_ABI,
-                provider
-            );
+            // Кошелёк не подключён.
+            // Разрешаем только чтение данных блокчейна.
 
             resetWalletState();
 
+            initializeContracts(provider);
+
+            updateConnectButton();
             updateRoleBadge();
         }
 
-        // Обработка смены аккаунта
+
+        // --------------------------------------------------
+        // 7. Подписываемся на события MetaMask
+        // --------------------------------------------------
+
         window.ethereum.removeListener?.(
             "accountsChanged",
             handleAccountsChanged
@@ -146,16 +302,20 @@ async function initWeb3() {
             "chainChanged",
             handleChainChanged
         );
+
 
         return true;
 
     } catch (err) {
 
-        console.error("Ошибка инициализации Web3:", err);
+        console.error(
+            "Ошибка инициализации Web3:",
+            err
+        );
 
         alert(
             "Не удалось подключиться к блокчейну.\n\n" +
-            (err.shortMessage || err.message)
+            getErrorMessage(err)
         );
 
         return false;
@@ -168,35 +328,51 @@ async function initWeb3() {
 // ======================================================
 
 async function handleAccountsChanged(accounts) {
+
     try {
+
+        // --------------------------------------------------
+        // Если пользователь отключил кошелёк
+        // --------------------------------------------------
 
         if (!accounts || accounts.length === 0) {
 
             resetWalletState();
 
             if (provider) {
-                contract = new ethers.Contract(
-                    CONTRACT_ADDRESS,
-                    CONTRACT_ABI,
-                    provider
-                );
+
+                // Пересоздаём контракты в режиме чтения.
+                initializeContracts(provider);
             }
 
             updateConnectButton();
             updateRoleBadge();
 
-            // Обновляем страницу, чтобы убрать доступные действия
+            // Убираем доступные транзакционные действия.
             window.location.reload();
 
             return;
         }
 
-        await setupSigner();
+
+        // --------------------------------------------------
+        // Если выбран другой аккаунт
+        // --------------------------------------------------
+
+        const ready = await setupSigner();
+
+        if (!ready) {
+            return;
+        }
 
         window.location.reload();
 
     } catch (err) {
-        console.error("Ошибка смены аккаунта:", err);
+
+        console.error(
+            "Ошибка смены аккаунта:",
+            err
+        );
     }
 }
 
@@ -206,7 +382,8 @@ async function handleAccountsChanged(accounts) {
 // ======================================================
 
 async function handleChainChanged() {
-    // При смене сети заново проверяем подключение
+
+    // При смене сети заново проверяем подключение.
     window.location.reload();
 }
 
@@ -220,39 +397,65 @@ async function connectWallet() {
     try {
 
         if (!window.ethereum) {
+
             alert("MetaMask не найден!");
+
             return;
         }
 
+
+        // Создаём provider, если он ещё не создан.
         if (!provider) {
-            provider = new ethers.BrowserProvider(window.ethereum);
+
+            provider = new ethers.BrowserProvider(
+                window.ethereum
+            );
         }
 
-        // Запрашиваем доступ к аккаунтам
-        await provider.send("eth_requestAccounts", []);
 
-        // Проверяем правильность сети
+        // Запрашиваем доступ к аккаунтам.
+        await provider.send(
+            "eth_requestAccounts",
+            []
+        );
+
+
+        // Проверяем правильность сети.
         const networkReady = await checkNetwork();
 
         if (!networkReady) {
             return;
         }
 
-        // Подключаем signer и загружаем роли
-        await setupSigner();
+
+        // Подключаем signer и загружаем роли.
+        const ready = await setupSigner();
+
+        if (!ready) {
+            return;
+        }
+
 
         window.location.reload();
 
     } catch (err) {
 
-        console.error("Ошибка подключения кошелька:", err);
+        console.error(
+            "Ошибка подключения кошелька:",
+            err
+        );
 
         if (err.code === 4001) {
-            alert("Вы отклонили запрос на подключение MetaMask.");
+
+            alert(
+                "Вы отклонили запрос на подключение MetaMask."
+            );
+
         } else {
+
             alert(
                 "Не удалось подключить кошелёк: " +
-                (err.shortMessage || err.message)
+                getErrorMessage(err)
             );
         }
     }
@@ -266,35 +469,66 @@ async function connectWallet() {
 async function setupSigner() {
 
     if (!provider) {
-        throw new Error("Провайдер Web3 не инициализирован.");
+
+        throw new Error(
+            "Провайдер Web3 не инициализирован."
+        );
     }
 
-    // Проверяем сеть
+
+    // --------------------------------------------------
+    // 1. Проверяем сеть
+    // --------------------------------------------------
+
     const networkReady = await checkNetwork();
 
     if (!networkReady) {
+
         resetWalletState();
+
         return false;
     }
 
-    // Получаем подписанта
+
+    // --------------------------------------------------
+    // 2. Получаем подписанта
+    // --------------------------------------------------
+
     signer = await provider.getSigner();
 
-    // Получаем адрес текущего пользователя
+
+    // --------------------------------------------------
+    // 3. Получаем адрес пользователя
+    // --------------------------------------------------
+
     userAddress = await signer.getAddress();
 
-    // Создаём экземпляр контракта с возможностью отправки транзакций
-    contract = new ethers.Contract(
-        CONTRACT_ADDRESS,
-        CONTRACT_ABI,
-        signer
-    );
 
+    // --------------------------------------------------
+    // 4. Создаём экземпляры контрактов
+    // --------------------------------------------------
+
+    /*
+     * RescueDAO и RescueMilestones получают signer,
+     * поскольку через них выполняются транзакции.
+     *
+     * RescueDAOView, RescueTreasury и RescueNFT
+     * используются для чтения через provider.
+     */
+
+    initializeContracts(signer);
+
+
+    // Обновляем кнопку подключения.
     updateConnectButton();
+
+
+    // --------------------------------------------------
+    // 5. Получаем роли пользователя из RescueDAO
+    // --------------------------------------------------
 
     try {
 
-        // Получаем информацию о ролях пользователя
         const [
             adminAddr,
             memberFlag,
@@ -309,21 +543,44 @@ async function setupSigner() {
 
         ]);
 
-        // Проверяем права администратора
-        userRoles.isAdmin =
-            adminAddr.toLowerCase() === userAddress.toLowerCase();
 
-        // Проверяем регистрацию в DAO
+        // --------------------------------------------------
+        // 6. Проверяем права администратора
+        // --------------------------------------------------
+
+        userRoles.isAdmin =
+            adminAddr.toLowerCase() ===
+            userAddress.toLowerCase();
+
+
+        // --------------------------------------------------
+        // 7. Проверяем регистрацию в DAO
+        // --------------------------------------------------
+
         userRoles.isMember = memberFlag;
 
-        // Проверяем роль валидатора
+
+        // --------------------------------------------------
+        // 8. Проверяем роль валидатора
+        // --------------------------------------------------
+
         userRoles.isValidator = valFlag;
 
+
+        // Обновляем индикатор ролей.
         updateRoleBadge();
 
-        console.log("Кошелёк подключён:", userAddress);
 
-        console.log("Роли пользователя:", userRoles);
+        console.log(
+            "Кошелёк подключён:",
+            userAddress
+        );
+
+        console.log(
+            "Роли пользователя:",
+            userRoles
+        );
+
 
         return true;
 
@@ -334,7 +591,10 @@ async function setupSigner() {
             err
         );
 
-        // Не предоставляем дополнительные права при ошибке
+
+        // Не предоставляем дополнительные права
+        // при ошибке определения ролей.
+
         userRoles = {
             isAdmin: false,
             isMember: false,
@@ -342,6 +602,7 @@ async function setupSigner() {
         };
 
         updateRoleBadge();
+
 
         return false;
     }
@@ -354,9 +615,11 @@ async function setupSigner() {
 
 function updateConnectButton() {
 
-    const btn = document.getElementById("connectBtn");
+    const btn =
+        document.getElementById("connectBtn");
 
     if (!btn) return;
+
 
     if (userAddress) {
 
@@ -367,7 +630,8 @@ function updateConnectButton() {
 
     } else {
 
-        btn.textContent = "Подключить кошелёк";
+        btn.textContent =
+            "Подключить кошелёк";
 
         btn.className = "btn btn-primary";
     }
@@ -380,11 +644,14 @@ function updateConnectButton() {
 
 function updateRoleBadge() {
 
-    const badge = document.getElementById("roleBadge");
+    const badge =
+        document.getElementById("roleBadge");
 
     if (!badge) return;
 
+
     const labels = [];
+
 
     if (userRoles.isAdmin) {
         labels.push("Admin");
@@ -398,23 +665,30 @@ function updateRoleBadge() {
         labels.push("DAO Member");
     }
 
+
     if (labels.length > 0) {
 
-        badge.textContent = labels.join(" · ");
+        badge.textContent =
+            labels.join(" · ");
 
-        badge.className = "badge badge-blue";
+        badge.className =
+            "badge badge-blue";
 
     } else if (userAddress) {
 
-        badge.textContent = "Донор";
+        badge.textContent =
+            "Донор";
 
-        badge.className = "badge badge-gray";
+        badge.className =
+            "badge badge-gray";
 
     } else {
 
-        badge.textContent = "Кошелёк не подключён";
+        badge.textContent =
+            "Кошелёк не подключён";
 
-        badge.className = "badge badge-gray";
+        badge.className =
+            "badge badge-gray";
     }
 }
 
@@ -423,31 +697,41 @@ function updateRoleBadge() {
 // ВЫЧИСЛЕНИЕ KECCAK-256 ХЭША ФАЙЛА
 // ======================================================
 
-async function hashFileOrDefault(fileInput, fallbackText) {
+async function hashFileOrDefault(
+    fileInput,
+    fallbackText
+) {
 
     try {
 
-        // Если пользователь загрузил файл
+        // Если пользователь загрузил файл.
         if (
             fileInput &&
             fileInput.files &&
             fileInput.files.length > 0
         ) {
 
-            const file = fileInput.files[0];
+            const file =
+                fileInput.files[0];
 
-            // Читаем содержимое файла
-            const buffer = await file.arrayBuffer();
 
-            // Вычисляем Keccak-256
+            // Читаем содержимое файла.
+            const buffer =
+                await file.arrayBuffer();
+
+
+            // Вычисляем Keccak-256.
             const hash = ethers.keccak256(
                 new Uint8Array(buffer)
             );
 
+
             return hash;
         }
 
-        // Если файл не выбран, используем резервный текст
+
+        // Если файл не выбран,
+        // используем резервный текст.
         return ethers.keccak256(
             ethers.toUtf8Bytes(
                 fallbackText || "demo-evidence"
@@ -456,7 +740,10 @@ async function hashFileOrDefault(fileInput, fallbackText) {
 
     } catch (err) {
 
-        console.error("Ошибка вычисления хэша файла:", err);
+        console.error(
+            "Ошибка вычисления хэша файла:",
+            err
+        );
 
         throw new Error(
             "Не удалось прочитать файл или вычислить его хэш."
@@ -471,13 +758,34 @@ async function hashFileOrDefault(fileInput, fallbackText) {
 
 function shortAddr(addr) {
 
-    if (!addr || typeof addr !== "string") {
+    if (
+        !addr ||
+        typeof addr !== "string"
+    ) {
         return "Не указан";
     }
+
 
     if (addr.length <= 13) {
         return addr;
     }
 
+
     return `${addr.slice(0, 6)}...${addr.slice(-4)}`;
+}
+
+
+// ======================================================
+// ФОРМАТИРОВАНИЕ ОШИБОК
+// ======================================================
+
+function getErrorMessage(err) {
+
+    return (
+        err?.reason ||
+        err?.shortMessage ||
+        err?.info?.error?.message ||
+        err?.message ||
+        "Неизвестная ошибка"
+    );
 }
