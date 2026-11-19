@@ -1,0 +1,193 @@
+
+<!DOCTYPE html>
+<html lang="ru">
+
+<head>
+    <meta charset="UTF-8">
+
+    <meta
+        name="viewport"
+        content="width=device-width, initial-scale=1.0"
+    >
+
+    <meta
+        name="description"
+        content="Подробная информация о заявке на помощь животному в RescueDAO."
+    >
+
+    <title>Детали заявки — RescueDAO</title>
+
+    <link rel="stylesheet" href="css/style.css">
+</head>
+
+<body>
+
+    <!-- =================================================
+         ШАПКА САЙТА
+    ================================================== -->
+
+    <header>
+
+        <div class="header-inner">
+
+            <a href="index.html" class="logo">
+                🐾 RescueDAO
+
+                <span class="badge badge-green">
+                    Local Geth · 1337
+                </span>
+            </a>
+
+            <nav>
+
+                <a href="index.html">
+                    Фонд и заявки
+                </a>
+
+                <a href="validator.html">
+                    Валидаторы и история
+                </a>
+
+                <span
+                    id="roleBadge"
+                    class="badge badge-gray"
+                >
+                    Кошелёк не подключён
+                </span>
+
+                <button
+                    id="connectBtn"
+                    class="btn btn-primary"
+                    onclick="connectWallet()"
+                >
+                    Подключить MetaMask
+                </button>
+
+            </nav>
+
+        </div>
+
+    </header>
+
+
+    <!-- =================================================
+         ОСНОВНОЕ СОДЕРЖИМОЕ
+    ================================================== -->
+
+    <main>
+
+        <!-- Навигация назад -->
+
+        <div style="margin-bottom: 1.25rem;">
+
+            <a
+                href="index.html"
+                class="tx-link"
+            >
+                &larr; Назад к фонду и списку заявок
+            </a>
+
+        </div>
+
+
+        <!-- Заголовок страницы -->
+
+        <div class="page-header">
+
+            <h1>
+                Информация о заявке
+            </h1>
+
+            <p>
+                Здесь представлена информация о заявке,
+                её статусе, этапах финансирования,
+                подтверждающих документах и NFT-паспорте животного.
+            </p>
+
+        </div>
+
+
+        <!-- =================================================
+             КОНТЕЙНЕР ДЕТАЛЕЙ ЗАЯВКИ
+        ================================================== -->
+
+        <section>
+
+            <div
+                id="requestDetailsContainer"
+                class="request-details-container"
+            >
+
+                <div class="box">
+
+                    <p>
+                        Загрузка данных заявки из блокчейна...
+                    </p>
+
+                    <p
+                        style="
+                            font-size: 0.85rem;
+                            color: var(--text-muted);
+                            margin-top: 0.5rem;
+                        "
+                    >
+                        Пожалуйста, подождите.
+                    </p>
+
+                </div>
+
+            </div>
+
+        </section>
+
+    </main>
+
+
+    <!-- =================================================
+         ПОДВАЛ
+    ================================================== -->
+
+    <footer>
+
+        <p>
+            RescueDAO — децентрализованная платформа
+            прозрачной благотворительности на базе Ethereum.
+        </p>
+
+        <p
+            style="
+                font-size: 0.8rem;
+                color: var(--text-muted);
+                margin-top: 0.5rem;
+            "
+        >
+            Локальная тестовая сеть Geth · Chain ID 1337
+        </p>
+
+    </footer>
+
+
+    <!-- =================================================
+         JAVASCRIPT
+    ================================================== -->
+
+    <!-- Ethers.js v6 -->
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/ethers/6.13.1/ethers.umd.min.js"></script>
+
+    <!-- Конфигурация контрактов -->
+
+    <script src="js/config.js"></script>
+
+    <!-- Подключение MetaMask и Web3 -->
+
+    <script src="js/wallet.js"></script>
+
+    <!-- Логика страницы конкретной заявки -->
+
+    <script src="js/request.js"></script>
+
+
+</body>
+
+</html>

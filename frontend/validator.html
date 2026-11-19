@@ -1,0 +1,310 @@
+
+<!DOCTYPE html>
+<html lang="ru">
+
+<head>
+    <meta charset="UTF-8">
+
+    <meta
+        name="viewport"
+        content="width=device-width, initial-scale=1.0"
+    >
+
+    <meta
+        name="description"
+        content="Панель валидаторов RescueDAO: проверка отчётов, подтверждение выплат и история операций."
+    >
+
+    <title>Валидаторы и история — RescueDAO</title>
+
+    <link rel="stylesheet" href="css/style.css">
+</head>
+
+<body>
+
+    <!-- =================================================
+         ШАПКА САЙТА
+    ================================================== -->
+
+    <header>
+
+        <div class="header-inner">
+
+            <a href="index.html" class="logo">
+
+                🐾 RescueDAO
+
+                <span class="badge badge-green">
+                    Local Geth · 1337
+                </span>
+
+            </a>
+
+            <nav>
+
+                <a href="index.html">
+                    Фонд и заявки
+                </a>
+
+                <a href="validator.html" class="active">
+                    Валидаторы и история
+                </a>
+
+                <span
+                    id="roleBadge"
+                    class="badge badge-gray"
+                >
+                    Кошелёк не подключён
+                </span>
+
+                <button
+                    id="connectBtn"
+                    class="btn btn-primary"
+                    onclick="connectWallet()"
+                >
+                    Подключить MetaMask
+                </button>
+
+            </nav>
+
+        </div>
+
+    </header>
+
+
+    <!-- =================================================
+         ОСНОВНОЕ СОДЕРЖИМОЕ
+    ================================================== -->
+
+    <main>
+
+        <!-- Заголовок страницы -->
+
+        <div class="page-header">
+
+            <h1>
+                Контроль выплат и аудит операций
+            </h1>
+
+            <p>
+                Валидаторы проверяют отчёты о выполнении этапов
+                помощи животным и подтверждают целевое использование
+                средств. Для выполнения выплаты требуются два
+                подтверждения валидаторов.
+            </p>
+
+        </div>
+
+
+        <!-- =================================================
+             ПАНЕЛЬ АДМИНИСТРАТОРА
+        ================================================== -->
+
+        <section
+            id="adminPanel"
+            class="box"
+            style="display: none;"
+        >
+
+            <h2>
+                Панель администратора
+            </h2>
+
+            <p
+                style="
+                    font-size: 0.9rem;
+                    color: var(--text-muted);
+                    margin-bottom: 1rem;
+                "
+            >
+                Регистрация новых участников в децентрализованной
+                автономной организации RescueDAO.
+            </p>
+
+
+            <div
+                style="
+                    display: flex;
+                    gap: 0.75rem;
+                    flex-wrap: wrap;
+                "
+            >
+
+                <input
+                    type="text"
+                    id="newMemberAddress"
+                    placeholder="0x... адрес кошелька участника DAO"
+                    autocomplete="off"
+                    style="
+                        flex: 1;
+                        min-width: 260px;
+                    "
+                >
+
+                <button
+                    type="button"
+                    class="btn btn-primary"
+                    onclick="registerMember()"
+                >
+                    Зарегистрировать участника
+                </button>
+
+            </div>
+
+        </section>
+
+
+        <!-- =================================================
+             ОЧЕРЕДЬ ВАЛИДАТОРОВ
+        ================================================== -->
+
+        <section class="box">
+
+            <div class="row-between">
+
+                <h2>
+                    Этапы финансирования на проверке
+                </h2>
+
+            </div>
+
+
+            <p
+                style="
+                    font-size: 0.9rem;
+                    color: var(--text-muted);
+                    margin-bottom: 1rem;
+                "
+            >
+                В этом разделе отображаются этапы оказания помощи,
+                по которым приют предоставил отчёт.
+                Валидаторы могут проверить представленные материалы
+                и подтвердить выполнение этапа.
+            </p>
+
+
+            <!-- Информация о механизме подтверждения -->
+
+            <div
+                style="
+                    padding: 0.85rem;
+                    background: var(--bg-secondary, #f5f5f5);
+                    border-radius: 8px;
+                    margin-bottom: 1rem;
+                "
+            >
+
+                <strong>
+                    Механизм подтверждения:
+                </strong>
+
+                <span>
+                    для выполнения выплаты необходимы
+                    два подтверждения валидаторов (2/2).
+                </span>
+
+            </div>
+
+
+            <!-- Список этапов -->
+
+            <div id="milestonesQueue">
+
+                <p>
+                    Загрузка этапов из блокчейна...
+                </p>
+
+            </div>
+
+        </section>
+
+
+        <!-- =================================================
+             ИСТОРИЯ ОПЕРАЦИЙ
+        ================================================== -->
+
+        <section class="box">
+
+            <h2>
+                Прозрачная история операций RescueDAO
+            </h2>
+
+
+            <p
+                style="
+                    font-size: 0.9rem;
+                    color: var(--text-muted);
+                    margin-bottom: 1rem;
+                "
+            >
+                Журнал содержит события, зарегистрированные
+                в блокчейне: пополнения общего фонда,
+                создание заявок, голосования участников,
+                результаты рассмотрения заявок и выплаты
+                по этапам финансирования.
+            </p>
+
+
+            <!-- История событий -->
+
+            <div id="auditTimeline">
+
+                <p>
+                    Загрузка событий из блокчейна...
+                </p>
+
+            </div>
+
+        </section>
+
+    </main>
+
+
+    <!-- =================================================
+         ПОДВАЛ
+    ================================================== -->
+
+    <footer>
+
+        <p>
+            RescueDAO — децентрализованная платформа
+            прозрачной благотворительности на базе Ethereum.
+        </p>
+
+        <p
+            style="
+                font-size: 0.8rem;
+                color: var(--text-muted);
+                margin-top: 0.5rem;
+            "
+        >
+            Локальная тестовая сеть Geth · Chain ID 1337
+        </p>
+
+    </footer>
+
+
+    <!-- =================================================
+         JAVASCRIPT
+    ================================================== -->
+
+    <!-- Ethers.js v6 -->
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/ethers/6.13.1/ethers.umd.min.js"></script>
+
+    <!-- Конфигурация контрактов -->
+
+    <script src="js/config.js"></script>
+
+    <!-- Подключение MetaMask и Web3 -->
+
+    <script src="js/wallet.js"></script>
+
+    <!-- Логика панели валидаторов и истории -->
+
+    <script src="js/validator.js"></script>
+
+
+</body>
+
+</html>

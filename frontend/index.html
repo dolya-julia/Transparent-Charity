@@ -1,0 +1,530 @@
+
+<!DOCTYPE html>
+<html lang="ru">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <meta
+        name="description"
+        content="RescueDAO — децентрализованная платформа коллективной помощи животным с прозрачным распределением средств."
+    >
+
+    <title>RescueDAO — Фонд помощи животным</title>
+
+    <link rel="stylesheet" href="css/style.css">
+</head>
+
+<body>
+
+    <!-- =================================================
+         ШАПКА САЙТА
+    ================================================== -->
+
+    <header>
+        <div class="header-inner">
+
+            <a href="index.html" class="logo">
+                🐾 RescueDAO
+                <span class="badge badge-green">
+                    Local Geth · 1337
+                </span>
+            </a>
+
+            <nav>
+
+                <a href="index.html" class="active">
+                    Фонд и заявки
+                </a>
+
+                <a href="validator.html">
+                    Валидаторы и история
+                </a>
+
+                <span
+                    id="roleBadge"
+                    class="badge badge-gray"
+                >
+                    Кошелёк не подключён
+                </span>
+
+                <button
+                    id="connectBtn"
+                    class="btn btn-primary"
+                    onclick="connectWallet()"
+                >
+                    Подключить MetaMask
+                </button>
+
+            </nav>
+
+        </div>
+    </header>
+
+
+    <!-- =================================================
+         ОСНОВНОЕ СОДЕРЖИМОЕ
+    ================================================== -->
+
+    <main>
+
+        <!-- Заголовок страницы -->
+
+        <div class="page-header">
+
+            <h1>
+                Единый фонд помощи животным
+            </h1>
+
+            <p>
+                RescueDAO объединяет участников, доноров и валидаторов
+                для коллективного финансирования лечения животных.
+                Участники DAO голосуют за заявки, а валидаторы
+                контролируют выполнение этапов помощи и подтверждают выплаты.
+            </p>
+
+        </div>
+
+
+        <!-- =================================================
+             СТАТИСТИКА ОБЩЕГО ФОНДА
+        ================================================== -->
+
+        <section class="stats-grid">
+
+            <div class="stat-card">
+
+                <div class="stat-label">
+                    Всего пожертвовано
+                </div>
+
+                <div
+                    class="stat-value"
+                    id="statDonated"
+                >
+                    — ETH
+                </div>
+
+            </div>
+
+
+            <div class="stat-card">
+
+                <div class="stat-label">
+                    Свободный остаток пула
+                </div>
+
+                <div
+                    class="stat-value"
+                    style="color: var(--primary);"
+                    id="statAvailable"
+                >
+                    — ETH
+                </div>
+
+            </div>
+
+
+            <div class="stat-card">
+
+                <div class="stat-label">
+                    Зарезервировано под заявки
+                </div>
+
+                <div
+                    class="stat-value"
+                    id="statReserved"
+                >
+                    — ETH
+                </div>
+
+            </div>
+
+
+            <div class="stat-card">
+
+                <div class="stat-label">
+                    Фактически выплачено
+                </div>
+
+                <div
+                    class="stat-value"
+                    id="statSpent"
+                >
+                    — ETH
+                </div>
+
+            </div>
+
+        </section>
+
+
+        <!-- =================================================
+             ПОЖЕРТВОВАНИЕ И СОЗДАНИЕ ЗАЯВКИ
+        ================================================== -->
+
+        <section class="two-col">
+
+
+            <!-- ПОЖЕРТВОВАНИЕ -->
+
+            <div class="box">
+
+                <h2>
+                    Пополнить общий фонд RescueDAO
+                </h2>
+
+                <p
+                    style="
+                        font-size: 0.9rem;
+                        color: var(--text-muted);
+                        margin-bottom: 1rem;
+                    "
+                >
+                    Пожертвования поступают в единый пул.
+                    Средства не закрепляются за отдельными животными
+                    и распределяются после голосования DAO и
+                    последующего подтверждения этапов помощи.
+                </p>
+
+
+                <div class="form-group">
+
+                    <label for="donateAmount">
+                        Сумма пожертвования (ETH)
+                    </label>
+
+                    <input
+                        type="number"
+                        id="donateAmount"
+                        step="0.001"
+                        min="0.0001"
+                        placeholder="Например: 0.01"
+                    >
+
+                </div>
+
+
+                <button
+                    type="button"
+                    class="btn btn-primary"
+                    style="width: 100%;"
+                    onclick="donateToPool()"
+                >
+                    Пожертвовать в общий пул
+                </button>
+
+
+                <p
+                    style="
+                        font-size: 0.8rem;
+                        color: var(--text-muted);
+                        margin-top: 0.75rem;
+                    "
+                >
+                    Для отправки пожертвования необходимо подключить
+                    MetaMask и выбрать локальную сеть Geth.
+                </p>
+
+            </div>
+
+
+            <!-- СОЗДАНИЕ ЗАЯВКИ -->
+
+            <div class="box">
+
+                <h2>
+                    Создать заявку на помощь
+                </h2>
+
+                <p
+                    style="
+                        font-size: 0.9rem;
+                        color: var(--text-muted);
+                        margin-bottom: 1rem;
+                    "
+                >
+                    Создание заявок доступно зарегистрированным
+                    участникам DAO.
+                </p>
+
+
+                <!-- Имя животного -->
+
+                <div class="form-group">
+
+                    <label for="reqAnimalName">
+                        Имя животного
+                    </label>
+
+                    <input
+                        type="text"
+                        id="reqAnimalName"
+                        maxlength="100"
+                        placeholder="Например: Барсик"
+                    >
+
+                </div>
+
+
+                <!-- Описание заявки -->
+
+                <div class="form-group">
+
+                    <label for="reqDescription">
+                        Описание проблемы и лечения
+                    </label>
+
+                    <textarea
+                        id="reqDescription"
+                        rows="3"
+                        maxlength="3000"
+                        placeholder="Опишите проблему, диагноз, клинику и предполагаемый план лечения..."
+                    ></textarea>
+
+                </div>
+
+
+                <!-- Сумма и срок голосования -->
+
+                <div
+                    class="two-col"
+                    style="
+                        margin-bottom: 0;
+                        gap: 0.75rem;
+                    "
+                >
+
+                    <div class="form-group">
+
+                        <label for="reqAmount">
+                            Необходимая сумма (ETH)
+                        </label>
+
+                        <input
+                            type="number"
+                            id="reqAmount"
+                            step="0.001"
+                            min="0.0001"
+                            placeholder="0.005"
+                        >
+
+                    </div>
+
+
+                    <div class="form-group">
+
+                        <label for="reqDuration">
+                            Срок голосования (минут)
+                        </label>
+
+                        <input
+                            type="number"
+                            id="reqDuration"
+                            min="1"
+                            max="43200"
+                            value="5"
+                        >
+
+                    </div>
+
+                </div>
+
+
+                <!-- Ссылка на документы -->
+
+                <div class="form-group">
+
+                    <label for="reqEvidenceUri">
+                        Ссылка на документы (IPFS / URL)
+                    </label>
+
+                    <input
+                        type="text"
+                        id="reqEvidenceUri"
+                        placeholder="Введите ссылку на документы"
+                    >
+
+                    <small
+                        style="
+                            color: var(--text-muted);
+                            display: block;
+                            margin-top: 0.35rem;
+                        "
+                    >
+                        Можно указать ссылку на медицинские документы,
+                        заключения клиники или другие материалы.
+                    </small>
+
+                </div>
+
+
+                <!-- Файл документа -->
+
+                <div class="form-group">
+
+                    <label for="reqEvidenceFile">
+                        Документ для расчёта Keccak-256 хэша
+                    </label>
+
+                    <input
+                        type="file"
+                        id="reqEvidenceFile"
+                        accept=".pdf,.jpg,.jpeg,.png,.doc,.docx"
+                    >
+
+                    <small
+                        style="
+                            color: var(--text-muted);
+                            display: block;
+                            margin-top: 0.35rem;
+                        "
+                    >
+                        Файл используется для вычисления хэша,
+                        который записывается в блокчейн.
+                    </small>
+
+                </div>
+
+
+                <!-- Фотография животного -->
+
+                <div class="form-group">
+
+                    <label for="reqPhotoFile">
+                        Фотография животного
+                    </label>
+
+                    <input
+                        type="file"
+                        id="reqPhotoFile"
+                        accept="image/*"
+                    >
+
+                    <small
+                        style="
+                            color: var(--text-muted);
+                            display: block;
+                            margin-top: 0.35rem;
+                        "
+                    >
+                        Фотография сохраняется на сервере и
+                        отображается на странице заявки.
+                        Она не используется для генерации NFT-паспорта.
+                    </small>
+
+                </div>
+
+
+                <!-- Публикация заявки -->
+
+                <button
+                    type="button"
+                    class="btn btn-dark"
+                    style="width: 100%;"
+                    onclick="submitAidRequest()"
+                >
+                    Опубликовать заявку в DAO
+                </button>
+
+
+                <p
+                    style="
+                        font-size: 0.8rem;
+                        color: var(--text-muted);
+                        margin-top: 0.75rem;
+                    "
+                >
+                    После публикации заявка появится в блокчейне.
+                    Её дальнейшая судьба будет зависеть от голосования
+                    участников DAO.
+                </p>
+
+            </div>
+
+        </section>
+
+
+        <!-- =================================================
+             СПИСОК ЗАЯВОК
+        ================================================== -->
+
+        <section>
+
+            <div
+                class="row-between"
+                style="margin-bottom: 1.25rem;"
+            >
+
+                <h2>
+                    Заявки на финансирование
+                </h2>
+
+            </div>
+
+
+            <div
+                id="requestsGrid"
+                class="grid-cards"
+            >
+
+                <p>
+                    Загрузка заявок из блокчейна...
+                </p>
+
+            </div>
+
+        </section>
+
+
+    </main>
+
+
+    <!-- =================================================
+         ПОДВАЛ
+    ================================================== -->
+
+    <footer>
+
+        <p>
+            RescueDAO — децентрализованная платформа
+            прозрачной благотворительности на базе Ethereum.
+        </p>
+
+        <p
+            style="
+                font-size: 0.8rem;
+                color: var(--text-muted);
+                margin-top: 0.5rem;
+            "
+        >
+            Локальная тестовая сеть Geth · Chain ID 1337
+        </p>
+
+    </footer>
+
+
+    <!-- =================================================
+         JAVASCRIPT
+    ================================================== -->
+
+    <!-- Ethers.js v6 -->
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/ethers/6.13.1/ethers.umd.min.js"></script>
+
+    <!-- Конфигурация контрактов -->
+
+    <script src="js/config.js"></script>
+
+    <!-- Подключение MetaMask и Web3 -->
+
+    <script src="js/wallet.js"></script>
+
+    <!-- Логика главной страницы -->
+
+    <script src="js/home.js"></script>
+
+
+</body>
+</html>
