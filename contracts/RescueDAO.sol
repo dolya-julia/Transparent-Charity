@@ -1,32 +1,25 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
-// Интерфейс для взаимодействия с контрактом NFT-паспортов
-interface IRescueNFT {
-    function mintPassport(address to, uint256 requestId) external returns (uint256);
+import "./IRescueContracts.sol";
+
+interface IRescueMilestoneSummary {
+    function getMilestoneSummary(
+        uint256 requestId
+    ) external view returns (uint256 total, uint256 count);
 }
 
-/**
- * @title RescueDAO
- * @dev Децентрализованная система коллективного финансирования помощи животным
- * с автоматическим выпуском динамических NFT-паспортов.
- */
 contract RescueDAO {
-
-    // =========================================================
-    // 1. ОСНОВНЫЕ ПАРАМЕТРЫ И РОЛИ
-    // =========================================================
-
     address public admin;
     address[3] public validators;
 
-    // Адрес развернутого контракта RescueNFT
     address public rescueNftContract;
+    address public treasuryContract;
+    address public milestonesContract;
 
     mapping(address => bool) public isValidator;
     mapping(address => bool) public isMember;
 
-    // Репутация валидаторов и статистика проверок
     mapping(address => uint256) public validatorReputation;
     mapping(address => uint256) public validatorApprovedTotal;
 
@@ -34,61 +27,6 @@ contract RescueDAO {
     uint256 public constant MAX_VOTING_PERIOD = 30 days;
 
     bool private entered;
-
-    modifier onlyAdmin() {
-        require(msg.sender == admin, "Only admin");
-        _;
-    }
-
-    modifier onlyMember() {
-        require(isMember[msg.sender], "Only registered members");
-        _;
-    }
-
-    modifier onlyValidator() {
-        require(isValidator[msg.sender], "Only validators");
-        _;
-    }
-
-    modifier nonReentrant() {
-        require(!entered, "Reentrant call");
-        entered = true;
-        _;
-        entered = false;
-    }
-
-    // =========================================================
-    // 2. ОБЩИЙ ФОНД
-    // =========================================================
-
-    uint256 public totalDonated;
-    uint256 public totalReserved;
-    uint256 public totalSpent;
-    uint256 public requestCount;
-
-    function getAvailableBalance() public view returns (uint256) {
-        return totalDonated - totalReserved - totalSpent;
-    }
-
-    function getContractBalance() public view returns (uint256) {
-        return address(this).balance;
-    }
-
-    function donate() external payable {
-        require(msg.value > 0, "Donation must be greater than zero");
-
-        totalDonated += msg.value;
-
-        emit DonationReceived(
-            msg.sender,
-            msg.value,
-            totalDonated
-        );
-    }
-
-    // =========================================================
-    // 3. СТРУКТУРЫ ДАННЫХ
-    // =========================================================
 
     enum RequestStatus {
         Voting,
@@ -116,43 +54,28 @@ contract RescueDAO {
         bool exists;
     }
 
-    struct Milestone {
-        string description;
-        address payable recipient;
-        uint256 amount;
-        string evidenceURI;
-        bytes32 evidenceHash;
-        uint256 approvalCount;
-        bool evidenceSubmitted;
-        bool released;
-        bool exists;
-    }
-
     mapping(uint256 => AidRequest) private aidRequests;
+    mapping(uint256 => mapping(address => bool)) public hasVoted;
 
-    mapping(uint256 => mapping(uint256 => Milestone))
-        private milestones;
+    uint256 public requestCount;
 
-    mapping(uint256 => mapping(address => bool))
-        public hasVoted;
+    // -----------------------------------------------------
+    // СОБЫТИЯ
+    // -----------------------------------------------------
 
-    mapping(uint256 => mapping(uint256 => mapping(address => bool)))
-        public hasApprovedMilestone;
+    event DonationReceived(address indexed donor, uint256 amount);
 
-    // =========================================================
-    // 4. СОБЫТИЯ
-    // =========================================================
-
-    event DonationReceived(
+    event RequestDonationReceived(
+        uint256 indexed requestId,
         address indexed donor,
-        uint256 amount,
-        uint256 totalDonated
+        uint256 amount
     );
 
-    event MemberStatusChanged(
-        address indexed member,
-        bool registered
-    );
+    event TargetFundsReserved(uint256 indexed requestId, uint256 amount);
+    event GeneralFundsReserved(uint256 indexed requestId, uint256 amount);
+    event TargetFundsReassigned(uint256 indexed requestId, uint256 amount);
+
+    event MemberStatusChanged(address indexed member, bool registered);
 
     event AidRequestCreated(
         uint256 indexed requestId,
@@ -176,36 +99,6 @@ contract RescueDAO {
         uint256 reservedAmount
     );
 
-    event MilestoneCreated(
-        uint256 indexed requestId,
-        uint256 indexed milestoneId,
-        string description,
-        address recipient,
-        uint256 amount
-    );
-
-    event MilestoneEvidenceSubmitted(
-        uint256 indexed requestId,
-        uint256 indexed milestoneId,
-        string evidenceURI,
-        bytes32 evidenceHash
-    );
-
-    event MilestoneApproved(
-        uint256 indexed requestId,
-        uint256 indexed milestoneId,
-        address indexed validator,
-        uint256 approvalCount,
-        uint256 newReputation
-    );
-
-    event FundsReleased(
-        uint256 indexed requestId,
-        uint256 indexed milestoneId,
-        address recipient,
-        uint256 amount
-    );
-
     event AidRequestCancelled(
         uint256 indexed requestId,
         uint256 returnedToAvailableBalance
@@ -217,24 +110,56 @@ contract RescueDAO {
         address indexed owner
     );
 
-    // =========================================================
-    // 5. КОНСТРУКТОР И УПРАВЛЕНИЕ УЧАСТНИКАМИ
-    // =========================================================
+    event TreasuryUpdated(address indexed treasury);
+    event NftContractUpdated(address indexed nftContract);
+    event MilestonesUpdated(address indexed milestones);
+
+    // -----------------------------------------------------
+    // МОДИФИКАТОРЫ
+    // -----------------------------------------------------
+
+    modifier onlyAdmin() {
+        require(msg.sender == admin, "Only admin");
+        _;
+    }
+
+    modifier onlyMember() {
+        require(isMember[msg.sender], "Only registered members");
+        _;
+    }
+
+    modifier onlyTreasuryConfigured() {
+        require(treasuryContract != address(0), "Treasury not configured");
+        _;
+    }
+
+    modifier onlyMilestones() {
+        require(msg.sender == milestonesContract, "Only Milestones");
+        _;
+    }
+
+    modifier nonReentrant() {
+        require(!entered, "Reentrant call");
+        entered = true;
+        _;
+        entered = false;
+    }
+
+    // -----------------------------------------------------
+    // КОНСТРУКТОР
+    // -----------------------------------------------------
 
     constructor(address[3] memory _validators) {
         admin = msg.sender;
         isMember[msg.sender] = true;
 
         for (uint256 i = 0; i < 3; i++) {
-            require(
-                _validators[i] != address(0),
-                "Invalid validator address"
-            );
+            require(_validators[i] != address(0), "Invalid validator");
 
             for (uint256 j = i + 1; j < 3; j++) {
                 require(
                     _validators[i] != _validators[j],
-                    "Validators must be different"
+                    "Validators must differ"
                 );
             }
 
@@ -244,484 +169,415 @@ contract RescueDAO {
         }
     }
 
-    // Администратор устанавливает адрес NFT-контракта
-    function setRescueNftContract(
-        address _nftContract
-    ) external onlyAdmin {
-        require(
-            _nftContract != address(0),
-            "Invalid NFT contract address"
-        );
+    // -----------------------------------------------------
+    // НАСТРОЙКА КОНТРАКТОВ
+    // -----------------------------------------------------
 
-        rescueNftContract = _nftContract;
-    }
+    function setTreasuryContract(address treasury)
+        external
+        onlyAdmin
+    {
+        require(treasury != address(0), "Invalid Treasury");
 
-    function setMember(
-        address _member,
-        bool _registered
-    ) external onlyAdmin {
-        require(
-            _member != address(0),
-            "Invalid member address"
-        );
+        treasuryContract = treasury;
 
-        if (_member == admin) {
-            require(
-                _registered,
-                "Admin must remain registered"
+        if (milestonesContract != address(0)) {
+            IRescueTreasury(treasury).setMilestonesContract(
+                milestonesContract
             );
         }
 
-        isMember[_member] = _registered;
-
-        emit MemberStatusChanged(_member, _registered);
+        emit TreasuryUpdated(treasury);
     }
 
-    // =========================================================
-    // 6. СОЗДАНИЕ ЗАЯВОК
-    // =========================================================
+    function setRescueNftContract(address nft)
+        external
+        onlyAdmin
+    {
+        require(nft != address(0), "Invalid NFT");
 
-    /**
-     * @dev Создание заявки на помощь животному.
-     * Изображение для NFT генерируется автоматически
-     * в контракте RescueNFT.
-     */
+        rescueNftContract = nft;
+
+        emit NftContractUpdated(nft);
+    }
+
+    function setMilestonesContract(address milestones)
+        external
+        onlyAdmin
+    {
+        require(milestones != address(0), "Invalid Milestones");
+        require(treasuryContract != address(0), "Treasury not configured");
+
+        milestonesContract = milestones;
+
+        IRescueTreasury(treasuryContract).setMilestonesContract(
+            milestones
+        );
+
+        emit MilestonesUpdated(milestones);
+    }
+
+    function setMember(address member, bool registered)
+        external
+        onlyAdmin
+    {
+        require(member != address(0), "Invalid member");
+
+        if (member == admin) {
+            require(registered, "Admin must remain registered");
+        }
+
+        isMember[member] = registered;
+
+        emit MemberStatusChanged(member, registered);
+    }
+
+    // -----------------------------------------------------
+    // ПОЖЕРТВОВАНИЯ
+    // -----------------------------------------------------
+
+    function donate()
+        external
+        payable
+        onlyTreasuryConfigured
+        nonReentrant
+    {
+        require(msg.value > 0, "Zero donation");
+
+        IRescueTreasury(treasuryContract).donate{
+            value: msg.value
+        }(msg.sender);
+
+        emit DonationReceived(msg.sender, msg.value);
+    }
+
+    function donateToRequest(uint256 requestId)
+        external
+        payable
+        onlyTreasuryConfigured
+        nonReentrant
+    {
+        AidRequest storage r = aidRequests[requestId];
+
+        require(r.exists, "Request does not exist");
+        require(r.status == RequestStatus.Voting, "Not voting");
+        require(block.timestamp < r.votingEndsAt, "Voting ended");
+        require(msg.value > 0, "Zero donation");
+
+        uint256 current =
+            IRescueTreasury(treasuryContract).requestDonations(requestId);
+
+        require(
+            current + msg.value <= r.requestedAmount,
+            "Donation exceeds goal"
+        );
+
+        IRescueTreasury(treasuryContract).donateToRequest{
+            value: msg.value
+        }(requestId, msg.sender);
+
+        emit RequestDonationReceived(requestId, msg.sender, msg.value);
+    }
+
+    // -----------------------------------------------------
+    // СОЗДАНИЕ ЗАЯВКИ
+    // -----------------------------------------------------
+
     function createAidRequest(
-        string memory _animalName,
-        string memory _description,
-        string memory _evidenceURI,
-        bytes32 _evidenceHash,
-        uint256 _requestedAmount,
-        uint256 _votingDuration
+        string calldata animalName,
+        string calldata description,
+        string calldata evidenceURI,
+        bytes32 evidenceHash,
+        uint256 requestedAmount,
+        uint256 votingDuration
     )
         external
         onlyMember
         returns (uint256)
     {
-        require(
-            bytes(_animalName).length > 0,
-            "Animal name cannot be empty"
-        );
+        require(bytes(animalName).length > 0, "Empty animal name");
+        require(bytes(description).length > 0, "Empty description");
+        require(bytes(evidenceURI).length > 0, "Empty evidence URI");
+        require(evidenceHash != bytes32(0), "Invalid evidence hash");
+        require(requestedAmount > 0, "Invalid amount");
 
         require(
-            bytes(_description).length > 0,
-            "Description cannot be empty"
-        );
-
-        require(
-            bytes(_evidenceURI).length > 0,
-            "Evidence URI cannot be empty"
-        );
-
-        require(
-            _evidenceHash != bytes32(0),
-            "Invalid evidence hash"
-        );
-
-        require(
-            _requestedAmount > 0,
-            "Amount must be greater than zero"
-        );
-
-        require(
-            _votingDuration >= MIN_VOTING_PERIOD &&
-            _votingDuration <= MAX_VOTING_PERIOD,
+            votingDuration >= MIN_VOTING_PERIOD &&
+            votingDuration <= MAX_VOTING_PERIOD,
             "Invalid voting duration"
         );
 
-        uint256 newRequestId = ++requestCount;
+        uint256 id = ++requestCount;
+        AidRequest storage r = aidRequests[id];
 
-        AidRequest storage request = aidRequests[newRequestId];
+        r.animalName = animalName;
+        r.description = description;
+        r.evidenceURI = evidenceURI;
+        r.evidenceHash = evidenceHash;
+        r.requester = msg.sender;
+        r.requestedAmount = requestedAmount;
+        r.votingEndsAt = block.timestamp + votingDuration;
+        r.status = RequestStatus.Voting;
+        r.exists = true;
 
-        request.animalName = _animalName;
-        request.description = _description;
-        request.evidenceURI = _evidenceURI;
-        request.evidenceHash = _evidenceHash;
-        request.requester = msg.sender;
-        request.requestedAmount = _requestedAmount;
-        request.votingEndsAt = block.timestamp + _votingDuration;
-        request.status = RequestStatus.Voting;
-        request.exists = true;
-
-        // Автоматический выпуск NFT-паспорта
         if (rescueNftContract != address(0)) {
             try IRescueNFT(rescueNftContract).mintPassport(
                 msg.sender,
-                newRequestId
+                id
             ) returns (uint256 tokenId) {
-
-                emit PassportMinted(
-                    newRequestId,
-                    tokenId,
-                    msg.sender
-                );
-
+                emit PassportMinted(id, tokenId, msg.sender);
             } catch {
-                // Заявка сохраняется даже при ошибке выпуска NFT.
+                // Ошибка выпуска NFT не отменяет создание заявки.
             }
         }
 
         emit AidRequestCreated(
-            newRequestId,
+            id,
             msg.sender,
-            _animalName,
-            _requestedAmount,
-            request.votingEndsAt
+            animalName,
+            requestedAmount,
+            r.votingEndsAt
         );
 
-        return newRequestId;
+        return id;
     }
 
-    // =========================================================
-    // 7. ДОБАВЛЕНИЕ ЭТАПОВ ЛЕЧЕНИЯ
-    // =========================================================
+    // -----------------------------------------------------
+    // ГОЛОСОВАНИЕ
+    // -----------------------------------------------------
 
-    function addMilestone(
-        uint256 _requestId,
-        string memory _description,
-        address payable _recipient,
-        uint256 _amount
-    ) external {
-        AidRequest storage request = aidRequests[_requestId];
+    function vote(uint256 requestId, bool support)
+        external
+        onlyMember
+    {
+        AidRequest storage r = aidRequests[requestId];
 
-        require(request.exists, "Request does not exist");
-        require(
-            msg.sender == request.requester,
-            "Only requester can add milestones"
-        );
+        require(r.exists, "Request does not exist");
+        require(r.status == RequestStatus.Voting, "Not voting");
+        require(block.timestamp < r.votingEndsAt, "Voting ended");
+        require(!hasVoted[requestId][msg.sender], "Already voted");
 
-        require(
-            request.status == RequestStatus.Voting,
-            "Request is not in voting status"
-        );
+        hasVoted[requestId][msg.sender] = true;
 
-        require(
-            block.timestamp < request.votingEndsAt,
-            "Voting period has ended"
-        );
-
-        require(
-            bytes(_description).length > 0,
-            "Milestone description cannot be empty"
-        );
-
-        require(
-            _recipient != address(0),
-            "Invalid milestone recipient"
-        );
-
-        require(
-            _amount > 0,
-            "Milestone amount must be greater than zero"
-        );
-
-        require(
-            request.milestoneTotal + _amount <= request.requestedAmount,
-            "Milestone total exceeds requested amount"
-        );
-
-        uint256 milestoneId = ++request.milestoneCount;
-
-        Milestone storage milestone =
-            milestones[_requestId][milestoneId];
-
-        milestone.description = _description;
-        milestone.recipient = _recipient;
-        milestone.amount = _amount;
-        milestone.exists = true;
-
-        request.milestoneTotal += _amount;
-
-        emit MilestoneCreated(
-            _requestId,
-            milestoneId,
-            _description,
-            _recipient,
-            _amount
-        );
-    }
-
-    // =========================================================
-    // 8. ГОЛОСОВАНИЕ
-    // =========================================================
-
-    function vote(
-        uint256 _requestId,
-        bool _support
-    ) external onlyMember {
-        AidRequest storage request = aidRequests[_requestId];
-
-        require(request.exists, "Request does not exist");
-
-        require(
-            request.status == RequestStatus.Voting,
-            "Request is not open for voting"
-        );
-
-        require(
-            block.timestamp < request.votingEndsAt,
-            "Voting period has ended"
-        );
-
-        require(
-            !hasVoted[_requestId][msg.sender],
-            "Already voted"
-        );
-
-        hasVoted[_requestId][msg.sender] = true;
-
-        if (_support) {
-            request.yesVotes++;
+        if (support) {
+            r.yesVotes++;
         } else {
-            request.noVotes++;
+            r.noVotes++;
         }
 
         emit VoteCast(
-            _requestId,
+            requestId,
             msg.sender,
-            _support,
-            request.yesVotes,
-            request.noVotes
+            support,
+            r.yesVotes,
+            r.noVotes
         );
     }
 
-    function finalizeRequest(uint256 _requestId) external {
-        AidRequest storage request = aidRequests[_requestId];
+    // -----------------------------------------------------
+    // ЗАВЕРШЕНИЕ ГОЛОСОВАНИЯ
+    // -----------------------------------------------------
 
-        require(request.exists, "Request does not exist");
+    function finalizeRequest(uint256 requestId)
+        external
+        onlyTreasuryConfigured
+    {
+        require(milestonesContract != address(0), "Milestones not configured");
 
-        require(
-            request.status == RequestStatus.Voting,
-            "Request already finalized"
-        );
+        AidRequest storage r = aidRequests[requestId];
 
-        require(
-            block.timestamp >= request.votingEndsAt,
-            "Voting period has not ended"
-        );
+        require(r.exists, "Request does not exist");
+        require(r.status == RequestStatus.Voting, "Already finalized");
+        require(block.timestamp >= r.votingEndsAt, "Voting not ended");
+
+        (
+            uint256 milestoneTotal,
+            uint256 milestoneCount
+        ) = IRescueMilestoneSummary(milestonesContract)
+            .getMilestoneSummary(requestId);
 
         bool milestonesValid =
-            request.milestoneCount > 0 &&
-            request.milestoneTotal == request.requestedAmount;
+            milestoneCount > 0 &&
+            milestoneTotal == r.requestedAmount;
 
         bool votingApproved =
-            request.yesVotes > request.noVotes &&
-            request.yesVotes > 0;
+            r.yesVotes > r.noVotes &&
+            r.yesVotes > 0;
+
+        IRescueTreasury t = IRescueTreasury(treasuryContract);
+
+        uint256 targetAvailable =
+            t.getAvailableRequestDonations(requestId);
+
+        uint256 targetToReserve = targetAvailable;
+
+        if (targetToReserve > r.requestedAmount) {
+            targetToReserve = r.requestedAmount;
+        }
+
+        uint256 generalRequired =
+            r.requestedAmount - targetToReserve;
 
         bool fundsAvailable =
-            getAvailableBalance() >= request.requestedAmount;
+            t.getAvailableBalance() >= generalRequired;
 
-        if (
-            milestonesValid &&
-            votingApproved &&
-            fundsAvailable
-        ) {
-            totalReserved += request.requestedAmount;
-            request.status = RequestStatus.Approved;
-
-            emit AidRequestFinalized(
-                _requestId,
-                RequestStatus.Approved,
-                request.requestedAmount
+        if (milestonesValid && votingApproved && fundsAvailable) {
+            t.reserveFunds(
+                requestId,
+                targetToReserve,
+                generalRequired
             );
 
-        } else {
-            request.status = RequestStatus.Rejected;
+            r.status = RequestStatus.Approved;
+
+            if (targetToReserve > 0) {
+                emit TargetFundsReserved(requestId, targetToReserve);
+            }
+
+            if (generalRequired > 0) {
+                emit GeneralFundsReserved(requestId, generalRequired);
+            }
 
             emit AidRequestFinalized(
-                _requestId,
+                requestId,
+                RequestStatus.Approved,
+                r.requestedAmount
+            );
+        } else {
+            r.status = RequestStatus.Rejected;
+
+            uint256 reassigned =
+                t.reassignAvailableTargetFunds(requestId);
+
+            if (reassigned > 0) {
+                emit TargetFundsReassigned(requestId, reassigned);
+            }
+
+            emit AidRequestFinalized(
+                requestId,
                 RequestStatus.Rejected,
                 0
             );
         }
     }
 
-    // =========================================================
-    // 9. ОТЧЕТЫ ПО ЭТАПАМ И ПОДТВЕРЖДЕНИЕ ВАЛИДАТОРАМИ
-    // =========================================================
+    // -----------------------------------------------------
+    // ВЫЗОВЫ ИЗ RESCUEMILESTONES
+    // -----------------------------------------------------
 
-    function submitMilestoneEvidence(
-        uint256 _requestId,
-        uint256 _milestoneId,
-        string memory _evidenceURI,
-        bytes32 _evidenceHash
-    ) external {
-        AidRequest storage request = aidRequests[_requestId];
-
-        require(request.exists, "Request does not exist");
-
-        require(
-            request.status == RequestStatus.Approved,
-            "Request is not approved"
-        );
-
-        require(
-            msg.sender == request.requester,
-            "Only requester can submit evidence"
-        );
-
-        Milestone storage milestone =
-            milestones[_requestId][_milestoneId];
-
-        require(
-            milestone.exists,
-            "Milestone does not exist"
-        );
-
-        require(
-            !milestone.released,
-            "Milestone already released"
-        );
-
-        require(
-            bytes(_evidenceURI).length > 0,
-            "Evidence URI cannot be empty"
-        );
-
-        require(
-            _evidenceHash != bytes32(0),
-            "Invalid evidence hash"
-        );
-
-        milestone.evidenceURI = _evidenceURI;
-        milestone.evidenceHash = _evidenceHash;
-        milestone.evidenceSubmitted = true;
-
-        emit MilestoneEvidenceSubmitted(
-            _requestId,
-            _milestoneId,
-            _evidenceURI,
-            _evidenceHash
-        );
-    }
-
-    function approveMilestone(
-        uint256 _requestId,
-        uint256 _milestoneId
-    )
+    function onMilestoneAdded(uint256 requestId, uint256 amount)
         external
-        onlyValidator
-        nonReentrant
+        onlyMilestones
     {
-        AidRequest storage request = aidRequests[_requestId];
+        AidRequest storage r = aidRequests[requestId];
 
-        require(request.exists, "Request does not exist");
-
-        require(
-            request.status == RequestStatus.Approved,
-            "Request is not approved"
-        );
-
-        Milestone storage milestone =
-            milestones[_requestId][_milestoneId];
+        require(r.exists, "Request does not exist");
+        require(r.status == RequestStatus.Voting, "Not voting");
 
         require(
-            milestone.exists,
-            "Milestone does not exist"
+            r.milestoneTotal + amount <= r.requestedAmount,
+            "Over limit"
         );
+
+        r.milestoneTotal += amount;
+        r.milestoneCount++;
+    }
+
+    function onValidatorApproved(address validator)
+        external
+        onlyMilestones
+    {
+        require(isValidator[validator], "Invalid validator");
+
+        validatorReputation[validator] += 5;
+        validatorApprovedTotal[validator]++;
+    }
+
+    function onMilestoneReleased(uint256 requestId, uint256 amount)
+        external
+        onlyMilestones
+    {
+        AidRequest storage r = aidRequests[requestId];
+
+        require(r.exists, "Request does not exist");
+        require(r.status == RequestStatus.Approved, "Not approved");
+
+        r.completedMilestones++;
+        r.releasedAmount += amount;
 
         require(
-            milestone.evidenceSubmitted,
-            "Evidence has not been submitted"
+            r.completedMilestones <= r.milestoneCount,
+            "Too many completed milestones"
         );
 
-        require(
-            !milestone.released,
-            "Milestone already released"
-        );
-
-        require(
-            !hasApprovedMilestone[_requestId][_milestoneId][msg.sender],
-            "Validator already approved"
-        );
-
-        hasApprovedMilestone[_requestId][_milestoneId][msg.sender] = true;
-        milestone.approvalCount++;
-
-        validatorReputation[msg.sender] += 5;
-        validatorApprovedTotal[msg.sender]++;
-
-        emit MilestoneApproved(
-            _requestId,
-            _milestoneId,
-            msg.sender,
-            milestone.approvalCount,
-            validatorReputation[msg.sender]
-        );
-
-        if (milestone.approvalCount >= 2) {
-            milestone.released = true;
-
-            request.completedMilestones++;
-            request.releasedAmount += milestone.amount;
-
-            totalReserved -= milestone.amount;
-            totalSpent += milestone.amount;
-
-            if (
-                request.completedMilestones ==
-                request.milestoneCount
-            ) {
-                request.status = RequestStatus.Completed;
-            }
-
-            (bool success, ) = milestone.recipient.call{
-                value: milestone.amount
-            }("");
-
-            require(success, "ETH transfer failed");
-
-            emit FundsReleased(
-                _requestId,
-                _milestoneId,
-                milestone.recipient,
-                milestone.amount
-            );
+        if (r.completedMilestones == r.milestoneCount) {
+            r.status = RequestStatus.Completed;
         }
     }
 
-    // =========================================================
-    // 10. ОТМЕНА ЗАЯВКИ
-    // =========================================================
+    // -----------------------------------------------------
+    // ОТМЕНА ЗАЯВКИ
+    // -----------------------------------------------------
 
-    function cancelRequest(uint256 _requestId) external {
-        AidRequest storage request = aidRequests[_requestId];
+    function cancelRequest(uint256 requestId)
+        external
+        onlyTreasuryConfigured
+    {
+        AidRequest storage r = aidRequests[requestId];
 
-        require(request.exists, "Request does not exist");
+        require(r.exists, "Request does not exist");
 
         require(
-            msg.sender == request.requester || msg.sender == admin,
-            "Not authorized to cancel"
+            msg.sender == r.requester || msg.sender == admin,
+            "Not authorized"
         );
 
         require(
-            request.status == RequestStatus.Voting ||
-            request.status == RequestStatus.Approved,
-            "Request cannot be cancelled"
+            r.status == RequestStatus.Voting ||
+            r.status == RequestStatus.Approved,
+            "Cannot cancel"
         );
 
-        uint256 returnedAmount = 0;
+        r.status = RequestStatus.Cancelled;
 
-        if (request.status == RequestStatus.Approved) {
-            returnedAmount =
-                request.requestedAmount - request.releasedAmount;
+        IRescueTreasury t = IRescueTreasury(treasuryContract);
 
-            totalReserved -= returnedAmount;
-        }
+        uint256 returnedAmount = t.releaseReservation(requestId);
+        uint256 reassignedAmount =
+            t.reassignAvailableTargetFunds(requestId);
 
-        request.status = RequestStatus.Cancelled;
+        returnedAmount += reassignedAmount;
 
-        emit AidRequestCancelled(
-            _requestId,
-            returnedAmount
+        emit AidRequestCancelled(requestId, returnedAmount);
+    }
+
+    // -----------------------------------------------------
+    // МИНИМАЛЬНЫЕ ГЕТТЕРЫ ДЛЯ ВЗАИМОДЕЙСТВИЯ КОНТРАКТОВ
+    // -----------------------------------------------------
+
+    function getRequestCore(uint256 requestId)
+        external
+        view
+        returns (
+            address requester,
+            uint256 requestedAmount,
+            uint8 status,
+            uint256 votingEndsAt,
+            bool exists
+        )
+    {
+        AidRequest storage r = aidRequests[requestId];
+
+        return (
+            r.requester,
+            r.requestedAmount,
+            uint8(r.status),
+            r.votingEndsAt,
+            r.exists
         );
     }
 
-    // =========================================================
-    // 11. ГЕТТЕРЫ ДЛЯ ФРОНТЕНДА И NFT
-    // =========================================================
-
-    function getAidRequestInfo(uint256 _requestId)
+    function getRequestTextAndMeta(uint256 requestId)
         external
         view
         returns (
@@ -729,23 +585,23 @@ contract RescueDAO {
             string memory description,
             string memory evidenceURI,
             bytes32 evidenceHash,
-            address requester
+            address requester,
+            bool exists
         )
     {
-        AidRequest storage request = aidRequests[_requestId];
-
-        require(request.exists, "Request does not exist");
+        AidRequest storage r = aidRequests[requestId];
 
         return (
-            request.animalName,
-            request.description,
-            request.evidenceURI,
-            request.evidenceHash,
-            request.requester
+            r.animalName,
+            r.description,
+            r.evidenceURI,
+            r.evidenceHash,
+            r.requester,
+            r.exists
         );
     }
 
-    function getAidRequestStats(uint256 _requestId)
+    function getRequestFinancialAndVoting(uint256 requestId)
         external
         view
         returns (
@@ -757,92 +613,41 @@ contract RescueDAO {
             uint256 releasedAmount,
             uint256 milestoneCount,
             uint256 completedMilestones,
-            RequestStatus status
+            uint8 status
         )
     {
-        AidRequest storage request = aidRequests[_requestId];
-
-        require(request.exists, "Request does not exist");
+        AidRequest storage r = aidRequests[requestId];
 
         return (
-            request.requestedAmount,
-            request.yesVotes,
-            request.noVotes,
-            request.votingEndsAt,
-            request.milestoneTotal,
-            request.releasedAmount,
-            request.milestoneCount,
-            request.completedMilestones,
-            request.status
+            r.requestedAmount,
+            r.yesVotes,
+            r.noVotes,
+            r.votingEndsAt,
+            r.milestoneTotal,
+            r.releasedAmount,
+            r.milestoneCount,
+            r.completedMilestones,
+            uint8(r.status)
         );
     }
 
-    function getMilestone(
-        uint256 _requestId,
-        uint256 _milestoneId
-    )
+    function getMilestoneSummary(uint256 requestId)
         external
         view
-        returns (
-            string memory description,
-            address recipient,
-            uint256 amount,
-            string memory evidenceURI,
-            bytes32 evidenceHash,
-            uint256 approvalCount,
-            bool evidenceSubmitted,
-            bool released
-        )
+        returns (uint256 total, uint256 count)
     {
-        Milestone storage milestone =
-            milestones[_requestId][_milestoneId];
+        AidRequest storage r = aidRequests[requestId];
+        require(r.exists, "Request does not exist");
 
-        require(
-            milestone.exists,
-            "Milestone does not exist"
-        );
-
-        return (
-            milestone.description,
-            milestone.recipient,
-            milestone.amount,
-            milestone.evidenceURI,
-            milestone.evidenceHash,
-            milestone.approvalCount,
-            milestone.evidenceSubmitted,
-            milestone.released
-        );
+        return (r.milestoneTotal, r.milestoneCount);
     }
 
-    function requestExists(
-        uint256 _requestId
-    ) external view returns (bool) {
-        return aidRequests[_requestId].exists;
-    }
-
-    function hasParticipantVoted(
-        uint256 _requestId,
-        address _participant
-    ) external view returns (bool) {
-        return hasVoted[_requestId][_participant];
-    }
-
-    function hasValidatorApproved(
-        uint256 _requestId,
-        uint256 _milestoneId,
-        address _validator
-    ) external view returns (bool) {
-        return hasApprovedMilestone[
-            _requestId
-        ][_milestoneId][_validator];
-    }
-
-    // =========================================================
-    // 12. ЗАПРЕТ ПРЯМОГО ПОЛУЧЕНИЯ ETH
-    // =========================================================
+    // -----------------------------------------------------
+    // ЗАЩИТА ОТ ПРЯМОГО ПОЛУЧЕНИЯ ETH
+    // -----------------------------------------------------
 
     receive() external payable {
-        revert("Use donate function");
+        revert("Use donation functions");
     }
 
     fallback() external payable {
