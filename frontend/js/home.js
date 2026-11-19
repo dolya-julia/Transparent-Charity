@@ -1,11 +1,14 @@
-
 window.addEventListener("DOMContentLoaded", async () => {
     try {
         const ready = await initWeb3();
 
         if (!ready) return;
 
-        await loadPoolStats();
+        await Promise.all([
+            loadPoolStats(),
+            loadTargetDonationStats()
+        ]);
+
         await loadAllRequests();
 
     } catch (err) {
@@ -117,6 +120,44 @@ async function loadPoolStats() {
             "Ошибка загрузки статистики фонда:",
             err
         );
+    }
+}
+
+
+/**
+ * Загрузка общей статистики целевых пожертвований.
+ *
+ * totalTargetDonations — общий объём средств, направленных
+ * донорами непосредственно на отдельные заявки.
+ */
+async function loadTargetDonationStats() {
+    const targetElement = document.getElementById("statTargetDonated");
+
+    if (!targetElement) return;
+
+    try {
+        requireContract(treasuryContract, "RescueTreasury");
+
+        if (typeof treasuryContract.totalTargetDonations !== "function") {
+            targetElement.textContent = "Недоступно";
+            console.warn(
+                "В ABI RescueTreasury отсутствует totalTargetDonations()."
+            );
+            return;
+        }
+
+        const total = await treasuryContract.totalTargetDonations();
+
+        targetElement.textContent =
+            `${ethers.formatEther(total)} ETH`;
+
+    } catch (err) {
+        console.error(
+            "Ошибка загрузки статистики целевых пожертвований:",
+            err
+        );
+
+        targetElement.textContent = "Не удалось загрузить";
     }
 }
 
@@ -670,6 +711,89 @@ async function loadAllRequests() {
             const milestoneCount =
                 stats.milestoneCount.toString();
 
+            // Целевые пожертвования, направленные именно на эту заявку.
+            // Если getter отсутствует в ABI/контракте, карточка продолжит
+            // отображаться, но сообщит, что статистика недоступна.
+            let targetDonatedWei = 0n;
+            let targetFundingAvailable = false;
+
+            try {
+                if (
+                    treasuryContract &&
+                    typeof treasuryContract.requestDonations === "function"
+                ) {
+                    targetDonatedWei =
+                        await treasuryContract.requestDonations(i);
+
+                    targetFundingAvailable = true;
+                }
+            } catch (targetErr) {
+                console.warn(
+                    `Не удалось получить целевые пожертвования заявки #${i}:`,
+                    targetErr
+                );
+            }
+
+            const targetDonatedEth = targetFundingAvailable
+                ? Number(ethers.formatEther(targetDonatedWei))
+                : 0;
+
+            const requestedEthNumber = Number(reqEth);
+
+            const targetFundingPercent =
+                targetFundingAvailable && requestedEthNumber > 0
+                    ? Math.min(
+                        100,
+                        (targetDonatedEth / requestedEthNumber) * 100
+                    )
+                    : 0;
+
+            const targetFundingHtml = targetFundingAvailable
+                ? `
+                    <div style="margin-top:0.85rem;">
+                        <div class="row-between" style="gap:0.5rem; margin-bottom:0.35rem;">
+                            <span>Целевые пожертвования:</span>
+                            <strong style="color:var(--text-main);">
+                                ${ethers.formatEther(targetDonatedWei)} / ${reqEth} ETH
+                            </strong>
+                        </div>
+
+                        <div
+                            role="progressbar"
+                            aria-label="Прогресс целевого финансирования заявки"
+                            aria-valuemin="0"
+                            aria-valuemax="100"
+                            aria-valuenow="${targetFundingPercent.toFixed(1)}"
+                            style="
+                                width:100%;
+                                height:8px;
+                                overflow:hidden;
+                                background:#e2e8f0;
+                                border-radius:999px;
+                            "
+                        >
+                            <div
+                                style="
+                                    width:${targetFundingPercent.toFixed(2)}%;
+                                    height:100%;
+                                    background:var(--primary);
+                                    border-radius:999px;
+                                    transition:width 0.25s ease;
+                                "
+                            ></div>
+                        </div>
+
+                        <div style="font-size:0.78rem; color:var(--text-muted); margin-top:0.3rem;">
+                            Собрано адресно: ${targetFundingPercent.toFixed(1)}%
+                        </div>
+                    </div>
+                `
+                : `
+                    <div style="margin-top:0.75rem; font-size:0.82rem; color:var(--text-muted);">
+                        Статистика целевых пожертвований временно недоступна.
+                    </div>
+                `;
+
 
             // ---------------------------------------------
             // Подготовка текста
@@ -749,8 +873,9 @@ async function loadAllRequests() {
                             (Выплачено: ${relEth} ETH)
                         </div>
 
+                        ${targetFundingHtml}
 
-                        <div>
+                        <div style="margin-top:0.5rem;">
                             Голоса DAO:
 
                             <strong style="color:var(--primary);">

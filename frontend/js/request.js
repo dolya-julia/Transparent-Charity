@@ -1,3 +1,4 @@
+
 const urlParams = new URLSearchParams(window.location.search);
 const requestId = Number(urlParams.get("id"));
 
@@ -5,6 +6,12 @@ const validRequestId =
     Number.isSafeInteger(requestId) && requestId > 0;
 
 let currentEvidenceHash = "";
+
+// Минимальный ABI RescueTreasury для чтения целевых пожертвований.
+const REQUEST_TREASURY_ABI = [
+    "function requestDonations(uint256 requestId) view returns (uint256)",
+    "function userRequestDonations(uint256 requestId, address donor) view returns (uint256)"
+];
 
 
 // =========================================================
@@ -68,6 +75,71 @@ function getErrorMessage(err) {
         err?.info?.error?.message ||
         err?.message ||
         "Неизвестная ошибка"
+    );
+}
+
+// Безопасное форматирование ETH.
+function formatEth(value) {
+    try {
+        return ethers.formatEther(value);
+    } catch (err) {
+        console.warn("Ошибка форматирования ETH:", err);
+        return "0";
+    }
+}
+
+// Получение контракта Treasury для чтения.
+async function getRequestTreasuryReader() {
+    if (!provider) {
+        throw new Error("Provider не инициализирован.");
+    }
+
+    let treasuryAddress = null;
+
+    // Сначала пробуем получить адрес из RescueDAO.
+    try {
+        if (contract && typeof contract.treasuryContract === "function") {
+            treasuryAddress = await contract.treasuryContract();
+        }
+    } catch (err) {
+        console.warn(
+            "Не удалось получить адрес Treasury из DAO:",
+            err
+        );
+    }
+
+    // Если getter недоступен, используем адрес из config.js.
+    if (
+        !treasuryAddress ||
+        treasuryAddress === ethers.ZeroAddress
+    ) {
+        if (
+            typeof TREASURY_ADDRESS !== "undefined" &&
+            ethers.isAddress(TREASURY_ADDRESS)
+        ) {
+            treasuryAddress = TREASURY_ADDRESS;
+        }
+    }
+
+    if (
+        !treasuryAddress ||
+        !ethers.isAddress(treasuryAddress) ||
+        treasuryAddress === ethers.ZeroAddress
+    ) {
+        throw new Error(
+            "Не удалось определить корректный адрес RescueTreasury."
+        );
+    }
+
+    console.log(
+        "Используется RescueTreasury:",
+        treasuryAddress
+    );
+
+    return new ethers.Contract(
+        treasuryAddress,
+        REQUEST_TREASURY_ABI,
+        provider
     );
 }
 
@@ -147,6 +219,74 @@ async function loadRequestDetails() {
                 userAddress
             )
             : false;
+
+        // -------------------------------------------------
+        // Целевые пожертвования
+        // -------------------------------------------------
+
+        let targetDonations = 0n;
+        let personalDonations = 0n;
+        let treasuryAvailable = false;
+        let treasuryError = "";
+
+        try {
+            const treasuryReader = await getRequestTreasuryReader();
+
+            const [totalDonations, myDonations] = await Promise.all([
+                treasuryReader.requestDonations(requestId),
+
+                userAddress
+                    ? treasuryReader.userRequestDonations(
+                        requestId,
+                        userAddress
+                    )
+                    : Promise.resolve(0n)
+            ]);
+
+            targetDonations = BigInt(totalDonations);
+            personalDonations = BigInt(myDonations);
+
+            treasuryAvailable = true;
+
+            console.log("Целевое финансирование заявки:", {
+                requestId,
+                targetDonations: formatEth(targetDonations),
+                personalDonations: formatEth(personalDonations),
+                userAddress
+            });
+
+        } catch (err) {
+            treasuryError = getErrorMessage(err);
+
+            console.error(
+                "Ошибка чтения целевых пожертвований:",
+                err
+            );
+        }
+
+        const requestedAmount = BigInt(stats.requestedAmount);
+
+        const remainingAmount =
+            requestedAmount > targetDonations
+                ? requestedAmount - targetDonations
+                : 0n;
+
+        const fundingProgress =
+            requestedAmount > 0n
+                ? Number(
+                    targetDonations >= requestedAmount
+                        ? 100n
+                        : targetDonations * 100n / requestedAmount
+                )
+                : 0;
+
+        // Целевое финансирование доступно только
+        // пока заявка находится на голосовании.
+        const canDonateToRequest =
+            statusNum === 0 &&
+            !votingEnded &&
+            remainingAmount > 0n &&
+            treasuryAvailable;
 
         // -------------------------------------------------
         // Фото животного
@@ -263,6 +403,234 @@ async function loadRequestDetails() {
                     </button>
                 `;
             }
+        }
+
+        // -------------------------------------------------
+        // Блок целевого финансирования
+        // -------------------------------------------------
+
+        let targetFundingBlock = "";
+
+        if (treasuryAvailable) {
+            targetFundingBlock = `
+                <div
+                    class="box"
+                    style="
+                        margin-top:1rem;
+                        border:1px solid var(--border);
+                    "
+                >
+                    <h3 style="margin-bottom:0.75rem;">
+                        🎯 Целевое финансирование заявки
+                    </h3>
+
+                    <div style="
+                        display:flex;
+                        justify-content:space-between;
+                        gap:0.5rem;
+                        margin-bottom:0.5rem;
+                        font-size:0.9rem;
+                    ">
+                        <span>Собрано:</span>
+
+                        <strong>
+                            ${formatEth(targetDonations)} ETH
+                        </strong>
+                    </div>
+
+                    <div style="
+                        width:100%;
+                        height:12px;
+                        background:var(--border);
+                        border-radius:999px;
+                        overflow:hidden;
+                        margin-bottom:0.5rem;
+                    ">
+                        <div style="
+                            width:${fundingProgress}%;
+                            height:100%;
+                            background:var(--primary);
+                            border-radius:999px;
+                            transition:width 0.3s ease;
+                        "></div>
+                    </div>
+
+                    <div style="
+                        display:flex;
+                        justify-content:space-between;
+                        gap:0.5rem;
+                        font-size:0.82rem;
+                        color:var(--text-muted);
+                    ">
+                        <span>Прогресс сбора</span>
+                        <strong>${fundingProgress}%</strong>
+                    </div>
+
+                    <div style="
+                        display:flex;
+                        justify-content:space-between;
+                        gap:0.5rem;
+                        margin-top:0.9rem;
+                        font-size:0.9rem;
+                    ">
+                        <span>Цель сбора:</span>
+
+                        <strong>
+                            ${formatEth(requestedAmount)} ETH
+                        </strong>
+                    </div>
+
+                    <div style="
+                        display:flex;
+                        justify-content:space-between;
+                        gap:0.5rem;
+                        margin-top:0.4rem;
+                        font-size:0.9rem;
+                    ">
+                        <span>Осталось собрать:</span>
+
+                        <strong style="color:var(--primary);">
+                            ${formatEth(remainingAmount)} ETH
+                        </strong>
+                    </div>
+
+                    ${
+                        userAddress
+                            ? `
+                                <div style="
+                                    display:flex;
+                                    justify-content:space-between;
+                                    gap:0.5rem;
+                                    margin-top:0.4rem;
+                                    font-size:0.9rem;
+                                ">
+                                    <span>Ваш вклад:</span>
+
+                                    <strong>
+                                        ${formatEth(personalDonations)} ETH
+                                    </strong>
+                                </div>
+                            `
+                            : `
+                                <p style="
+                                    margin-top:0.75rem;
+                                    font-size:0.85rem;
+                                    color:var(--text-muted);
+                                ">
+                                    Подключите кошелёк, чтобы увидеть
+                                    свой вклад в финансирование заявки.
+                                </p>
+                            `
+                    }
+
+                    ${
+                        canDonateToRequest
+                            ? `
+                                <div style="
+                                    margin-top:1rem;
+                                    padding-top:0.85rem;
+                                    border-top:1px solid var(--border);
+                                ">
+                                    <h4 style="margin-bottom:0.5rem;">
+                                        Поддержать эту заявку
+                                    </h4>
+
+                                    <p style="
+                                        font-size:0.83rem;
+                                        color:var(--text-muted);
+                                        margin-bottom:0.65rem;
+                                    ">
+                                        Пожертвование будет учтено отдельно
+                                        от общего фонда и привязано к заявке
+                                        #${requestId}.
+                                    </p>
+
+                                    <div class="form-group">
+                                        <label for="targetDonationAmount">
+                                            Сумма пожертвования (ETH)
+                                        </label>
+
+                                        <input
+                                            type="number"
+                                            id="targetDonationAmount"
+                                            class="input-field"
+                                            step="0.001"
+                                            min="0.000000000000000001"
+                                            max="${formatEth(remainingAmount)}"
+                                            placeholder="Например, 0.01"
+                                            style="
+                                                width:100%;
+                                                padding:0.6rem;
+                                                margin-top:0.25rem;
+                                            "
+                                        >
+                                    </div>
+
+                                    <button
+                                        class="btn btn-primary"
+                                        style="
+                                            width:100%;
+                                            margin-top:0.75rem;
+                                        "
+                                        onclick="donateToCurrentRequest()"
+                                    >
+                                        ❤️ Пожертвовать на эту заявку
+                                    </button>
+                                </div>
+                            `
+                            : statusNum !== 0
+                                ? `
+                                    <p style="
+                                        margin-top:1rem;
+                                        font-size:0.85rem;
+                                        color:var(--text-muted);
+                                    ">
+                                        Приём целевых пожертвований закрыт:
+                                        заявка уже не находится на этапе голосования.
+                                    </p>
+                                `
+                                : votingEnded
+                                    ? `
+                                        <p style="
+                                            margin-top:1rem;
+                                            font-size:0.85rem;
+                                            color:var(--text-muted);
+                                        ">
+                                            Время голосования завершилось.
+                                            Целевые пожертвования больше не принимаются.
+                                        </p>
+                                    `
+                                    : remainingAmount === 0n
+                                        ? `
+                                            <p style="
+                                                margin-top:1rem;
+                                                font-size:0.85rem;
+                                                color:var(--primary);
+                                                font-weight:600;
+                                            ">
+                                                Целевая сумма собрана полностью.
+                                            </p>
+                                        `
+                                        : ""
+                    }
+                </div>
+            `;
+        } else {
+            targetFundingBlock = `
+                <div class="box" style="margin-top:1rem;">
+                    <h3>🎯 Целевое финансирование</h3>
+
+                    <p style="
+                        margin-top:0.5rem;
+                        font-size:0.85rem;
+                        color:var(--text-muted);
+                    ">
+                        Не удалось получить информацию из Treasury.
+                        Проверьте адрес Treasury и наличие функций
+                        requestDonations и userRequestDonations.
+                    </p>
+                </div>
+            `;
         }
 
         // -------------------------------------------------
@@ -487,69 +855,113 @@ async function loadRequestDetails() {
                 <!-- Правая колонка -->
 
                 <div
-                    class="box"
-                    style="position:sticky; top:90px;"
-                >
-
-                    <h3>Статус и Голосование DAO</h3>
-
-                    <div style="
+                    class="request-sidebar"
+                    style="
+                        align-self:start;
+                        position:sticky;
+                        top:90px;
                         display:flex;
                         flex-direction:column;
-                        gap:0.5rem;
-                        font-size:0.92rem;
-                        margin:1rem 0;
-                    ">
+                        gap:1rem;
+                        min-width:0;
+                    "
+                >
 
-                        <div style="display:flex; justify-content:space-between;">
-                            <span>Запрошено:</span>
+                    <!-- Целевое финансирование -->
 
-                            <strong>
-                                ${ethers.formatEther(stats.requestedAmount)} ETH
-                            </strong>
+                    ${targetFundingBlock}
+
+                    <!-- Статус и голосование DAO -->
+
+                    <div class="box">
+
+                        <h3>Статус и Голосование DAO</h3>
+
+                        <div style="
+                            display:flex;
+                            flex-direction:column;
+                            gap:0.65rem;
+                            font-size:0.92rem;
+                            margin:1rem 0;
+                        ">
+
+                            <div style="
+                                display:flex;
+                                justify-content:space-between;
+                                gap:1rem;
+                            ">
+                                <span>Запрошено:</span>
+
+                                <strong>
+                                    ${formatEth(stats.requestedAmount)} ETH
+                                </strong>
+                            </div>
+
+                            <div style="
+                                display:flex;
+                                justify-content:space-between;
+                                gap:1rem;
+                            ">
+                                <span>Запланировано этапов:</span>
+
+                                <strong>
+                                    ${formatEth(stats.milestoneTotal)} ETH
+                                </strong>
+                            </div>
+
+                            <div style="
+                                display:flex;
+                                justify-content:space-between;
+                                gap:1rem;
+                            ">
+                                <span>Выплачено:</span>
+
+                                <strong style="color:var(--primary);">
+                                    ${formatEth(stats.releasedAmount)} ETH
+                                </strong>
+                            </div>
+
+                            <div style="
+                                display:flex;
+                                justify-content:space-between;
+                                gap:1rem;
+                            ">
+                                <span>Окончание голосования:</span>
+
+                                <strong style="text-align:right;">
+                                    ${endsDate}
+                                </strong>
+                            </div>
+
+                            <div style="
+                                display:flex;
+                                justify-content:space-between;
+                                gap:1rem;
+                            ">
+                                <span>Голоса ЗА:</span>
+
+                                <strong style="color:var(--primary);">
+                                    ${stats.yesVotes}
+                                </strong>
+                            </div>
+
+                            <div style="
+                                display:flex;
+                                justify-content:space-between;
+                                gap:1rem;
+                            ">
+                                <span>Голоса ПРОТИВ:</span>
+
+                                <strong style="color:var(--danger);">
+                                    ${stats.noVotes}
+                                </strong>
+                            </div>
+
                         </div>
 
-                        <div style="display:flex; justify-content:space-between;">
-                            <span>Запланировано этапов:</span>
-
-                            <strong>
-                                ${ethers.formatEther(stats.milestoneTotal)} ETH
-                            </strong>
-                        </div>
-
-                        <div style="display:flex; justify-content:space-between;">
-                            <span>Выплачено:</span>
-
-                            <strong style="color:var(--primary);">
-                                ${ethers.formatEther(stats.releasedAmount)} ETH
-                            </strong>
-                        </div>
-
-                        <div style="display:flex; justify-content:space-between;">
-                            <span>Окончание голосования:</span>
-
-                            <strong>${endsDate}</strong>
-                        </div>
-
-                        <div style="display:flex; justify-content:space-between;">
-                            <span>Голоса ЗА:</span>
-
-                            <strong style="color:var(--primary);">
-                                ${stats.yesVotes}
-                            </strong>
-                        </div>
-
-                        <div style="display:flex; justify-content:space-between;">
-                            <span>Голоса ПРОТИВ:</span>
-
-                            <strong style="color:var(--danger);">
-                                ${stats.noVotes}
-                            </strong>
-                        </div>
+                        ${votingControls}
 
                     </div>
-
-                    ${votingControls}
 
                 </div>
 
@@ -580,7 +992,157 @@ async function loadRequestDetails() {
 
 
 // =========================================================
-// 4. ЗАГРУЗКА NFT-ПАСПОРТА
+// 4. ЦЕЛЕВОЕ ПОЖЕРТВОВАНИЕ НА ЗАЯВКУ
+// =========================================================
+
+async function donateToCurrentRequest() {
+    const amountInput =
+        document.getElementById("targetDonationAmount");
+
+    const amount = amountInput?.value?.trim();
+
+    try {
+        if (!signer) {
+            throw new Error(
+                "Сначала подключите MetaMask."
+            );
+        }
+
+        if (!contract) {
+            throw new Error(
+                "Контракт RescueDAO не инициализирован."
+            );
+        }
+
+        if (!amount || !/^\d+(\.\d+)?$/.test(amount)) {
+            throw new Error(
+                "Введите корректную сумму в ETH."
+            );
+        }
+
+        const donationWei = ethers.parseEther(amount);
+
+        if (donationWei <= 0n) {
+            throw new Error(
+                "Сумма пожертвования должна быть больше нуля."
+            );
+        }
+
+        // Получаем актуальные данные из Treasury.
+        const treasuryReader =
+            await getRequestTreasuryReader();
+
+        const [targetDonations, requestedAmount] =
+            await Promise.all([
+                treasuryReader.requestDonations(requestId),
+                (async () => {
+                    const stats =
+                        await daoViewContract.getAidRequestStats(
+                            requestId
+                        );
+
+                    return BigInt(stats.requestedAmount);
+                })()
+            ]);
+
+        const remainingAmount =
+            requestedAmount > targetDonations
+                ? requestedAmount - targetDonations
+                : 0n;
+
+        if (remainingAmount === 0n) {
+            throw new Error(
+                "Целевая сумма заявки уже собрана."
+            );
+        }
+
+        if (donationWei > remainingAmount) {
+            throw new Error(
+                "Сумма пожертвования превышает остаток цели. Осталось собрать: " +
+                formatEth(remainingAmount) +
+                " ETH."
+            );
+        }
+
+        // Дополнительно проверяем статус заявки и срок голосования.
+        const info =
+            await daoViewContract.getAidRequestStats(requestId);
+
+        const statusNum = Number(info.status);
+        const votingEndsAt = Number(info.votingEndsAt);
+        const nowSec = Math.floor(Date.now() / 1000);
+
+        if (statusNum !== 0) {
+            throw new Error(
+                "Целевые пожертвования принимаются только для заявок на этапе голосования."
+            );
+        }
+
+        if (nowSec >= votingEndsAt) {
+            throw new Error(
+                "Время голосования завершилось. Целевые пожертвования больше не принимаются."
+            );
+        }
+
+        const confirmed = confirm(
+            `Вы действительно хотите пожертвовать ${amount} ETH на заявку #${requestId}?`
+        );
+
+        if (!confirmed) return;
+
+        /*
+         * Вызов выполняется через RescueDAO.
+         *
+         * DAO проверяет:
+         * - существование заявки;
+         * - статус Voting;
+         * - срок голосования;
+         * - ненулевую сумму;
+         * - соблюдение лимита запрошенной суммы.
+         *
+         * Treasury учитывает вклад конкретного пользователя.
+         */
+        const tx = await contract.donateToRequest(
+            requestId,
+            {
+                value: donationWei
+            }
+        );
+
+        alert(
+            "Пожертвование отправлено. Ожидаем подтверждения транзакции..."
+        );
+
+        const receipt = await tx.wait();
+
+        if (!receipt || receipt.status !== 1) {
+            throw new Error(
+                "Транзакция пожертвования не была успешно подтверждена."
+            );
+        }
+
+        alert(
+            "Спасибо! Ваше целевое пожертвование успешно учтено."
+        );
+
+        window.location.reload();
+
+    } catch (err) {
+        console.error(
+            "Ошибка целевого пожертвования:",
+            err
+        );
+
+        alert(
+            "Не удалось выполнить пожертвование:\n" +
+            getErrorMessage(err)
+        );
+    }
+}
+
+
+// =========================================================
+// 5. ЗАГРУЗКА NFT-ПАСПОРТА
 // =========================================================
 
 async function loadNftPassport(requestId) {
@@ -798,7 +1360,7 @@ async function loadNftPassport(requestId) {
 
 
 // =========================================================
-// 5. ПРОВЕРКА ХЭША ДОКУМЕНТА ЗАЯВКИ
+// 6. ПРОВЕРКА ХЭША ДОКУМЕНТА ЗАЯВКИ
 // =========================================================
 
 async function verifyDocumentHash() {
@@ -847,7 +1409,7 @@ async function verifyDocumentHash() {
 
 
 // =========================================================
-// 6. ГОЛОСОВАНИЕ DAO
+// 7. ГОЛОСОВАНИЕ DAO
 // =========================================================
 
 async function castVote(support) {
@@ -888,7 +1450,7 @@ async function castVote(support) {
 
 
 // =========================================================
-// 7. ФИНАЛИЗАЦИЯ ЗАЯВКИ
+// 8. ФИНАЛИЗАЦИЯ ЗАЯВКИ
 // =========================================================
 
 async function finalizeReq() {
@@ -928,7 +1490,7 @@ async function finalizeReq() {
 
 
 // =========================================================
-// 8. ДОБАВЛЕНИЕ ЭТАПА ФИНАНСИРОВАНИЯ
+// 9. ДОБАВЛЕНИЕ ЭТАПА ФИНАНСИРОВАНИЯ
 // =========================================================
 
 async function createNewMilestone() {
@@ -996,7 +1558,7 @@ async function createNewMilestone() {
 
 
 // =========================================================
-// 9. ЗАГРУЗКА СПИСКА ЭТАПОВ
+// 10. ЗАГРУЗКА СПИСКА ЭТАПОВ
 // =========================================================
 
 async function loadMilestonesList(
@@ -1196,7 +1758,7 @@ async function loadMilestonesList(
 
 
 // =========================================================
-// 10. ОТПРАВКА ОТЧЁТА ПО ЭТАПУ
+// 11. ОТПРАВКА ОТЧЁТА ПО ЭТАПУ
 // =========================================================
 
 async function submitEvidence(milestoneId) {
