@@ -1,7 +1,7 @@
 
-// =========================================================
-// 1. АДРЕСА КОНТРАКТОВ
-// =========================================================
+ // =========================================================
+ // 1. АДРЕСА КОНТРАКТОВ
+ // =========================================================
 
 // Основной контракт DAO: заявки, голосование, участники.
 const DAO_ADDRESS =
@@ -23,6 +23,11 @@ const DAO_VIEW_ADDRESS =
 const TREASURY_ADDRESS =
     "0x8251E86c6Fbfb2276A3Be0fCc237432918612fE8";
 
+// Контракт NFT-бейджей достижений пользователей.
+const BADGES_ADDRESS =
+    "ВСТАВЬ_АДРЕС_РАЗВЕРНУТОГО_RESCUE_BADGES";
+
+
 // =========================================================
 // 2. АДРЕСА РЕНДЕРЕРОВ NFT
 // =========================================================
@@ -36,6 +41,7 @@ const LAYOUT_RENDERER_ADDRESS =
 const PASSPORT_RENDERER_ADDRESS =
     "0x3a0355aab35DeF372Af3645cdfAdc5aA0767aB44";
 
+
 // =========================================================
 // 3. BACKEND И EXPLORER
 // =========================================================
@@ -44,6 +50,7 @@ const API_URL = "http://localhost:3001/api";
 
 // Локальная Geth-сеть.
 const EXPLORER_URL = "";
+
 
 // =========================================================
 // 4. СТАТУСЫ ЗАЯВОК
@@ -56,6 +63,7 @@ const STATUS_LABELS = [
     { text: "Завершена", cls: "badge-gray" },
     { text: "Отменена", cls: "badge-gray" }
 ];
+
 
 // =========================================================
 // 5. ABI ОСНОВНОГО RESCUEDAO
@@ -81,7 +89,12 @@ const DAO_ABI = [
 
     "function milestonesContract() view returns (address)",
 
+    "function badgesContract() view returns (address)",
+
+    "function pendingBadgeCompletion(uint256 requestId) view returns (bool)",
+
     "function requestCount() view returns (uint256)",
+
 
     // -----------------------------------------------------
     // Настройка контрактов и участников
@@ -93,7 +106,10 @@ const DAO_ABI = [
 
     "function setMilestonesContract(address milestones)",
 
+    "function setBadgesContract(address badges)",
+
     "function setMember(address member, bool registered)",
+
 
     // -----------------------------------------------------
     // Пожертвования
@@ -102,6 +118,7 @@ const DAO_ABI = [
     "function donate() payable",
 
     "function donateToRequest(uint256 requestId) payable",
+
 
     // -----------------------------------------------------
     // Создание и управление заявками
@@ -115,11 +132,15 @@ const DAO_ABI = [
 
     "function cancelRequest(uint256 requestId)",
 
+    "function retryBadgeCompletion(uint256 requestId)",
+
+
     // -----------------------------------------------------
     // Проверка голосования
     // -----------------------------------------------------
 
     "function hasVoted(uint256 requestId, address voter) view returns (bool)",
+
 
     // -----------------------------------------------------
     // Данные заявки для взаимодействия контрактов
@@ -133,6 +154,7 @@ const DAO_ABI = [
 
     "function getMilestoneSummary(uint256 requestId) view returns (uint256 total, uint256 count)",
 
+
     // -----------------------------------------------------
     // Обратные вызовы от RescueMilestones
     // -----------------------------------------------------
@@ -143,6 +165,7 @@ const DAO_ABI = [
 
     "function onMilestoneReleased(uint256 requestId, uint256 amount)",
 
+
     // -----------------------------------------------------
     // Репутация валидаторов
     // -----------------------------------------------------
@@ -150,6 +173,7 @@ const DAO_ABI = [
     "function validatorReputation(address validator) view returns (uint256)",
 
     "function validatorApprovedTotal(address validator) view returns (uint256)",
+
 
     // -----------------------------------------------------
     // События
@@ -175,11 +199,26 @@ const DAO_ABI = [
 
     "event NftContractUpdated(address indexed nftContract)",
 
-    "event MilestonesUpdated(address indexed milestones)"
+    "event MilestonesUpdated(address indexed milestones)",
+
+    // -----------------------------------------------------
+    // События RescueBadges
+    // -----------------------------------------------------
+
+    "event BadgesContractUpdated(address indexed badgesContract)",
+
+    "event BadgeDonationRecorded(address indexed donor, uint256 indexed requestId, uint256 amount)",
+
+    "event BadgeCompletionNotified(uint256 indexed requestId)",
+
+    "event BadgeCompletionQueued(uint256 indexed requestId)",
+
+    "event BadgeCompletionRetried(uint256 indexed requestId)"
 ];
 
+
 // =========================================================
-// 6. ABI RESCUED AOVIEW
+// 6. ABI RESCUEDAO VIEW
 // =========================================================
 
 const DAO_VIEW_ABI = [
@@ -191,6 +230,7 @@ const DAO_VIEW_ABI = [
     "function daoContract() view returns (address)",
 
     "function treasuryContract() view returns (address)",
+
 
     // -----------------------------------------------------
     // Общая информация о заявках
@@ -208,6 +248,7 @@ const DAO_VIEW_ABI = [
 
     "function getMilestoneSummary(uint256 requestId) view returns (uint256 total, uint256 count)",
 
+
     // -----------------------------------------------------
     // Финансовая информация заявки
     // -----------------------------------------------------
@@ -217,6 +258,7 @@ const DAO_VIEW_ABI = [
     "function getUserRequestDonation(uint256 requestId, address user) view returns (uint256)",
 
     "function getAvailableRequestDonations(uint256 requestId) view returns (uint256)",
+
 
     // -----------------------------------------------------
     // Общая финансовая информация
@@ -230,12 +272,14 @@ const DAO_VIEW_ABI = [
 
     "function getTreasuryTotals() view returns (uint256 generalDonated, uint256 generalReserved, uint256 generalSpent, uint256 targetDonations, uint256 targetReserved, uint256 targetSpent, uint256 targetReassigned)",
 
+
     // -----------------------------------------------------
     // Голосование
     // -----------------------------------------------------
 
     "function hasParticipantVoted(uint256 requestId, address participant) view returns (bool)"
 ];
+
 
 // =========================================================
 // 7. ABI RESCUETREASURY
@@ -253,6 +297,7 @@ const TREASURY_ABI = [
 
     "function requestReservationCreated(uint256 requestId) view returns (bool)",
 
+
     // -----------------------------------------------------
     // Общие средства
     // -----------------------------------------------------
@@ -269,6 +314,7 @@ const TREASURY_ABI = [
 
     "function getTotalSpentAllSources() view returns (uint256)",
 
+
     // -----------------------------------------------------
     // Целевые пожертвования
     // -----------------------------------------------------
@@ -280,6 +326,7 @@ const TREASURY_ABI = [
     "function totalTargetSpent() view returns (uint256)",
 
     "function totalTargetReassigned() view returns (uint256)",
+
 
     // -----------------------------------------------------
     // Финансы отдельных заявок
@@ -298,6 +345,7 @@ const TREASURY_ABI = [
     "function requestTargetReassigned(uint256 requestId) view returns (uint256)",
 
     "function getAvailableRequestDonations(uint256 requestId) view returns (uint256)",
+
 
     // -----------------------------------------------------
     // События
@@ -322,6 +370,7 @@ const TREASURY_ABI = [
     "event MilestonesContractUpdated(address indexed milestones)"
 ];
 
+
 // =========================================================
 // 8. ABI RESCUEMILESTONES
 // =========================================================
@@ -338,6 +387,7 @@ const MILESTONES_ABI = [
 
     "function treasuryContract() view returns (address)",
 
+
     // -----------------------------------------------------
     // Настройка
     // -----------------------------------------------------
@@ -345,6 +395,7 @@ const MILESTONES_ABI = [
     "function setDAO(address dao)",
 
     "function setTreasury(address treasury)",
+
 
     // -----------------------------------------------------
     // Счётчики этапов
@@ -354,11 +405,13 @@ const MILESTONES_ABI = [
 
     "function milestoneTotal(uint256 requestId) view returns (uint256)",
 
+
     // -----------------------------------------------------
     // Создание этапа
     // -----------------------------------------------------
 
     "function addMilestone(uint256 requestId, string description, address recipient, uint256 amount)",
+
 
     // -----------------------------------------------------
     // Доказательства выполнения
@@ -366,11 +419,13 @@ const MILESTONES_ABI = [
 
     "function submitMilestoneEvidence(uint256 requestId, uint256 milestoneId, string evidenceURI, bytes32 evidenceHash)",
 
+
     // -----------------------------------------------------
     // Подтверждение этапа
     // -----------------------------------------------------
 
     "function approveMilestone(uint256 requestId, uint256 milestoneId)",
+
 
     // -----------------------------------------------------
     // Получение данных этапа
@@ -380,6 +435,7 @@ const MILESTONES_ABI = [
 
     "function getMilestoneSummary(uint256 requestId) view returns (uint256 total, uint256 count)",
 
+
     // -----------------------------------------------------
     // Проверка подтверждений
     // -----------------------------------------------------
@@ -387,6 +443,7 @@ const MILESTONES_ABI = [
     "function hasApprovedMilestone(uint256 requestId, uint256 milestoneId, address validator) view returns (bool)",
 
     "function hasValidatorApproved(uint256 requestId, uint256 milestoneId, address validator) view returns (bool)",
+
 
     // -----------------------------------------------------
     // События
@@ -401,6 +458,7 @@ const MILESTONES_ABI = [
     "event MilestoneFundsReleased(uint256 indexed requestId, uint256 indexed milestoneId, address recipient, uint256 amount, uint256 targetAmount, uint256 generalAmount)"
 ];
 
+
 // =========================================================
 // 9. ABI RESCUENFT
 // =========================================================
@@ -414,4 +472,95 @@ const NFT_ABI = [
     "function getTokenIdForRequest(uint256 requestId) view returns (uint256)",
 
     "function getRequestId(uint256 tokenId) view returns (uint256)"
+];
+
+
+// =========================================================
+// 10. ABI RESCUEBADGES
+// =========================================================
+
+const BADGES_ABI = [
+
+    // -----------------------------------------------------
+    // Основные параметры
+    // -----------------------------------------------------
+
+    "function daoContract() view returns (address)",
+
+    "function totalBadgesIssued() view returns (uint256)",
+
+
+    // -----------------------------------------------------
+    // Статистика пользователя
+    // -----------------------------------------------------
+
+    "function donationCount(address donor) view returns (uint256)",
+
+    "function uniqueRequestsSupported(address donor) view returns (uint256)",
+
+    "function getDonorStats(address donor) view returns (uint256 donations, uint256 uniqueRequests, uint256 badgesReceived)",
+
+
+    // -----------------------------------------------------
+    // Информация о пожертвованиях
+    // -----------------------------------------------------
+
+    "function donatedToRequest(address donor, uint256 requestId) view returns (bool)",
+
+    "function contributionToRequest(address donor, uint256 requestId) view returns (uint256)",
+
+
+    // -----------------------------------------------------
+    // Завершение заявок
+    // -----------------------------------------------------
+
+    "function completedRequests(uint256 requestId) view returns (bool)",
+
+
+    // -----------------------------------------------------
+    // Проверка достижений
+    // -----------------------------------------------------
+
+    "function hasBadge(address donor, uint8 badgeType) view returns (bool)",
+
+    "function badgeTokenId(address donor, uint8 badgeType) view returns (uint256)",
+
+    "function tokenBadgeType(uint256 tokenId) view returns (uint8)",
+
+    "function checkBadge(address donor, uint8 badgeType) view returns (bool)",
+
+    "function getBadgeTokenId(address donor, uint8 badgeType) view returns (uint256)",
+
+
+    // -----------------------------------------------------
+    // Получение четвертого достижения
+    // -----------------------------------------------------
+
+    "function claimRescueHeroBadge(uint256 requestId)",
+
+
+    // -----------------------------------------------------
+    // ERC721
+    // -----------------------------------------------------
+
+    "function balanceOf(address owner) view returns (uint256)",
+
+    "function ownerOf(uint256 tokenId) view returns (address)",
+
+    "function tokenURI(uint256 tokenId) view returns (string)",
+
+    "function name() view returns (string)",
+
+    "function symbol() view returns (string)",
+
+
+    // -----------------------------------------------------
+    // События
+    // -----------------------------------------------------
+
+    "event DonationRecorded(address indexed donor, uint256 indexed requestId, uint256 amount, uint256 donationCount)",
+
+    "event BadgeAwarded(address indexed recipient, uint8 indexed badgeType, uint256 indexed tokenId)",
+
+    "event RequestMarkedCompleted(uint256 indexed requestId)"
 ];
