@@ -1,22 +1,44 @@
 
+// ======================================================
+// 1. ИНИЦИАЛИЗАЦИЯ СТРАНИЦЫ
+// ======================================================
+
 window.addEventListener("DOMContentLoaded", async () => {
     try {
         const ready = await initWeb3();
+
         if (!ready) return;
 
-        // Определяем администратора через RescueDAO.
+        if (!contract || !daoViewContract ||
+            !milestonesContract || !treasuryContract) {
+            throw new Error(
+                "Не все контракты DAO инициализированы. Проверьте wallet.js."
+            );
+        }
+
+        if (!userRoles) {
+            throw new Error(
+                "Не удалось получить роли пользователя."
+            );
+        }
+
+        // Администратор определяется через основной RescueDAO.
         const adminAddress = await contract.admin();
 
         userRoles.isAdmin =
+            Boolean(userAddress) &&
             adminAddress.toLowerCase() === userAddress.toLowerCase();
 
-        // Показываем панель администратора только администратору DAO.
-        if (userRoles.isAdmin) {
-            const adminPanel = document.getElementById("adminPanel");
+        console.log("Адрес администратора DAO:", adminAddress);
+        console.log("Текущий пользователь:", userAddress);
+        console.log("Роль администратора:", userRoles.isAdmin);
 
-            if (adminPanel) {
-                adminPanel.style.display = "block";
-            }
+        // Панель администратора показываем только администратору.
+        const adminPanel = document.getElementById("adminPanel");
+
+        if (adminPanel) {
+            adminPanel.style.display =
+                userRoles.isAdmin ? "block" : "none";
         }
 
         await Promise.all([
@@ -36,10 +58,10 @@ window.addEventListener("DOMContentLoaded", async () => {
 
 
 // ======================================================
-// ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ
+// 2. ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ
 // ======================================================
 
-// Безопасное отображение текста, полученного из блокчейна.
+// Безопасное отображение текста через innerHTML.
 function escapeHtml(value) {
     return String(value ?? "").replace(/[&<>"']/g, char => {
         const entities = {
@@ -52,6 +74,20 @@ function escapeHtml(value) {
 
         return entities[char];
     });
+}
+
+
+// Сокращение Ethereum-адреса или хэша.
+function shortAddr(value) {
+    if (!value) return "—";
+
+    const str = String(value);
+
+    if (str.length <= 14) {
+        return str;
+    }
+
+    return `${str.slice(0, 8)}...${str.slice(-6)}`;
 }
 
 
@@ -69,6 +105,17 @@ function formatApprovalCount(count) {
 }
 
 
+// Форматирование ETH.
+function formatEth(value) {
+    try {
+        return ethers.formatEther(value);
+    } catch (err) {
+        console.warn("Ошибка форматирования ETH:", err);
+        return "0";
+    }
+}
+
+
 // Форматирование ошибок.
 function getErrorMessage(err) {
     return (
@@ -81,8 +128,80 @@ function getErrorMessage(err) {
 }
 
 
+// Проверка подключения кошелька.
+function ensureWallet() {
+    if (!signer) {
+        throw new Error(
+            "Сначала подключите MetaMask."
+        );
+    }
+
+    if (!userAddress) {
+        throw new Error(
+            "Не удалось определить адрес подключённого кошелька."
+        );
+    }
+}
+
+
+// Проверка доступности административных функций.
+function ensureAdmin() {
+    ensureWallet();
+
+    if (!userRoles?.isAdmin) {
+        throw new Error(
+            "Это действие доступно только администратору DAO."
+        );
+    }
+}
+
+
+// Проверка доступности функций валидатора.
+function ensureValidator() {
+    ensureWallet();
+
+    if (!userRoles?.isValidator) {
+        throw new Error(
+            "Это действие доступно только валидаторам DAO."
+        );
+    }
+}
+
+
+// Получение безопасного URL транзакции обозревателя.
+function getExplorerTransactionUrl(txHash) {
+    if (!EXPLORER_URL || !txHash) {
+        return "";
+    }
+
+    try {
+        const baseUrl = new URL(EXPLORER_URL);
+
+        if (
+            baseUrl.protocol !== "https:" &&
+            baseUrl.protocol !== "http:"
+        ) {
+            return "";
+        }
+
+        return new URL(
+            `tx/${encodeURIComponent(txHash)}`,
+            baseUrl.href.replace(/\/?$/, "/")
+        ).href;
+
+    } catch (err) {
+        console.warn(
+            "Некорректный EXPLORER_URL:",
+            err
+        );
+
+        return "";
+    }
+}
+
+
 // ======================================================
-// РЕГИСТРАЦИЯ УЧАСТНИКА DAO
+// 3. РЕГИСТРАЦИЯ УЧАСТНИКА DAO
 // ======================================================
 
 async function registerMember() {
@@ -97,18 +216,21 @@ async function registerMember() {
     const addr = input.value.trim();
 
     if (!ethers.isAddress(addr)) {
-        alert("Введите корректный Ethereum-адрес (0x...)");
-        return;
-    }
-
-    if (!userRoles.isAdmin) {
         alert(
-            "Только администратор DAO может регистрировать участников."
+            "Введите корректный Ethereum-адрес (0x...)."
         );
         return;
     }
 
     try {
+        ensureAdmin();
+
+        if (!contract) {
+            throw new Error(
+                "Контракт RescueDAO не инициализирован."
+            );
+        }
+
         // Регистрация участника выполняется через RescueDAO.
         const tx = await contract.setMember(addr, true);
 
@@ -127,7 +249,10 @@ async function registerMember() {
         input.value = "";
 
     } catch (err) {
-        console.error("Ошибка регистрации участника:", err);
+        console.error(
+            "Ошибка регистрации участника:",
+            err
+        );
 
         alert(
             "Ошибка регистрации: " +
@@ -138,7 +263,7 @@ async function registerMember() {
 
 
 // ======================================================
-// ОЧЕРЕДЬ ЭТАПОВ ДЛЯ ВАЛИДАТОРОВ
+// 4. ОЧЕРЕДЬ ЭТАПОВ ДЛЯ ВАЛИДАТОРОВ
 // ======================================================
 
 async function loadValidatorQueue() {
@@ -146,14 +271,26 @@ async function loadValidatorQueue() {
         document.getElementById("milestonesQueue");
 
     if (!container) {
-        console.error("Не найден элемент milestonesQueue");
+        console.error(
+            "Не найден элемент milestonesQueue."
+        );
         return;
     }
 
     try {
-        /*
-         * Количество заявок получаем через RescueDAOView.
-         */
+        if (!daoViewContract || !milestonesContract) {
+            throw new Error(
+                "Контракты RescueDAOView или RescueMilestones не инициализированы."
+            );
+        }
+
+        container.innerHTML = `
+            <p style="color:var(--text-muted);">
+                Загрузка очереди этапов...
+            </p>
+        `;
+
+        // Количество заявок читаем через RescueDAOView.
         const count = Number(
             await daoViewContract.getRequestCount()
         );
@@ -162,10 +299,7 @@ async function loadValidatorQueue() {
 
         for (let i = 1; i <= count; i++) {
 
-            /*
-             * Информация о заявке и статистика
-             * читаются через RescueDAOView.
-             */
+            // Информация о заявке и статистика читаются через RescueDAOView.
             const [info, stats] = await Promise.all([
                 daoViewContract.getAidRequestInfo(i),
                 daoViewContract.getAidRequestStats(i)
@@ -173,9 +307,7 @@ async function loadValidatorQueue() {
 
             const requestStatus = Number(stats.status);
 
-            /*
-             * Этапы заявки читаются через RescueMilestones.
-             */
+            // Этапы заявки читаются через RescueMilestones.
             const mCount = Number(stats.milestoneCount);
 
             for (let m = 1; m <= mCount; m++) {
@@ -183,14 +315,9 @@ async function loadValidatorQueue() {
                 const ms =
                     await milestonesContract.getMilestone(i, m);
 
-                /*
-                 * Проверяем, подтверждал ли текущий пользователь
-                 * именно этот этап.
-                 *
-                 * Функция находится в RescueMilestones.
-                 */
+                // Проверяем, подтверждал ли пользователь этот этап.
                 const alreadyApproved =
-                    userAddress && userRoles.isValidator
+                    Boolean(userAddress && userRoles?.isValidator)
                         ? await milestonesContract.hasValidatorApproved(
                             i,
                             m,
@@ -231,7 +358,7 @@ async function loadValidatorQueue() {
                     `;
 
                 // Пользователь не является валидатором.
-                } else if (!userRoles.isValidator) {
+                } else if (!userRoles?.isValidator) {
 
                     btnHtml = `
                         <span class="badge badge-gray">
@@ -239,7 +366,7 @@ async function loadValidatorQueue() {
                         </span>
                     `;
 
-                // Текущий валидатор уже подтвердил этап.
+                // Пользователь уже подтвердил этап.
                 } else if (alreadyApproved) {
 
                     btnHtml = `
@@ -249,7 +376,7 @@ async function loadValidatorQueue() {
                         </button>
                     `;
 
-                // Этап получил все необходимые подтверждения.
+                // Этап получил два подтверждения.
                 } else if (approvalCount >= 2) {
 
                     btnHtml = `
@@ -258,7 +385,7 @@ async function loadValidatorQueue() {
                         </span>
                     `;
 
-                // Можно подтвердить этап.
+                // Этап можно подтвердить.
                 } else {
 
                     btnHtml = `
@@ -292,17 +419,13 @@ async function loadValidatorQueue() {
                                 </strong>
                                 —
                                 <strong>
-                                    ${escapeHtml(
-                                        ethers.formatEther(ms.amount)
-                                    )} ETH
+                                    ${escapeHtml(formatEth(ms.amount))} ETH
                                 </strong>
                             </div>
 
                             <div class="mono" style="margin-top:0.2rem;">
                                 Получатель:
-                                ${escapeHtml(
-                                    formatAddress(ms.recipient)
-                                )}
+                                ${escapeHtml(formatAddress(ms.recipient))}
                             </div>
 
                             ${
@@ -318,9 +441,7 @@ async function loadValidatorQueue() {
                                             <br>
 
                                             Hash:
-                                            ${escapeHtml(
-                                                shortAddr(ms.evidenceHash)
-                                            )}
+                                            ${escapeHtml(shortAddr(ms.evidenceHash))}
                                         </div>
                                     `
                                     : ""
@@ -368,29 +489,22 @@ async function loadValidatorQueue() {
 
 
 // ======================================================
-// ПОДТВЕРЖДЕНИЕ ВЫПЛАТЫ ПО ЭТАПУ
+// 5. ПОДТВЕРЖДЕНИЕ ВЫПЛАТЫ ПО ЭТАПУ
 // ======================================================
 
 async function approveMs(reqId, msId) {
-
-    if (!userRoles.isValidator) {
-        alert(
-            "Подтверждать этапы могут только валидаторы DAO."
-        );
-        return;
-    }
-
     try {
-        if (!signer) {
+        ensureValidator();
+
+        if (!milestonesContract) {
             throw new Error(
-                "Сначала подключите MetaMask."
+                "Контракт RescueMilestones не инициализирован."
             );
         }
 
         /*
-         * ВАЖНО:
-         * approveMilestone находится в RescueMilestones,
-         * поэтому вызываем milestonesContract.
+         * approveMilestone находится в RescueMilestones.
+         * RescueDAO для этого вызова не используется.
          */
         const tx = await milestonesContract.approveMilestone(
             reqId,
@@ -433,26 +547,45 @@ async function approveMs(reqId, msId) {
 
 
 // ======================================================
-// ЖУРНАЛ СОБЫТИЙ DAO
+// 6. ЖУРНАЛ СОБЫТИЙ DAO
 // ======================================================
 
-
 async function loadAuditHistory() {
-    const timeline = document.getElementById("auditTimeline");
+    const timeline =
+        document.getElementById("auditTimeline");
 
     if (!timeline) {
-        console.error("Не найден элемент auditTimeline");
+        console.error(
+            "Не найден элемент auditTimeline."
+        );
         return;
     }
 
     try {
+        if (!provider) {
+            throw new Error(
+                "Provider не инициализирован."
+            );
+        }
+
+        if (
+            !contract ||
+            !treasuryContract ||
+            !milestonesContract
+        ) {
+            throw new Error(
+                "Не все контракты для загрузки истории инициализированы."
+            );
+        }
+
         timeline.innerHTML = `
             <p style="color:var(--text-muted);">
                 Загрузка истории операций...
             </p>
         `;
 
-        const currentBlock = await provider.getBlockNumber();
+        const currentBlock =
+            await provider.getBlockNumber();
 
         // Адреса и ABI фактически используемых контрактов.
         const sources = [
@@ -478,8 +611,6 @@ async function loadAuditHistory() {
         /*
          * Получаем логи небольшими диапазонами блоков.
          * Это надёжнее, чем один большой запрос getLogs().
-         *
-         * Начинаем с блока 0, чтобы не терять ранние операции.
          */
         const CHUNK_SIZE = 2000;
 
@@ -514,6 +645,7 @@ async function loadAuditHistory() {
             }
         }
 
+
         // =================================================
         // ДЕКОДИРОВАНИЕ СОБЫТИЙ
         // =================================================
@@ -531,9 +663,6 @@ async function loadAuditHistory() {
             });
         }
 
-        function formatEth(value) {
-            return ethers.formatEther(value);
-        }
 
         for (const log of allLogs) {
             let event;
@@ -543,6 +672,7 @@ async function loadAuditHistory() {
                     topics: log.topics,
                     data: log.data
                 });
+
             } catch (err) {
                 console.warn(
                     "Не удалось декодировать событие:",
@@ -557,6 +687,7 @@ async function loadAuditHistory() {
             if (!event) continue;
 
             const a = event.args;
+
 
             // ---------------------------------------------
             // RESCUE DAO
@@ -576,6 +707,7 @@ async function loadAuditHistory() {
                         );
                         break;
 
+
                     case "RequestDonationReceived":
                         addRecord(
                             log,
@@ -586,15 +718,17 @@ async function loadAuditHistory() {
                         );
                         break;
 
+
                     case "AidRequestCreated":
                         addRecord(
                             log,
                             "Новая заявка",
                             "badge-blue",
-                            `Заявка #${a.requestId} (${escapeHtml(a.animalName)}) создана на сумму ${formatEth(a.requestedAmount)} ETH. Заявитель: ${formatAddress(a.requester)}`,
+                            `Заявка #${a.requestId} (${a.animalName}) создана на сумму ${formatEth(a.requestedAmount)} ETH. Заявитель: ${formatAddress(a.requester)}`,
                             "request-created"
                         );
                         break;
+
 
                     case "VoteCast":
                         addRecord(
@@ -605,6 +739,7 @@ async function loadAuditHistory() {
                             "vote"
                         );
                         break;
+
 
                     case "AidRequestFinalized": {
                         const status = Number(a.status);
@@ -623,6 +758,7 @@ async function loadAuditHistory() {
                         break;
                     }
 
+
                     case "AidRequestCancelled":
                         addRecord(
                             log,
@@ -632,6 +768,7 @@ async function loadAuditHistory() {
                             "request-cancelled"
                         );
                         break;
+
 
                     case "PassportMinted":
                         addRecord(
@@ -645,6 +782,7 @@ async function loadAuditHistory() {
                 }
             }
 
+
             // ---------------------------------------------
             // RESCUE TREASURY
             // ---------------------------------------------
@@ -655,9 +793,9 @@ async function loadAuditHistory() {
 
                     case "DonationReceived":
                         /*
-                         * Такое же пожертвование уже отражается
-                         * событием DAO DonationReceived.
-                         * Сохраняем событие только как резервный вариант.
+                         * Аналогичное событие уже может быть
+                         * отражено в RescueDAO.
+                         * Дубликат будет удалён ниже.
                          */
                         addRecord(
                             log,
@@ -667,6 +805,7 @@ async function loadAuditHistory() {
                             "treasury-general-donation"
                         );
                         break;
+
 
                     case "RequestDonationReceived":
                         addRecord(
@@ -678,6 +817,7 @@ async function loadAuditHistory() {
                         );
                         break;
 
+
                     case "TargetFundsReserved":
                         addRecord(
                             log,
@@ -687,6 +827,7 @@ async function loadAuditHistory() {
                             "target-reserved"
                         );
                         break;
+
 
                     case "GeneralFundsReserved":
                         addRecord(
@@ -698,6 +839,7 @@ async function loadAuditHistory() {
                         );
                         break;
 
+
                     case "TargetFundsReassigned":
                         addRecord(
                             log,
@@ -707,6 +849,7 @@ async function loadAuditHistory() {
                             "target-reassigned"
                         );
                         break;
+
 
                     case "FundsReleased":
                         addRecord(
@@ -718,6 +861,7 @@ async function loadAuditHistory() {
                         );
                         break;
 
+
                     case "FundsReleasedBySource":
                         addRecord(
                             log,
@@ -727,6 +871,7 @@ async function loadAuditHistory() {
                             "funds-released-source"
                         );
                         break;
+
 
                     case "ReservationReleased":
                         addRecord(
@@ -739,6 +884,7 @@ async function loadAuditHistory() {
                         break;
                 }
             }
+
 
             // ---------------------------------------------
             // RESCUE MILESTONES
@@ -753,10 +899,11 @@ async function loadAuditHistory() {
                             log,
                             "Создание этапа",
                             "badge-blue",
-                            `Заявка #${a.requestId}, этап #${a.milestoneId}: ${escapeHtml(a.description)}. Сумма: ${formatEth(a.amount)} ETH. Получатель: ${formatAddress(a.recipient)}`,
+                            `Заявка #${a.requestId}, этап #${a.milestoneId}: ${a.description}. Сумма: ${formatEth(a.amount)} ETH. Получатель: ${formatAddress(a.recipient)}`,
                             "milestone-created"
                         );
                         break;
+
 
                     case "MilestoneEvidenceSubmitted":
                         addRecord(
@@ -768,6 +915,7 @@ async function loadAuditHistory() {
                         );
                         break;
 
+
                     case "MilestoneApproved":
                         addRecord(
                             log,
@@ -777,6 +925,7 @@ async function loadAuditHistory() {
                             "milestone-approved"
                         );
                         break;
+
 
                     case "MilestoneFundsReleased":
                         addRecord(
@@ -791,15 +940,19 @@ async function loadAuditHistory() {
             }
         }
 
+
         // =================================================
         // УДАЛЕНИЕ ДУБЛЕЙ
         // =================================================
 
         /*
-         * Одно пожертвование создаёт события и в DAO,
-         * и в Treasury. Для истории оставляем событие DAO,
-         * а событие Treasury используем, если DAO-события нет.
+         * Одно пожертвование может создавать события
+         * одновременно в DAO и Treasury.
+         *
+         * Оставляем событие DAO, а событие Treasury
+         * используем как резервный вариант.
          */
+
         const daoGeneralDonations = new Set(
             records
                 .filter(r => r.type === "general-donation")
@@ -812,7 +965,8 @@ async function loadAuditHistory() {
                 .map(r => r.txHash)
         );
 
-        let filteredRecords = records.filter(record => {
+        const filteredRecords = records.filter(record => {
+
             if (
                 record.type === "treasury-general-donation" &&
                 daoGeneralDonations.has(record.txHash)
@@ -829,6 +983,7 @@ async function loadAuditHistory() {
 
             return true;
         });
+
 
         // =================================================
         // ОБЪЕДИНЕНИЕ СОБЫТИЙ ОДНОЙ ТРАНЗАКЦИИ
@@ -856,10 +1011,11 @@ async function loadAuditHistory() {
             grouped.get(key).records.push(record);
         }
 
+
         const allEvents = Array.from(grouped.values()).map(group => {
             const items = group.records;
 
-            // Выбираем основное событие для заголовка карточки.
+            // Приоритет типов событий для заголовка карточки.
             const priority = [
                 "general-donation",
                 "request-donation",
@@ -880,8 +1036,13 @@ async function loadAuditHistory() {
             ];
 
             const main = items.slice().sort((a, b) => {
-                return priority.indexOf(a.type) -
-                    priority.indexOf(b.type);
+                const indexA = priority.indexOf(a.type);
+                const indexB = priority.indexOf(b.type);
+
+                return (
+                    (indexA === -1 ? 999 : indexA) -
+                    (indexB === -1 ? 999 : indexB)
+                );
             })[0];
 
             // Убираем одинаковые описания внутри транзакции.
@@ -902,10 +1063,12 @@ async function loadAuditHistory() {
             };
         });
 
+
         // Сначала самые новые операции.
         allEvents.sort((a, b) => {
             return b.block - a.block;
         });
+
 
         // =================================================
         // ОТОБРАЖЕНИЕ ИСТОРИИ
@@ -917,21 +1080,19 @@ async function loadAuditHistory() {
                     Событий в блокчейне пока нет.
                 </p>
             `;
+
             return;
         }
 
-        const explorerBase = EXPLORER_URL
-            ? EXPLORER_URL.replace(/\/+$/, "") + "/"
-            : "";
-
         timeline.innerHTML = allEvents.map(ev => {
 
-            const txElement = explorerBase
+            const explorerUrl =
+                getExplorerTransactionUrl(ev.txHash);
+
+            const txElement = explorerUrl
                 ? `
                     <a
-                        href="${escapeHtml(
-                            explorerBase + "tx/" + ev.txHash
-                        )}"
+                        href="${escapeHtml(explorerUrl)}"
                         target="_blank"
                         rel="noopener noreferrer"
                         class="tx-link"
@@ -950,27 +1111,31 @@ async function loadAuditHistory() {
 
             return `
                 <div class="list-item">
+
                     <div>
+
                         <span
-                            class="badge ${ev.cls}"
+                            class="badge ${escapeHtml(ev.cls)}"
                             style="margin-right:0.5rem;"
                         >
                             ${escapeHtml(ev.tag)}
                         </span>
 
                         <span>
-                            ${ev.desc}
+                            ${escapeHtml(ev.desc)}
                         </span>
 
                         <div
                             class="mono"
                             style="margin-top:0.25rem;"
                         >
-                            Блок: ${ev.block}
+                            Блок: ${Number(ev.block)}
                         </div>
+
                     </div>
 
                     ${txElement}
+
                 </div>
             `;
         }).join("");

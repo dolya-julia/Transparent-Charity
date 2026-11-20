@@ -7,19 +7,15 @@ const validRequestId =
 
 let currentEvidenceHash = "";
 
-// Минимальный ABI RescueTreasury для чтения целевых пожертвований.
-const REQUEST_TREASURY_ABI = [
-    "function requestDonations(uint256 requestId) view returns (uint256)",
-    "function userRequestDonations(uint256 requestId, address donor) view returns (uint256)"
-];
-
 
 // =========================================================
 // 1. ИНИЦИАЛИЗАЦИЯ СТРАНИЦЫ
 // =========================================================
 
 window.addEventListener("DOMContentLoaded", async () => {
-    const container = document.getElementById("requestDetailsContainer");
+    const container = document.getElementById(
+        "requestDetailsContainer"
+    );
 
     if (!validRequestId) {
         if (container) {
@@ -29,10 +25,28 @@ window.addEventListener("DOMContentLoaded", async () => {
         return;
     }
 
-    const ready = await initWeb3();
-    if (!ready) return;
+    try {
+        const ready = await initWeb3();
 
-    await loadRequestDetails();
+        if (!ready) return;
+
+        await loadRequestDetails();
+
+    } catch (err) {
+        console.error(
+            "Ошибка инициализации страницы заявки:",
+            err
+        );
+
+        if (container) {
+            container.innerHTML = `
+                <p style="color:var(--danger);">
+                    Не удалось подключить блокчейн:
+                    ${escapeHtml(getErrorMessage(err))}
+                </p>
+            `;
+        }
+    }
 });
 
 
@@ -40,7 +54,9 @@ window.addEventListener("DOMContentLoaded", async () => {
 // 2. ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ
 // =========================================================
 
-// Экранирование текста, который выводится через innerHTML.
+/**
+ * Экранирование текста перед вставкой в innerHTML.
+ */
 function escapeHtml(value) {
     return String(value ?? "").replace(/[&<>"']/g, char => ({
         "&": "&amp;",
@@ -51,16 +67,25 @@ function escapeHtml(value) {
     })[char]);
 }
 
-// Разрешаем HTTP(S)-ссылки для серверных файлов.
+/**
+ * Разрешаем только HTTP(S)-ссылки.
+ */
 function safeHttpUrl(value) {
     if (!value) return "";
 
     try {
-        const url = new URL(value, window.location.origin);
+        const url = new URL(
+            value,
+            window.location.origin
+        );
 
-        if (url.protocol === "http:" || url.protocol === "https:") {
+        if (
+            url.protocol === "http:" ||
+            url.protocol === "https:"
+        ) {
             return escapeHtml(url.href);
         }
+
     } catch (err) {
         console.warn("Некорректный URL:", value);
     }
@@ -68,6 +93,9 @@ function safeHttpUrl(value) {
     return "";
 }
 
+/**
+ * Получение сообщения об ошибке.
+ */
 function getErrorMessage(err) {
     return (
         err?.reason ||
@@ -78,69 +106,100 @@ function getErrorMessage(err) {
     );
 }
 
-// Безопасное форматирование ETH.
+/**
+ * Безопасное форматирование ETH.
+ */
 function formatEth(value) {
     try {
         return ethers.formatEther(value);
     } catch (err) {
-        console.warn("Ошибка форматирования ETH:", err);
+        console.warn(
+            "Ошибка форматирования ETH:",
+            err
+        );
+
         return "0";
     }
 }
 
-// Получение контракта Treasury для чтения.
-async function getRequestTreasuryReader() {
-    if (!provider) {
-        throw new Error("Provider не инициализирован.");
+/**
+ * Сокращение адреса или хэша.
+ */
+function shortAddr(value) {
+    if (!value) return "—";
+
+    const str = String(value);
+
+    if (str.length <= 14) {
+        return str;
     }
 
-    let treasuryAddress = null;
+    return `${str.slice(0, 8)}...${str.slice(-6)}`;
+}
 
-    // Сначала пробуем получить адрес из RescueDAO.
-    try {
-        if (contract && typeof contract.treasuryContract === "function") {
-            treasuryAddress = await contract.treasuryContract();
-        }
-    } catch (err) {
-        console.warn(
-            "Не удалось получить адрес Treasury из DAO:",
-            err
-        );
-    }
-
-    // Если getter недоступен, используем адрес из config.js.
-    if (
-        !treasuryAddress ||
-        treasuryAddress === ethers.ZeroAddress
-    ) {
-        if (
-            typeof TREASURY_ADDRESS !== "undefined" &&
-            ethers.isAddress(TREASURY_ADDRESS)
-        ) {
-            treasuryAddress = TREASURY_ADDRESS;
-        }
-    }
-
-    if (
-        !treasuryAddress ||
-        !ethers.isAddress(treasuryAddress) ||
-        treasuryAddress === ethers.ZeroAddress
-    ) {
+/**
+ * Проверка наличия контракта.
+ */
+function requireContract(instance, name) {
+    if (!instance) {
         throw new Error(
-            "Не удалось определить корректный адрес RescueTreasury."
+            `${name} не инициализирован.`
         );
     }
+}
 
-    console.log(
-        "Используется RescueTreasury:",
-        treasuryAddress
-    );
+/**
+ * Проверка наличия метода контракта.
+ */
+function requireMethod(instance, methodName, contractName) {
+    requireContract(instance, contractName);
 
-    return new ethers.Contract(
-        treasuryAddress,
-        REQUEST_TREASURY_ABI,
-        provider
+    if (typeof instance[methodName] !== "function") {
+        throw new Error(
+            `В ABI ${contractName} отсутствует функция ${methodName}().`
+        );
+    }
+}
+
+/**
+ * Проверка подключения кошелька.
+ */
+function isWalletConnected() {
+    return (
+        typeof signer !== "undefined" &&
+        Boolean(signer) &&
+        typeof userAddress !== "undefined" &&
+        Boolean(userAddress)
     );
+}
+
+/**
+ * Проверка роли участника DAO.
+ */
+function isDaoMember() {
+    return (
+        typeof userRoles !== "undefined" &&
+        Boolean(userRoles?.isMember)
+    );
+}
+
+/**
+ * Получение статуса заявки.
+ */
+function getStatusInfo(status) {
+    const statusNum = Number(status);
+
+    if (
+        typeof STATUS_LABELS !== "undefined" &&
+        STATUS_LABELS[statusNum]
+    ) {
+        return STATUS_LABELS[statusNum];
+    }
+
+    return {
+        text: "Неизвестный статус",
+        cls: "badge-gray"
+    };
 }
 
 
@@ -149,27 +208,63 @@ async function getRequestTreasuryReader() {
 // =========================================================
 
 async function loadRequestDetails() {
-    const container = document.getElementById("requestDetailsContainer");
+    const container = document.getElementById(
+        "requestDetailsContainer"
+    );
 
     if (!container) {
-        console.error("Не найден requestDetailsContainer.");
+        console.error(
+            "Не найден requestDetailsContainer."
+        );
+
         return;
     }
 
     try {
-        /*
-         * RescueDAOView используется для чтения данных заявки.
-         *
-         * RescueDAO не должен использоваться для вызова
-         * getAidRequestInfo и getAidRequestStats.
-         */
+
+        // -------------------------------------------------
+        // Проверка необходимых контрактов
+        // -------------------------------------------------
+
+        requireMethod(
+            daoViewContract,
+            "getAidRequestInfo",
+            "RescueDAOView"
+        );
+
+        requireMethod(
+            daoViewContract,
+            "getAidRequestStats",
+            "RescueDAOView"
+        );
+
+        requireMethod(
+            daoViewContract,
+            "hasParticipantVoted",
+            "RescueDAOView"
+        );
+
+        requireContract(
+            contract,
+            "RescueDAO"
+        );
+
+        requireContract(
+            milestonesContract,
+            "RescueMilestones"
+        );
+
+        // -------------------------------------------------
+        // Получение данных заявки через RescueDAOView
+        // -------------------------------------------------
+
         const [info, stats] = await Promise.all([
             daoViewContract.getAidRequestInfo(requestId),
             daoViewContract.getAidRequestStats(requestId)
         ]);
 
         // -------------------------------------------------
-        // Метаданные с Node.js backend
+        // Получение дополнительных данных с backend
         // -------------------------------------------------
 
         let meta = {
@@ -184,35 +279,70 @@ async function loadRequestDetails() {
             );
 
             if (response.ok) {
+                const responseData =
+                    await response.json();
+
+                // Backend может возвращать данные
+                // как response.data, так и напрямую.
                 meta = {
                     ...meta,
-                    ...(await response.json())
+                    ...(responseData.data || responseData)
                 };
             }
+
         } catch (err) {
-            console.warn("Не удалось загрузить метаданные:", err);
+            console.warn(
+                "Не удалось загрузить метаданные заявки:",
+                err
+            );
         }
 
-        currentEvidenceHash = info.evidenceHash;
+        // -------------------------------------------------
+        // Сохранение хэша документа
+        // -------------------------------------------------
+
+        currentEvidenceHash = String(
+            info.evidenceHash || ""
+        );
+
+        // -------------------------------------------------
+        // Статус заявки
+        // -------------------------------------------------
 
         const statusNum = Number(stats.status);
-        const statusObj =
-            STATUS_LABELS[statusNum] || STATUS_LABELS[0];
 
-        const votingEndsAt = Number(stats.votingEndsAt);
+        const statusObj = getStatusInfo(statusNum);
 
-        const endsDate = new Date(
-            votingEndsAt * 1000
-        ).toLocaleString("ru-RU");
+        const votingEndsAt = Number(
+            stats.votingEndsAt
+        );
 
-        const nowSec = Math.floor(Date.now() / 1000);
-        const votingEnded = nowSec >= votingEndsAt;
+        const endsDate = votingEndsAt > 0
+            ? new Date(
+                votingEndsAt * 1000
+            ).toLocaleString("ru-RU")
+            : "Не определено";
+
+        const nowSec = Math.floor(
+            Date.now() / 1000
+        );
+
+        const votingEnded =
+            nowSec >= votingEndsAt;
+
+        // -------------------------------------------------
+        // Проверка инициатора
+        // -------------------------------------------------
 
         const isRequester =
             Boolean(userAddress) &&
-            info.requester.toLowerCase() === userAddress.toLowerCase();
+            String(info.requester).toLowerCase() ===
+            String(userAddress).toLowerCase();
 
-        // Проверяем, голосовал ли пользователь.
+        // -------------------------------------------------
+        // Проверка голоса пользователя
+        // -------------------------------------------------
+
         const voted = userAddress
             ? await daoViewContract.hasParticipantVoted(
                 requestId,
@@ -220,40 +350,66 @@ async function loadRequestDetails() {
             )
             : false;
 
-        // -------------------------------------------------
-        // Целевые пожертвования
-        // -------------------------------------------------
+        // =================================================
+        // ЦЕЛЕВЫЕ ПОЖЕРТВОВАНИЯ
+        // =================================================
 
         let targetDonations = 0n;
         let personalDonations = 0n;
+
         let treasuryAvailable = false;
         let treasuryError = "";
 
         try {
-            const treasuryReader = await getRequestTreasuryReader();
+            requireMethod(
+                treasuryContract,
+                "requestDonations",
+                "RescueTreasury"
+            );
 
-            const [totalDonations, myDonations] = await Promise.all([
-                treasuryReader.requestDonations(requestId),
+            requireMethod(
+                treasuryContract,
+                "userRequestDonations",
+                "RescueTreasury"
+            );
 
-                userAddress
-                    ? treasuryReader.userRequestDonations(
-                        requestId,
-                        userAddress
-                    )
-                    : Promise.resolve(0n)
-            ]);
+            const [totalDonations, myDonations] =
+                await Promise.all([
+                    treasuryContract.requestDonations(
+                        requestId
+                    ),
 
-            targetDonations = BigInt(totalDonations);
-            personalDonations = BigInt(myDonations);
+                    userAddress
+                        ? treasuryContract.userRequestDonations(
+                            requestId,
+                            userAddress
+                        )
+                        : Promise.resolve(0n)
+                ]);
+
+            targetDonations = BigInt(
+                totalDonations
+            );
+
+            personalDonations = BigInt(
+                myDonations
+            );
 
             treasuryAvailable = true;
 
-            console.log("Целевое финансирование заявки:", {
-                requestId,
-                targetDonations: formatEth(targetDonations),
-                personalDonations: formatEth(personalDonations),
-                userAddress
-            });
+            console.log(
+                "Целевое финансирование заявки:",
+                {
+                    requestId,
+                    targetDonations: formatEth(
+                        targetDonations
+                    ),
+                    personalDonations: formatEth(
+                        personalDonations
+                    ),
+                    userAddress
+                }
+            );
 
         } catch (err) {
             treasuryError = getErrorMessage(err);
@@ -264,7 +420,13 @@ async function loadRequestDetails() {
             );
         }
 
-        const requestedAmount = BigInt(stats.requestedAmount);
+        // -------------------------------------------------
+        // Расчёт прогресса финансирования
+        // -------------------------------------------------
+
+        const requestedAmount = BigInt(
+            stats.requestedAmount
+        );
 
         const remainingAmount =
             requestedAmount > targetDonations
@@ -276,23 +438,29 @@ async function loadRequestDetails() {
                 ? Number(
                     targetDonations >= requestedAmount
                         ? 100n
-                        : targetDonations * 100n / requestedAmount
+                        : (
+                            targetDonations * 100n /
+                            requestedAmount
+                        )
                 )
                 : 0;
 
-        // Целевое финансирование доступно только
+        // Принимать целевые пожертвования можно,
         // пока заявка находится на голосовании.
         const canDonateToRequest =
             statusNum === 0 &&
             !votingEnded &&
             remainingAmount > 0n &&
-            treasuryAvailable;
+            treasuryAvailable &&
+            isWalletConnected();
 
-        // -------------------------------------------------
-        // Фото животного
-        // -------------------------------------------------
+        // =================================================
+        // ФОТОГРАФИЯ ЖИВОТНОГО
+        // =================================================
 
-        const photoUrl = safeHttpUrl(meta.photoUrl);
+        const photoUrl = safeHttpUrl(
+            meta.photoUrl
+        );
 
         const photoBlock = photoUrl
             ? `
@@ -324,11 +492,13 @@ async function loadRequestDetails() {
                 </div>
             `;
 
-        // -------------------------------------------------
-        // Документ заявки
-        // -------------------------------------------------
+        // =================================================
+        // ДОКУМЕНТ ЗАЯВКИ
+        // =================================================
 
-        const docUrl = safeHttpUrl(meta.docUrl);
+        const docUrl = safeHttpUrl(
+            meta.docUrl
+        );
 
         const downloadDocLink = docUrl
             ? `
@@ -345,9 +515,9 @@ async function loadRequestDetails() {
             `
             : "";
 
-        // -------------------------------------------------
-        // Голосование DAO
-        // -------------------------------------------------
+        // =================================================
+        // ГОЛОСОВАНИЕ DAO
+        // =================================================
 
         let votingControls = "";
 
@@ -355,8 +525,9 @@ async function loadRequestDetails() {
 
             if (
                 !votingEnded &&
-                userRoles?.isMember &&
-                !voted
+                isDaoMember() &&
+                !voted &&
+                isWalletConnected()
             ) {
                 votingControls = `
                     <div style="
@@ -364,6 +535,7 @@ async function loadRequestDetails() {
                         gap:0.75rem;
                         margin-top:1rem;
                     ">
+
                         <button
                             class="btn btn-primary"
                             style="flex:1;"
@@ -379,8 +551,10 @@ async function loadRequestDetails() {
                         >
                             👎 Голосовать ПРОТИВ
                         </button>
+
                     </div>
                 `;
+
             } else if (voted) {
                 votingControls = `
                     <p
@@ -396,7 +570,10 @@ async function loadRequestDetails() {
                 votingControls += `
                     <button
                         class="btn btn-dark"
-                        style="width:100%; margin-top:1rem;"
+                        style="
+                            width:100%;
+                            margin-top:1rem;
+                        "
                         onclick="finalizeReq()"
                     >
                         Подвести итоги голосования
@@ -405,13 +582,14 @@ async function loadRequestDetails() {
             }
         }
 
-        // -------------------------------------------------
-        // Блок целевого финансирования
-        // -------------------------------------------------
+        // =================================================
+        // БЛОК ЦЕЛЕВОГО ФИНАНСИРОВАНИЯ
+        // =================================================
 
         let targetFundingBlock = "";
 
         if (treasuryAvailable) {
+
             targetFundingBlock = `
                 <div
                     class="box"
@@ -420,6 +598,7 @@ async function loadRequestDetails() {
                         border:1px solid var(--border);
                     "
                 >
+
                     <h3 style="margin-bottom:0.75rem;">
                         🎯 Целевое финансирование заявки
                     </h3>
@@ -531,6 +710,7 @@ async function loadRequestDetails() {
                                     padding-top:0.85rem;
                                     border-top:1px solid var(--border);
                                 ">
+
                                     <h4 style="margin-bottom:0.5rem;">
                                         Поддержать эту заявку
                                     </h4>
@@ -546,6 +726,7 @@ async function loadRequestDetails() {
                                     </p>
 
                                     <div class="form-group">
+
                                         <label for="targetDonationAmount">
                                             Сумма пожертвования (ETH)
                                         </label>
@@ -564,6 +745,7 @@ async function loadRequestDetails() {
                                                 margin-top:0.25rem;
                                             "
                                         >
+
                                     </div>
 
                                     <button
@@ -576,6 +758,7 @@ async function loadRequestDetails() {
                                     >
                                         ❤️ Пожертвовать на эту заявку
                                     </button>
+
                                 </div>
                             `
                             : statusNum !== 0
@@ -611,14 +794,31 @@ async function loadRequestDetails() {
                                                 Целевая сумма собрана полностью.
                                             </p>
                                         `
-                                        : ""
+                                        : !isWalletConnected()
+                                            ? `
+                                                <p style="
+                                                    margin-top:1rem;
+                                                    font-size:0.85rem;
+                                                    color:var(--text-muted);
+                                                ">
+                                                    Подключите MetaMask, чтобы
+                                                    поддержать эту заявку.
+                                                </p>
+                                            `
+                                            : ""
                     }
+
                 </div>
             `;
+
         } else {
+
             targetFundingBlock = `
                 <div class="box" style="margin-top:1rem;">
-                    <h3>🎯 Целевое финансирование</h3>
+
+                    <h3>
+                        🎯 Целевое финансирование
+                    </h3>
 
                     <p style="
                         margin-top:0.5rem;
@@ -626,16 +826,26 @@ async function loadRequestDetails() {
                         color:var(--text-muted);
                     ">
                         Не удалось получить информацию из Treasury.
-                        Проверьте адрес Treasury и наличие функций
+                        Проверьте адрес RescueTreasury и наличие функций
                         requestDonations и userRequestDonations.
                     </p>
+
+                    <p style="
+                        margin-top:0.4rem;
+                        font-size:0.78rem;
+                        color:var(--text-muted);
+                        word-break:break-word;
+                    ">
+                        ${escapeHtml(treasuryError)}
+                    </p>
+
                 </div>
             `;
         }
 
-        // -------------------------------------------------
-        // Форма добавления этапа
-        // -------------------------------------------------
+        // =================================================
+        // ФОРМА ДОБАВЛЕНИЯ ЭТАПА
+        // =================================================
 
         const addMilestoneBlock = (
             statusNum === 0 &&
@@ -645,7 +855,9 @@ async function loadRequestDetails() {
             ? `
                 <div class="box" style="margin-top:1rem;">
 
-                    <h3>Добавить этап финансирования</h3>
+                    <h3>
+                        Добавить этап финансирования
+                    </h3>
 
                     <p style="
                         font-size:0.85rem;
@@ -655,9 +867,9 @@ async function loadRequestDetails() {
                         Распределено по этапам:
 
                         <strong>
-                            ${ethers.formatEther(stats.milestoneTotal)}
+                            ${formatEth(stats.milestoneTotal)}
                             /
-                            ${ethers.formatEther(stats.requestedAmount)}
+                            ${formatEth(stats.requestedAmount)}
                             ETH
                         </strong>.
 
@@ -666,6 +878,7 @@ async function loadRequestDetails() {
                     </p>
 
                     <div class="form-group" style="margin-bottom:0.75rem;">
+
                         <label>Название этапа</label>
 
                         <input
@@ -673,23 +886,37 @@ async function loadRequestDetails() {
                             id="msDesc"
                             class="input-field"
                             placeholder="Например: Операция в ветклинике"
-                            style="width:100%; padding:0.5rem; margin-top:0.25rem;"
+                            style="
+                                width:100%;
+                                padding:0.5rem;
+                                margin-top:0.25rem;
+                            "
                         >
+
                     </div>
 
                     <div class="form-group" style="margin-bottom:0.75rem;">
-                        <label>Адрес получателя (клиника / аптека)</label>
+
+                        <label>
+                            Адрес получателя (клиника / аптека)
+                        </label>
 
                         <input
                             type="text"
                             id="msRecipient"
                             class="input-field"
                             placeholder="0x..."
-                            style="width:100%; padding:0.5rem; margin-top:0.25rem;"
+                            style="
+                                width:100%;
+                                padding:0.5rem;
+                                margin-top:0.25rem;
+                            "
                         >
+
                     </div>
 
                     <div class="form-group" style="margin-bottom:0.75rem;">
+
                         <label>Сумма этапа (ETH)</label>
 
                         <input
@@ -699,8 +926,13 @@ async function loadRequestDetails() {
                             step="0.001"
                             min="0"
                             placeholder="0.003"
-                            style="width:100%; padding:0.5rem; margin-top:0.25rem;"
+                            style="
+                                width:100%;
+                                padding:0.5rem;
+                                margin-top:0.25rem;
+                            "
                         >
+
                     </div>
 
                     <button
@@ -715,16 +947,14 @@ async function loadRequestDetails() {
             `
             : "";
 
-        // -------------------------------------------------
-        // Основная разметка страницы
-        // -------------------------------------------------
+        // =================================================
+        // ОСНОВНАЯ РАЗМЕТКА СТРАНИЦЫ
+        // =================================================
 
         container.innerHTML = `
             <div class="details-layout">
 
                 <div>
-
-                    <!-- Карточка заявки -->
 
                     <div class="box">
 
@@ -737,13 +967,14 @@ async function loadRequestDetails() {
                                 margin-bottom:0.75rem;
                             "
                         >
+
                             <h1>
                                 Заявка #${requestId}:
                                 ${escapeHtml(info.animalName)}
                             </h1>
 
                             <span
-                                class="badge ${statusObj.cls}"
+                                class="badge ${escapeHtml(statusObj.cls)}"
                                 style="
                                     padding:0.3rem 0.6rem;
                                     border-radius:4px;
@@ -751,10 +982,12 @@ async function loadRequestDetails() {
                             >
                                 ${escapeHtml(statusObj.text)}
                             </span>
+
                         </div>
 
                         <p class="mono">
-                            Инициатор: ${escapeHtml(info.requester)}
+                            Инициатор:
+                            ${escapeHtml(info.requester)}
                         </p>
 
                         ${photoBlock}
@@ -763,18 +996,21 @@ async function loadRequestDetails() {
                             Описание ситуации
                         </h3>
 
-                        <p style="margin:0.5rem 0; color:#334155;">
-                            ${escapeHtml(meta.fullStory || info.description)}
+                        <p style="
+                            margin:0.5rem 0;
+                            color:#334155;
+                            white-space:pre-wrap;
+                        ">
+                            ${escapeHtml(
+                                meta.fullStory ||
+                                info.description
+                            )}
                         </p>
-
-                        <!-- NFT-паспорт -->
 
                         <div
                             id="nftPassportSection"
                             style="margin-top:1.25rem;"
                         ></div>
-
-                        <!-- Документы -->
 
                         <div style="
                             font-size:0.88rem;
@@ -830,13 +1066,12 @@ async function loadRequestDetails() {
                                 ></span>
 
                             </div>
+
                         </div>
 
                     </div>
 
                     ${addMilestoneBlock}
-
-                    <!-- Этапы финансирования -->
 
                     <div class="box" style="margin-top:1rem;">
 
@@ -852,8 +1087,6 @@ async function loadRequestDetails() {
 
                 </div>
 
-                <!-- Правая колонка -->
-
                 <div
                     class="request-sidebar"
                     style="
@@ -867,11 +1100,7 @@ async function loadRequestDetails() {
                     "
                 >
 
-                    <!-- Целевое финансирование -->
-
                     ${targetFundingBlock}
-
-                    <!-- Статус и голосование DAO -->
 
                     <div class="box">
 
@@ -968,21 +1197,30 @@ async function loadRequestDetails() {
             </div>
         `;
 
-        // Загружаем этапы из RescueMilestones.
+        // -------------------------------------------------
+        // Загрузка этапов
+        // -------------------------------------------------
+
         await loadMilestonesList(
             Number(stats.milestoneCount),
             statusNum,
             isRequester
         );
 
-        // Загружаем NFT-паспорт.
+        // -------------------------------------------------
+        // Загрузка NFT-паспорта
+        // -------------------------------------------------
+
         await loadNftPassport(requestId);
 
     } catch (err) {
-        console.error("Ошибка загрузки заявки:", err);
+        console.error(
+            "Ошибка загрузки заявки:",
+            err
+        );
 
         container.innerHTML = `
-            <p style="color:red;">
+            <p style="color:var(--danger);">
                 Ошибка загрузки заявки:
                 ${escapeHtml(getErrorMessage(err))}
             </p>
@@ -996,31 +1234,58 @@ async function loadRequestDetails() {
 // =========================================================
 
 async function donateToCurrentRequest() {
-    const amountInput =
-        document.getElementById("targetDonationAmount");
+    const amountInput = document.getElementById(
+        "targetDonationAmount"
+    );
 
     const amount = amountInput?.value?.trim();
 
     try {
-        if (!signer) {
+
+        // -------------------------------------------------
+        // Проверки подключения и контрактов
+        // -------------------------------------------------
+
+        if (!isWalletConnected()) {
             throw new Error(
                 "Сначала подключите MetaMask."
             );
         }
 
-        if (!contract) {
-            throw new Error(
-                "Контракт RescueDAO не инициализирован."
-            );
-        }
+        requireMethod(
+            contract,
+            "donateToRequest",
+            "RescueDAO"
+        );
 
-        if (!amount || !/^\d+(\.\d+)?$/.test(amount)) {
+        requireMethod(
+            daoViewContract,
+            "getAidRequestStats",
+            "RescueDAOView"
+        );
+
+        requireMethod(
+            treasuryContract,
+            "requestDonations",
+            "RescueTreasury"
+        );
+
+        // -------------------------------------------------
+        // Проверка суммы
+        // -------------------------------------------------
+
+        if (
+            !amount ||
+            !/^\d+(\.\d+)?$/.test(amount)
+        ) {
             throw new Error(
                 "Введите корректную сумму в ETH."
             );
         }
 
-        const donationWei = ethers.parseEther(amount);
+        const donationWei = ethers.parseEther(
+            amount
+        );
 
         if (donationWei <= 0n) {
             throw new Error(
@@ -1028,26 +1293,32 @@ async function donateToCurrentRequest() {
             );
         }
 
-        // Получаем актуальные данные из Treasury.
-        const treasuryReader =
-            await getRequestTreasuryReader();
+        // -------------------------------------------------
+        // Получение актуальной статистики
+        // -------------------------------------------------
 
-        const [targetDonations, requestedAmount] =
+        const [targetDonations, stats] =
             await Promise.all([
-                treasuryReader.requestDonations(requestId),
-                (async () => {
-                    const stats =
-                        await daoViewContract.getAidRequestStats(
-                            requestId
-                        );
+                treasuryContract.requestDonations(
+                    requestId
+                ),
 
-                    return BigInt(stats.requestedAmount);
-                })()
+                daoViewContract.getAidRequestStats(
+                    requestId
+                )
             ]);
 
+        const requestedAmount = BigInt(
+            stats.requestedAmount
+        );
+
+        const currentDonations = BigInt(
+            targetDonations
+        );
+
         const remainingAmount =
-            requestedAmount > targetDonations
-                ? requestedAmount - targetDonations
+            requestedAmount > currentDonations
+                ? requestedAmount - currentDonations
                 : 0n;
 
         if (remainingAmount === 0n) {
@@ -1058,31 +1329,44 @@ async function donateToCurrentRequest() {
 
         if (donationWei > remainingAmount) {
             throw new Error(
-                "Сумма пожертвования превышает остаток цели. Осталось собрать: " +
+                "Сумма пожертвования превышает остаток цели. " +
+                "Осталось собрать: " +
                 formatEth(remainingAmount) +
                 " ETH."
             );
         }
 
-        // Дополнительно проверяем статус заявки и срок голосования.
-        const info =
-            await daoViewContract.getAidRequestStats(requestId);
+        // -------------------------------------------------
+        // Проверка статуса и срока голосования
+        // -------------------------------------------------
 
-        const statusNum = Number(info.status);
-        const votingEndsAt = Number(info.votingEndsAt);
-        const nowSec = Math.floor(Date.now() / 1000);
+        const statusNum = Number(stats.status);
+
+        const votingEndsAt = Number(
+            stats.votingEndsAt
+        );
+
+        const nowSec = Math.floor(
+            Date.now() / 1000
+        );
 
         if (statusNum !== 0) {
             throw new Error(
-                "Целевые пожертвования принимаются только для заявок на этапе голосования."
+                "Целевые пожертвования принимаются только " +
+                "для заявок на этапе голосования."
             );
         }
 
         if (nowSec >= votingEndsAt) {
             throw new Error(
-                "Время голосования завершилось. Целевые пожертвования больше не принимаются."
+                "Время голосования завершилось. " +
+                "Целевые пожертвования больше не принимаются."
             );
         }
+
+        // -------------------------------------------------
+        // Подтверждение пользователя
+        // -------------------------------------------------
 
         const confirmed = confirm(
             `Вы действительно хотите пожертвовать ${amount} ETH на заявку #${requestId}?`
@@ -1090,18 +1374,21 @@ async function donateToCurrentRequest() {
 
         if (!confirmed) return;
 
+        // -------------------------------------------------
+        // Отправка через RescueDAO
+        // -------------------------------------------------
+
         /*
-         * Вызов выполняется через RescueDAO.
+         * RescueDAO выполняет проверку:
+         * - существования заявки;
+         * - статуса Voting;
+         * - срока голосования;
+         * - суммы пожертвования;
+         * - ограничения запрошенной суммы.
          *
-         * DAO проверяет:
-         * - существование заявки;
-         * - статус Voting;
-         * - срок голосования;
-         * - ненулевую сумму;
-         * - соблюдение лимита запрошенной суммы.
-         *
-         * Treasury учитывает вклад конкретного пользователя.
+         * RescueTreasury учитывает общий и персональный вклад.
          */
+
         const tx = await contract.donateToRequest(
             requestId,
             {
@@ -1110,12 +1397,16 @@ async function donateToCurrentRequest() {
         );
 
         alert(
-            "Пожертвование отправлено. Ожидаем подтверждения транзакции..."
+            "Пожертвование отправлено. " +
+            "Ожидаем подтверждения транзакции..."
         );
 
         const receipt = await tx.wait();
 
-        if (!receipt || receipt.status !== 1) {
+        if (
+            !receipt ||
+            Number(receipt.status) !== 1
+        ) {
             throw new Error(
                 "Транзакция пожертвования не была успешно подтверждена."
             );
@@ -1146,83 +1437,118 @@ async function donateToCurrentRequest() {
 // =========================================================
 
 async function loadNftPassport(requestId) {
-    const nftContainer =
-        document.getElementById("nftPassportSection");
+    const nftContainer = document.getElementById(
+        "nftPassportSection"
+    );
 
     if (!nftContainer) return;
 
     try {
-        // Адрес NFT получаем из основного RescueDAO.
-        const nftAddress = await contract.rescueNftContract();
 
-        if (
-            !nftAddress ||
-            nftAddress === ethers.ZeroAddress
-        ) {
-            nftContainer.innerHTML = `
-                <p style="color:var(--text-muted);">
-                    NFT-контракт пока не привязан к DAO.
-                </p>
-            `;
-            return;
-        }
+        // -------------------------------------------------
+        // Проверка глобального NFT-контракта
+        // -------------------------------------------------
 
-        // NFT-контракт используем только для чтения.
-        const nftContract = new ethers.Contract(
-            nftAddress,
-            NFT_ABI,
-            provider
+        requireMethod(
+            nftContract,
+            "getTokenIdForRequest",
+            "RescueNFT"
         );
 
-        // Получаем ID токена по ID заявки.
-        const tokenId =
-            await nftContract.getTokenIdForRequest(requestId);
+        requireMethod(
+            nftContract,
+            "ownerOf",
+            "RescueNFT"
+        );
 
-        if (tokenId === 0n) {
+        requireMethod(
+            nftContract,
+            "tokenURI",
+            "RescueNFT"
+        );
+
+        // -------------------------------------------------
+        // Получение ID токена по ID заявки
+        // -------------------------------------------------
+
+        const tokenId =
+            await nftContract.getTokenIdForRequest(
+                requestId
+            );
+
+        if (BigInt(tokenId) === 0n) {
             nftContainer.innerHTML = `
                 <p style="color:var(--text-muted);">
                     NFT-паспорт для заявки #${requestId}
                     ещё не выпущен.
                 </p>
             `;
+
             return;
         }
+
+        // -------------------------------------------------
+        // Получение владельца и URI
+        // -------------------------------------------------
 
         const [owner, uri] = await Promise.all([
             nftContract.ownerOf(tokenId),
             nftContract.tokenURI(tokenId)
         ]);
 
+        // -------------------------------------------------
+        // Проверка формата URI
+        // -------------------------------------------------
+
         if (
-            !uri.startsWith(
+            !String(uri).startsWith(
                 "data:application/json;base64,"
             )
         ) {
             nftContainer.innerHTML = `
                 <p class="mono">
-                    NFT #${tokenId} выпущен.
-                    URI: ${escapeHtml(uri)}
+                    NFT #${escapeHtml(tokenId)} выпущен.
+
+                    URI:
+                    ${escapeHtml(uri)}
                 </p>
             `;
+
             return;
         }
 
-        // Декодируем Base64 JSON.
-        const base64Json = uri.split(",")[1];
-        const binaryString = window.atob(base64Json);
+        // -------------------------------------------------
+        // Декодирование Base64 JSON
+        // -------------------------------------------------
+
+        const base64Json = String(uri).split(",")[1];
+
+        const binaryString = window.atob(
+            base64Json
+        );
 
         const bytes = Uint8Array.from(
             binaryString,
             char => char.charCodeAt(0)
         );
 
-        const jsonString =
-            new TextDecoder().decode(bytes);
+        const jsonString = new TextDecoder().decode(
+            bytes
+        );
 
-        const metadata = JSON.parse(jsonString);
+        const metadata = JSON.parse(
+            jsonString
+        );
+
+        // -------------------------------------------------
+        // Атрибуты NFT
+        // -------------------------------------------------
 
         const attributesHtml =
-            (metadata.attributes || [])
+            (Array.isArray(metadata.attributes)
+                ? metadata.attributes
+                : []
+            )
                 .map(attr => `
                     <span
                         class="badge badge-blue"
@@ -1238,22 +1564,33 @@ async function loadNftPassport(requestId) {
                 `)
                 .join("");
 
-        // Изображение может быть встроенным SVG или другим data URI.
-        const imageUrl = String(metadata.image || "");
+        // -------------------------------------------------
+        // Изображение NFT
+        // -------------------------------------------------
 
-        const allowedImage =
-            imageUrl.startsWith("data:image/") ||
-            Boolean(safeHttpUrl(imageUrl));
+        const imageUrl = String(
+            metadata.image || ""
+        );
 
-        const safeImageUrl = imageUrl.startsWith("data:image/")
-            ? imageUrl
+        const isDataImage =
+            /^data:image\/(svg\+xml|png|jpeg|jpg|webp);base64,/i
+                .test(imageUrl);
+
+        const httpImageUrl = isDataImage
+            ? ""
             : safeHttpUrl(imageUrl);
 
-        const imageBlock = allowedImage
+        const safeImageUrl = isDataImage
+            ? imageUrl
+            : httpImageUrl;
+
+        const imageBlock = safeImageUrl
             ? `
                 <img
                     src="${safeImageUrl}"
-                    alt="${escapeHtml(metadata.name || "NFT-паспорт")}"
+                    alt="${escapeHtml(
+                        metadata.name || "NFT-паспорт"
+                    )}"
                     style="
                         width:200px;
                         height:auto;
@@ -1263,6 +1600,10 @@ async function loadNftPassport(requestId) {
                 >
             `
             : "";
+
+        // -------------------------------------------------
+        // Отображение NFT-паспорта
+        // -------------------------------------------------
 
         nftContainer.innerHTML = `
             <div style="
@@ -1278,7 +1619,7 @@ async function loadNftPassport(requestId) {
                 >
 
                     <h4 style="margin:0;">
-                        🐾 Цифровой NFT-паспорт #${tokenId}
+                        🐾 Цифровой NFT-паспорт #${escapeHtml(tokenId)}
                     </h4>
 
                     <span class="badge badge-green">
@@ -1296,7 +1637,10 @@ async function loadNftPassport(requestId) {
 
                     ${imageBlock}
 
-                    <div style="flex:1; min-width:200px;">
+                    <div style="
+                        flex:1;
+                        min-width:200px;
+                    ">
 
                         <div style="
                             font-weight:600;
@@ -1314,7 +1658,9 @@ async function loadNftPassport(requestId) {
                             color:#475569;
                             margin-bottom:0.6rem;
                         ">
-                            ${escapeHtml(metadata.description || "")}
+                            ${escapeHtml(
+                                metadata.description || ""
+                            )}
                         </p>
 
                         <div
@@ -1325,7 +1671,8 @@ async function loadNftPassport(requestId) {
                                 word-break:break-all;
                             "
                         >
-                            Владелец: ${escapeHtml(owner)}
+                            Владелец:
+                            ${escapeHtml(owner)}
                         </div>
 
                         <div>
@@ -1352,7 +1699,8 @@ async function loadNftPassport(requestId) {
                 padding:0.5rem 0;
             ">
                 Не удалось загрузить NFT-паспорт.
-                Проверьте привязку NFT-контракта и наличие токена.
+                Проверьте привязку NFT-контракта,
+                его ABI и наличие токена.
             </div>
         `;
     }
@@ -1364,19 +1712,30 @@ async function loadNftPassport(requestId) {
 // =========================================================
 
 async function verifyDocumentHash() {
-    const input =
-        document.getElementById("verifyFileInput");
+    const input = document.getElementById(
+        "verifyFileInput"
+    );
 
-    const resSpan =
-        document.getElementById("verifyResult");
+    const resSpan = document.getElementById(
+        "verifyResult"
+    );
 
-    if (!input || !input.files || !input.files.length) {
+    if (
+        !input ||
+        !input.files ||
+        !input.files.length
+    ) {
         return;
     }
 
     try {
-        const buffer =
-            await input.files[0].arrayBuffer();
+        if (!currentEvidenceHash) {
+            throw new Error(
+                "Хэш документа не загружен из блокчейна."
+            );
+        }
+
+        const buffer = await input.files[0].arrayBuffer();
 
         const calculatedHash = ethers.keccak256(
             new Uint8Array(buffer)
@@ -1390,6 +1749,7 @@ async function verifyDocumentHash() {
                 "✅ Документ подлинный (хэш совпал)";
 
             resSpan.style.color = "var(--primary)";
+
         } else {
             resSpan.textContent =
                 "❌ Внимание: хэш не совпадает!";
@@ -1398,7 +1758,10 @@ async function verifyDocumentHash() {
         }
 
     } catch (err) {
-        console.error("Ошибка проверки документа:", err);
+        console.error(
+            "Ошибка проверки документа:",
+            err
+        );
 
         resSpan.textContent =
             "Не удалось проверить документ.";
@@ -1414,14 +1777,36 @@ async function verifyDocumentHash() {
 
 async function castVote(support) {
     try {
-        if (!signer) {
-            return alert("Сначала подключите MetaMask!");
+
+        // -------------------------------------------------
+        // Проверки
+        // -------------------------------------------------
+
+        if (!isWalletConnected()) {
+            throw new Error(
+                "Сначала подключите MetaMask!"
+            );
         }
 
-        // Голосование выполняется через RescueDAO.
+        if (!isDaoMember()) {
+            throw new Error(
+                "Голосовать могут только зарегистрированные участники DAO."
+            );
+        }
+
+        requireMethod(
+            contract,
+            "vote",
+            "RescueDAO"
+        );
+
+        // -------------------------------------------------
+        // Отправка голоса через RescueDAO
+        // -------------------------------------------------
+
         const tx = await contract.vote(
             requestId,
-            support
+            Boolean(support)
         );
 
         alert(
@@ -1430,7 +1815,10 @@ async function castVote(support) {
 
         const receipt = await tx.wait();
 
-        if (!receipt || receipt.status !== 1) {
+        if (
+            !receipt ||
+            Number(receipt.status) !== 1
+        ) {
             throw new Error(
                 "Транзакция голосования не подтверждена."
             );
@@ -1439,7 +1827,10 @@ async function castVote(support) {
         window.location.reload();
 
     } catch (err) {
-        console.error("Ошибка голосования:", err);
+        console.error(
+            "Ошибка голосования:",
+            err
+        );
 
         alert(
             "Ошибка голосования: " +
@@ -1455,11 +1846,27 @@ async function castVote(support) {
 
 async function finalizeReq() {
     try {
-        if (!signer) {
-            return alert("Сначала подключите MetaMask!");
+
+        // -------------------------------------------------
+        // Проверки
+        // -------------------------------------------------
+
+        if (!isWalletConnected()) {
+            throw new Error(
+                "Сначала подключите MetaMask!"
+            );
         }
 
-        // Финализация выполняется через RescueDAO.
+        requireMethod(
+            contract,
+            "finalizeRequest",
+            "RescueDAO"
+        );
+
+        // -------------------------------------------------
+        // Финализация через RescueDAO
+        // -------------------------------------------------
+
         const tx = await contract.finalizeRequest(
             requestId
         );
@@ -1470,7 +1877,10 @@ async function finalizeReq() {
 
         const receipt = await tx.wait();
 
-        if (!receipt || receipt.status !== 1) {
+        if (
+            !receipt ||
+            Number(receipt.status) !== 1
+        ) {
             throw new Error(
                 "Транзакция финализации не подтверждена."
             );
@@ -1479,7 +1889,10 @@ async function finalizeReq() {
         window.location.reload();
 
     } catch (err) {
-        console.error("Ошибка финализации:", err);
+        console.error(
+            "Ошибка финализации:",
+            err
+        );
 
         alert(
             "Ошибка финализации: " +
@@ -1494,42 +1907,69 @@ async function finalizeReq() {
 // =========================================================
 
 async function createNewMilestone() {
-    const desc =
-        document.getElementById("msDesc")?.value.trim();
+    const desc = document.getElementById(
+        "msDesc"
+    )?.value.trim();
 
-    const recipient =
-        document.getElementById("msRecipient")?.value.trim();
+    const recipient = document.getElementById(
+        "msRecipient"
+    )?.value.trim();
 
-    const amount =
-        document.getElementById("msAmount")?.value;
-
-    if (!signer) {
-        return alert("Сначала подключите MetaMask!");
-    }
-
-    if (
-        !desc ||
-        !recipient ||
-        !ethers.isAddress(recipient) ||
-        !amount ||
-        !Number.isFinite(Number(amount)) ||
-        Number(amount) <= 0
-    ) {
-        return alert(
-            "Проверьте описание, корректность 0x-адреса получателя и сумму."
-        );
-    }
+    const amount = document.getElementById(
+        "msAmount"
+    )?.value.trim();
 
     try {
-        /*
-         * Добавление этапа выполняется через RescueMilestones,
-         * а не через RescueDAO.
-         */
+
+        // -------------------------------------------------
+        // Проверки
+        // -------------------------------------------------
+
+        if (!isWalletConnected()) {
+            throw new Error(
+                "Сначала подключите MetaMask!"
+            );
+        }
+
+        requireMethod(
+            milestonesContract,
+            "addMilestone",
+            "RescueMilestones"
+        );
+
+        if (
+            !desc ||
+            !recipient ||
+            !ethers.isAddress(recipient) ||
+            recipient === ethers.ZeroAddress ||
+            !amount ||
+            !Number.isFinite(Number(amount)) ||
+            Number(amount) <= 0
+        ) {
+            throw new Error(
+                "Проверьте описание, корректность адреса получателя и сумму."
+            );
+        }
+
+        const amountWei = ethers.parseEther(
+            amount
+        );
+
+        if (amountWei <= 0n) {
+            throw new Error(
+                "Сумма этапа должна быть больше нуля."
+            );
+        }
+
+        // -------------------------------------------------
+        // Добавление этапа через RescueMilestones
+        // -------------------------------------------------
+
         const tx = await milestonesContract.addMilestone(
             requestId,
             desc,
             recipient,
-            ethers.parseEther(amount)
+            amountWei
         );
 
         alert(
@@ -1538,7 +1978,10 @@ async function createNewMilestone() {
 
         const receipt = await tx.wait();
 
-        if (!receipt || receipt.status !== 1) {
+        if (
+            !receipt ||
+            Number(receipt.status) !== 1
+        ) {
             throw new Error(
                 "Транзакция добавления этапа не подтверждена."
             );
@@ -1547,7 +1990,10 @@ async function createNewMilestone() {
         window.location.reload();
 
     } catch (err) {
-        console.error("Ошибка добавления этапа:", err);
+        console.error(
+            "Ошибка добавления этапа:",
+            err
+        );
 
         alert(
             "Ошибка добавления этапа: " +
@@ -1566,12 +2012,13 @@ async function loadMilestonesList(
     reqStatus,
     isRequester
 ) {
-    const box =
-        document.getElementById("milestonesContainer");
+    const box = document.getElementById(
+        "milestonesContainer"
+    );
 
     if (!box) return;
 
-    if (!mCount || mCount === 0) {
+    if (!Number.isInteger(mCount) || mCount <= 0) {
         box.innerHTML = `
             <p style="
                 color:var(--text-muted);
@@ -1580,23 +2027,33 @@ async function loadMilestonesList(
                 Этапы ещё не добавлены.
             </p>
         `;
+
         return;
     }
 
-    box.innerHTML = "";
-
     try {
+        requireMethod(
+            milestonesContract,
+            "getMilestone",
+            "RescueMilestones"
+        );
+
+        box.innerHTML = "";
+
         for (let m = 1; m <= mCount; m++) {
 
-            /*
-             * Информация об этапах читается
-             * непосредственно из RescueMilestones.
-             */
-            const ms =
-                await milestonesContract.getMilestone(
-                    requestId,
-                    m
-                );
+            // ---------------------------------------------
+            // Чтение этапа из RescueMilestones
+            // ---------------------------------------------
+
+            const ms = await milestonesContract.getMilestone(
+                requestId,
+                m
+            );
+
+            // ---------------------------------------------
+            // Статус этапа
+            // ---------------------------------------------
 
             let statusBadge = `
                 <span class="badge badge-gray">
@@ -1610,12 +2067,14 @@ async function loadMilestonesList(
                         Оплачено (${ms.approvalCount}/2)
                     </span>
                 `;
+
             } else if (ms.evidenceSubmitted) {
                 statusBadge = `
                     <span class="badge badge-blue">
                         Отчёт загружен (${ms.approvalCount}/2 подтверждений)
                     </span>
                 `;
+
             } else if (reqStatus === 1) {
                 statusBadge = `
                     <span class="badge badge-yellow">
@@ -1624,8 +2083,10 @@ async function loadMilestonesList(
                 `;
             }
 
-            // Форма отправки отчёта доступна инициатору
-            // только после одобрения заявки.
+            // ---------------------------------------------
+            // Форма отправки доказательства
+            // ---------------------------------------------
+
             const evidenceForm = (
                 reqStatus === 1 &&
                 isRequester &&
@@ -1647,7 +2108,11 @@ async function loadMilestonesList(
                             type="text"
                             id="evUri_${m}"
                             placeholder="Ссылка на чек/акт (ipfs://...)"
-                            style="flex:1; min-width:200px; padding:0.4rem;"
+                            style="
+                                flex:1;
+                                min-width:200px;
+                                padding:0.4rem;
+                            "
                         >
 
                         <input
@@ -1666,89 +2131,97 @@ async function loadMilestonesList(
                 `
                 : "";
 
-            box.innerHTML += `
-                <div
-                    class="list-item"
-                    style="
-                        padding:0.75rem 0;
-                        border-bottom:1px solid #e2e8f0;
-                    "
-                >
+            // ---------------------------------------------
+            // Отображение этапа
+            // ---------------------------------------------
 
-                    <div style="flex:1;">
+            const item = document.createElement("div");
 
-                        <div
-                            class="row-between"
-                            style="
-                                display:flex;
-                                justify-content:space-between;
-                                align-items:center;
-                                gap:0.5rem;
-                            "
-                        >
+            item.className = "list-item";
 
-                            <strong>
-                                Этап #${m}:
-                                ${escapeHtml(ms.description)}
-                            </strong>
+            item.style.cssText = `
+                padding:0.75rem 0;
+                border-bottom:1px solid #e2e8f0;
+            `;
 
-                            ${statusBadge}
+            item.innerHTML = `
+                <div style="flex:1;">
 
-                        </div>
+                    <div
+                        class="row-between"
+                        style="
+                            display:flex;
+                            justify-content:space-between;
+                            align-items:center;
+                            gap:0.5rem;
+                        "
+                    >
 
-                        <div style="
-                            font-size:0.88rem;
-                            margin-top:0.35rem;
-                        ">
-                            Сумма:
+                        <strong>
+                            Этап #${m}:
+                            ${escapeHtml(ms.description)}
+                        </strong>
 
-                            <strong>
-                                ${ethers.formatEther(ms.amount)} ETH
-                            </strong>
-
-                            · Получатель:
-
-                            <span class="mono">
-                                ${escapeHtml(ms.recipient)}
-                            </span>
-                        </div>
-
-                        ${
-                            ms.evidenceSubmitted
-                                ? `
-                                    <div
-                                        class="mono"
-                                        style="
-                                            margin-top:0.25rem;
-                                            font-size:0.8rem;
-                                            word-break:break-all;
-                                        "
-                                    >
-                                        Отчёт:
-                                        ${escapeHtml(ms.evidenceURI)}
-
-                                        | Hash:
-                                        ${escapeHtml(
-                                            shortAddr(ms.evidenceHash)
-                                        )}
-                                    </div>
-                                `
-                                : ""
-                        }
+                        ${statusBadge}
 
                     </div>
 
-                    ${evidenceForm}
+                    <div style="
+                        font-size:0.88rem;
+                        margin-top:0.35rem;
+                    ">
+                        Сумма:
+
+                        <strong>
+                            ${formatEth(ms.amount)} ETH
+                        </strong>
+
+                        · Получатель:
+
+                        <span class="mono">
+                            ${escapeHtml(ms.recipient)}
+                        </span>
+                    </div>
+
+                    ${
+                        ms.evidenceSubmitted
+                            ? `
+                                <div
+                                    class="mono"
+                                    style="
+                                        margin-top:0.25rem;
+                                        font-size:0.8rem;
+                                        word-break:break-all;
+                                    "
+                                >
+                                    Отчёт:
+                                    ${escapeHtml(ms.evidenceURI)}
+
+                                    | Hash:
+                                    ${escapeHtml(
+                                        shortAddr(ms.evidenceHash)
+                                    )}
+                                </div>
+                            `
+                            : ""
+                    }
 
                 </div>
+
+                ${evidenceForm}
             `;
+
+            box.appendChild(item);
         }
 
     } catch (err) {
-        console.error("Ошибка загрузки этапов:", err);
+        console.error(
+            "Ошибка загрузки этапов:",
+            err
+        );
 
         box.innerHTML = `
-            <p style="color:red;">
+            <p style="color:var(--danger);">
                 Не удалось загрузить этапы финансирования:
                 ${escapeHtml(getErrorMessage(err))}
             </p>
@@ -1762,27 +2235,35 @@ async function loadMilestonesList(
 // =========================================================
 
 async function submitEvidence(milestoneId) {
-    const uriInput =
-        document.getElementById(`evUri_${milestoneId}`);
+    const uriInput = document.getElementById(
+        `evUri_${milestoneId}`
+    );
 
-    const fileInput =
-        document.getElementById(`evFile_${milestoneId}`);
+    const fileInput = document.getElementById(
+        `evFile_${milestoneId}`
+    );
 
     const uri = uriInput?.value.trim();
+
     const file = fileInput?.files?.[0];
 
     try {
-        if (!signer) {
+
+        // -------------------------------------------------
+        // Проверки
+        // -------------------------------------------------
+
+        if (!isWalletConnected()) {
             throw new Error(
                 "Сначала подключите MetaMask."
             );
         }
 
-        if (!userAddress) {
-            throw new Error(
-                "Не определён адрес подключённого кошелька."
-            );
-        }
+        requireMethod(
+            milestonesContract,
+            "submitMilestoneEvidence",
+            "RescueMilestones"
+        );
 
         if (!file) {
             throw new Error(
@@ -1791,7 +2272,7 @@ async function submitEvidence(milestoneId) {
         }
 
         // -------------------------------------------------
-        // 1. Вычисляем хэш исходного файла
+        // ШАГ 1. Вычисление хэша исходного файла
         // -------------------------------------------------
 
         const buffer = await file.arrayBuffer();
@@ -1801,7 +2282,7 @@ async function submitEvidence(milestoneId) {
         );
 
         // -------------------------------------------------
-        // 2. Загружаем файл на backend
+        // ШАГ 2. Загрузка файла на backend
         // -------------------------------------------------
 
         const formData = new FormData();
@@ -1839,20 +2320,15 @@ async function submitEvidence(milestoneId) {
 
         if (!finalUri) {
             throw new Error(
-                "Сервер не вернул ссылку на документ. Укажите URI вручную."
+                "Сервер не вернул ссылку на документ. " +
+                "Укажите URI вручную."
             );
         }
 
         // -------------------------------------------------
-        // 3. Записываем URI и хэш в RescueMilestones
+        // ШАГ 3. Запись URI и хэша в RescueMilestones
         // -------------------------------------------------
 
-        /*
-         * submitMilestoneEvidence находится в RescueMilestones,
-         * поэтому вызываем milestonesContract.
-         *
-         * RescueDAO здесь не используется.
-         */
         const tx =
             await milestonesContract.submitMilestoneEvidence(
                 requestId,
@@ -1862,12 +2338,16 @@ async function submitEvidence(milestoneId) {
             );
 
         alert(
-            "Транзакция отправлена. Ожидаем подтверждения в блокчейне..."
+            "Транзакция отправлена. " +
+            "Ожидаем подтверждения в блокчейне..."
         );
 
         const receipt = await tx.wait();
 
-        if (!receipt || receipt.status !== 1) {
+        if (
+            !receipt ||
+            Number(receipt.status) !== 1
+        ) {
             throw new Error(
                 "Транзакция не была успешно подтверждена."
             );

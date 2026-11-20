@@ -1,3 +1,4 @@
+
 window.addEventListener("DOMContentLoaded", async () => {
     try {
         const ready = await initWeb3();
@@ -27,6 +28,19 @@ window.addEventListener("DOMContentLoaded", async () => {
 function requireContract(instance, name) {
     if (!instance) {
         throw new Error(`${name} не инициализирован.`);
+    }
+}
+
+/**
+ * Проверка наличия метода в контракте.
+ */
+function requireMethod(instance, methodName, contractName) {
+    requireContract(instance, contractName);
+
+    if (typeof instance[methodName] !== "function") {
+        throw new Error(
+            `В ABI ${contractName} отсутствует функция ${methodName}().`
+        );
     }
 }
 
@@ -67,7 +81,7 @@ function getRequestStatus(status) {
 }
 
 /**
- * Проверка наличия обязательных элементов страницы.
+ * Проверка наличия HTML-элемента.
  */
 function getElement(id) {
     const element = document.getElementById(id);
@@ -77,6 +91,25 @@ function getElement(id) {
     }
 
     return element;
+}
+
+/**
+ * Форматирование ETH.
+ */
+function formatEth(value) {
+    return ethers.formatEther(value);
+}
+
+/**
+ * Проверка подключения кошелька.
+ */
+function isWalletConnected() {
+    return (
+        typeof signer !== "undefined" &&
+        signer &&
+        typeof userAddress !== "undefined" &&
+        userAddress
+    );
 }
 
 
@@ -104,16 +137,16 @@ async function loadPoolStats() {
         ]);
 
         getElement("statDonated").textContent =
-            `${ethers.formatEther(donated)} ETH`;
+            `${formatEth(donated)} ETH`;
 
         getElement("statAvailable").textContent =
-            `${ethers.formatEther(available)} ETH`;
+            `${formatEth(available)} ETH`;
 
         getElement("statReserved").textContent =
-            `${ethers.formatEther(reserved)} ETH`;
+            `${formatEth(reserved)} ETH`;
 
         getElement("statSpent").textContent =
-            `${ethers.formatEther(spent)} ETH`;
+            `${formatEth(spent)} ETH`;
 
     } catch (err) {
         console.error(
@@ -126,30 +159,37 @@ async function loadPoolStats() {
 
 /**
  * Загрузка общей статистики целевых пожертвований.
- *
- * totalTargetDonations — общий объём средств, направленных
- * донорами непосредственно на отдельные заявки.
  */
 async function loadTargetDonationStats() {
-    const targetElement = document.getElementById("statTargetDonated");
+    const targetElement = document.getElementById(
+        "statTargetDonated"
+    );
 
     if (!targetElement) return;
 
     try {
-        requireContract(treasuryContract, "RescueTreasury");
+        requireContract(
+            treasuryContract,
+            "RescueTreasury"
+        );
 
-        if (typeof treasuryContract.totalTargetDonations !== "function") {
+        if (
+            typeof treasuryContract.totalTargetDonations !== "function"
+        ) {
             targetElement.textContent = "Недоступно";
+
             console.warn(
                 "В ABI RescueTreasury отсутствует totalTargetDonations()."
             );
+
             return;
         }
 
-        const total = await treasuryContract.totalTargetDonations();
+        const total =
+            await treasuryContract.totalTargetDonations();
 
         targetElement.textContent =
-            `${ethers.formatEther(total)} ETH`;
+            `${formatEth(total)} ETH`;
 
     } catch (err) {
         console.error(
@@ -157,7 +197,8 @@ async function loadTargetDonationStats() {
             err
         );
 
-        targetElement.textContent = "Не удалось загрузить";
+        targetElement.textContent =
+            "Не удалось загрузить";
     }
 }
 
@@ -172,25 +213,23 @@ async function donateToPool() {
     // Проверка подключения кошелька
     // -----------------------------------------------------
 
-    if (!signer || !userAddress) {
+    if (!isWalletConnected()) {
         alert("Сначала подключите MetaMask!");
         return;
     }
 
     // -----------------------------------------------------
-    // Проверка основного контракта DAO
+    // Проверка RescueDAO
     // -----------------------------------------------------
 
-    if (!contract) {
-        alert("Контракт RescueDAO не инициализирован.");
-        return;
-    }
-
-    if (typeof contract.donate !== "function") {
-        alert(
-            "В ABI RescueDAO отсутствует функция donate(). " +
-            "Проверьте ABI и исходный код контракта."
+    try {
+        requireMethod(
+            contract,
+            "donate",
+            "RescueDAO"
         );
+    } catch (err) {
+        alert(err.message);
         return;
     }
 
@@ -198,7 +237,14 @@ async function donateToPool() {
     // Получение суммы пожертвования
     // -----------------------------------------------------
 
-    const amountInput = getElement("donateAmount");
+    const amountInput = document.getElementById(
+        "donateAmount"
+    );
+
+    if (!amountInput) {
+        alert("Не найдено поле суммы пожертвования.");
+        return;
+    }
 
     const val = amountInput.value.trim();
 
@@ -212,18 +258,10 @@ async function donateToPool() {
     }
 
     try {
-
         const amountWei = ethers.parseEther(val);
 
-        // -------------------------------------------------
-        // Отправка пожертвования через RescueDAO
-        // -------------------------------------------------
-
-        /*
-         * Пользователь отправляет ETH основному DAO.
-         * DAO должен переслать средства в RescueTreasury
-         * и вызвать соответствующую функцию казначейства.
-         */
+        // Пожертвование отправляется в основной RescueDAO.
+        // RescueDAO должен перенаправить средства в RescueTreasury.
 
         const tx = await contract.donate({
             value: amountWei
@@ -236,7 +274,7 @@ async function donateToPool() {
 
         const receipt = await tx.wait();
 
-        if (!receipt || receipt.status !== 1) {
+        if (!receipt || Number(receipt.status) !== 1) {
             throw new Error(
                 "Транзакция пожертвования не подтверждена."
             );
@@ -248,11 +286,13 @@ async function donateToPool() {
 
         amountInput.value = "";
 
-        // Обновляем статистику фонда.
-        await loadPoolStats();
+        // Обновляем статистику после подтверждения транзакции.
+        await Promise.all([
+            loadPoolStats(),
+            loadTargetDonationStats()
+        ]);
 
     } catch (err) {
-
         console.error(
             "Ошибка пожертвования:",
             err
@@ -273,10 +313,10 @@ async function donateToPool() {
 async function submitAidRequest() {
 
     // -----------------------------------------------------
-    // Проверка подключения
+    // Проверка подключения кошелька
     // -----------------------------------------------------
 
-    if (!signer || !userAddress) {
+    if (!isWalletConnected()) {
         alert("Подключите MetaMask!");
         return;
     }
@@ -285,15 +325,14 @@ async function submitAidRequest() {
     // Проверка основного DAO
     // -----------------------------------------------------
 
-    if (!contract) {
-        alert("Контракт RescueDAO не инициализирован.");
-        return;
-    }
-
-    if (typeof contract.createAidRequest !== "function") {
-        alert(
-            "В ABI RescueDAO отсутствует функция createAidRequest()."
+    try {
+        requireMethod(
+            contract,
+            "createAidRequest",
+            "RescueDAO"
         );
+    } catch (err) {
+        alert(err.message);
         return;
     }
 
@@ -301,11 +340,16 @@ async function submitAidRequest() {
     // Проверка роли участника
     // -----------------------------------------------------
 
-    if (!userRoles || !userRoles.isMember) {
+    if (
+        typeof userRoles === "undefined" ||
+        !userRoles ||
+        !userRoles.isMember
+    ) {
         alert(
             "Создавать заявки могут только " +
             "зарегистрированные участники DAO."
         );
+
         return;
     }
 
@@ -336,7 +380,6 @@ async function submitAidRequest() {
     const evidenceFile = fileInput?.files?.[0];
 
     const photoFile = photoInput?.files?.[0];
-
 
     // -----------------------------------------------------
     // Проверка обязательных полей
@@ -375,6 +418,7 @@ async function submitAidRequest() {
             "Срок голосования должен составлять " +
             "от 1 до 43200 минут."
         );
+
         return;
     }
 
@@ -397,7 +441,6 @@ async function submitAidRequest() {
                 "Не удалось сформировать хэш документа."
             );
         }
-
 
         // -------------------------------------------------
         // ШАГ 2. Создание заявки в RescueDAO
@@ -425,19 +468,19 @@ async function submitAidRequest() {
 
         const receipt = await tx.wait();
 
-        if (!receipt || receipt.status !== 1) {
+        if (!receipt || Number(receipt.status) !== 1) {
             throw new Error(
                 "Транзакция создания заявки не подтверждена."
             );
         }
 
-
         // -------------------------------------------------
-        // ШАГ 3. Получение ID новой заявки через DAOView
+        // ШАГ 3. Получение ID через RescueDAOView
         // -------------------------------------------------
 
-        requireContract(
+        requireMethod(
             daoViewContract,
+            "getRequestCount",
             "RescueDAOView"
         );
 
@@ -453,7 +496,6 @@ async function submitAidRequest() {
                 "Не удалось определить ID созданной заявки."
             );
         }
-
 
         // -------------------------------------------------
         // ШАГ 4. Сохранение медиафайлов на backend
@@ -481,7 +523,6 @@ async function submitAidRequest() {
         }
 
         try {
-
             const response = await fetch(
                 `${API_URL}/requests/${newId}`,
                 {
@@ -491,7 +532,6 @@ async function submitAidRequest() {
             );
 
             if (!response.ok) {
-
                 const errorText =
                     await response.text();
 
@@ -514,7 +554,6 @@ async function submitAidRequest() {
             );
 
         } catch (apiErr) {
-
             console.error(
                 "Заявка создана в блокчейне, " +
                 "но медиафайлы не сохранены:",
@@ -528,7 +567,6 @@ async function submitAidRequest() {
             );
         }
 
-
         // -------------------------------------------------
         // ШАГ 5. Завершение
         // -------------------------------------------------
@@ -541,7 +579,6 @@ async function submitAidRequest() {
         window.location.reload();
 
     } catch (err) {
-
         console.error(
             "Ошибка создания заявки:",
             err
@@ -561,23 +598,39 @@ async function submitAidRequest() {
 
 async function loadAllRequests() {
 
-    const grid = document.getElementById("requestsGrid");
+    const grid = document.getElementById(
+        "requestsGrid"
+    );
 
     if (!grid) {
         console.error(
             "Не найден элемент requestsGrid."
         );
+
         return;
     }
 
     try {
 
         // -------------------------------------------------
-        // Проверка DAOView
+        // Проверка RescueDAOView
         // -------------------------------------------------
 
-        requireContract(
+        requireMethod(
             daoViewContract,
+            "getRequestCount",
+            "RescueDAOView"
+        );
+
+        requireMethod(
+            daoViewContract,
+            "getAidRequestInfo",
+            "RescueDAOView"
+        );
+
+        requireMethod(
+            daoViewContract,
+            "getAidRequestStats",
             "RescueDAOView"
         );
 
@@ -589,8 +642,13 @@ async function loadAllRequests() {
             await daoViewContract.getRequestCount()
         );
 
-        if (count === 0) {
+        if (!Number.isInteger(count) || count < 0) {
+            throw new Error(
+                "RescueDAOView вернул некорректное количество заявок."
+            );
+        }
 
+        if (count === 0) {
             grid.innerHTML =
                 "<p>Заявок пока нет. Создайте первую заявку выше!</p>";
 
@@ -599,7 +657,6 @@ async function loadAllRequests() {
 
         grid.innerHTML = "";
 
-
         // -------------------------------------------------
         // Отображение от новых заявок к старым
         // -------------------------------------------------
@@ -607,17 +664,13 @@ async function loadAllRequests() {
         for (let i = count; i >= 1; i--) {
 
             // ---------------------------------------------
-            // Получение информации через RescueDAOView
+            // Получение данных через RescueDAOView
             // ---------------------------------------------
 
             const [info, stats] = await Promise.all([
-
                 daoViewContract.getAidRequestInfo(i),
-
                 daoViewContract.getAidRequestStats(i)
-
             ]);
-
 
             // ---------------------------------------------
             // Получение дополнительных данных с backend
@@ -628,28 +681,24 @@ async function loadAllRequests() {
             };
 
             try {
-
                 const res = await fetch(
                     `${API_URL}/requests/${i}`
                 );
 
                 if (res.ok) {
-
                     const responseData =
                         await res.json();
 
-                    meta = responseData.data || responseData;
-
+                    meta =
+                        responseData.data || responseData;
                 }
 
             } catch (apiErr) {
-
                 console.warn(
                     `Не удалось загрузить медиафайлы заявки #${i}:`,
                     apiErr
                 );
             }
-
 
             // ---------------------------------------------
             // Подготовка изображения
@@ -658,7 +707,6 @@ async function loadAllRequests() {
             let imgTag = "";
 
             if (meta.photoUrl) {
-
                 const photoUrl =
                     escapeHtml(meta.photoUrl);
 
@@ -677,7 +725,6 @@ async function loadAllRequests() {
                 `;
             }
 
-
             // ---------------------------------------------
             // Подготовка статуса
             // ---------------------------------------------
@@ -686,16 +733,15 @@ async function loadAllRequests() {
                 stats.status
             );
 
-
             // ---------------------------------------------
             // Форматирование числовых данных
             // ---------------------------------------------
 
-            const reqEth = ethers.formatEther(
+            const reqEth = formatEth(
                 stats.requestedAmount
             );
 
-            const relEth = ethers.formatEther(
+            const relEth = formatEth(
                 stats.releasedAmount
             );
 
@@ -711,9 +757,11 @@ async function loadAllRequests() {
             const milestoneCount =
                 stats.milestoneCount.toString();
 
-            // Целевые пожертвования, направленные именно на эту заявку.
-            // Если getter отсутствует в ABI/контракте, карточка продолжит
-            // отображаться, но сообщит, что статистика недоступна.
+            // ---------------------------------------------
+            // Получение адресных пожертвований
+            // из RescueTreasury
+            // ---------------------------------------------
+
             let targetDonatedWei = 0n;
             let targetFundingAvailable = false;
 
@@ -727,6 +775,7 @@ async function loadAllRequests() {
 
                     targetFundingAvailable = true;
                 }
+
             } catch (targetErr) {
                 console.warn(
                     `Не удалось получить целевые пожертвования заявки #${i}:`,
@@ -734,9 +783,13 @@ async function loadAllRequests() {
                 );
             }
 
-            const targetDonatedEth = targetFundingAvailable
-                ? Number(ethers.formatEther(targetDonatedWei))
-                : 0;
+            // ---------------------------------------------
+            // Расчёт прогресса целевого финансирования
+            // ---------------------------------------------
+
+            const targetDonatedEth = Number(
+                formatEth(targetDonatedWei)
+            );
 
             const requestedEthNumber = Number(reqEth);
 
@@ -744,56 +797,86 @@ async function loadAllRequests() {
                 targetFundingAvailable && requestedEthNumber > 0
                     ? Math.min(
                         100,
-                        (targetDonatedEth / requestedEthNumber) * 100
+                        (
+                            targetDonatedEth /
+                            requestedEthNumber
+                        ) * 100
                     )
                     : 0;
 
-            const targetFundingHtml = targetFundingAvailable
-                ? `
-                    <div style="margin-top:0.85rem;">
-                        <div class="row-between" style="gap:0.5rem; margin-bottom:0.35rem;">
-                            <span>Целевые пожертвования:</span>
-                            <strong style="color:var(--text-main);">
-                                ${ethers.formatEther(targetDonatedWei)} / ${reqEth} ETH
-                            </strong>
-                        </div>
+            const targetFundingHtml =
+                targetFundingAvailable
+                    ? `
+                        <div style="margin-top:0.85rem;">
 
-                        <div
-                            role="progressbar"
-                            aria-label="Прогресс целевого финансирования заявки"
-                            aria-valuemin="0"
-                            aria-valuemax="100"
-                            aria-valuenow="${targetFundingPercent.toFixed(1)}"
-                            style="
-                                width:100%;
-                                height:8px;
-                                overflow:hidden;
-                                background:#e2e8f0;
-                                border-radius:999px;
-                            "
-                        >
+                            <div
+                                class="row-between"
+                                style="
+                                    gap:0.5rem;
+                                    margin-bottom:0.35rem;
+                                "
+                            >
+                                <span>
+                                    Целевые пожертвования:
+                                </span>
+
+                                <strong style="color:var(--text-main);">
+                                    ${formatEth(targetDonatedWei)}
+                                    /
+                                    ${reqEth} ETH
+                                </strong>
+
+                            </div>
+
+                            <div
+                                role="progressbar"
+                                aria-label="Прогресс целевого финансирования заявки"
+                                aria-valuemin="0"
+                                aria-valuemax="100"
+                                aria-valuenow="${targetFundingPercent.toFixed(1)}"
+                                style="
+                                    width:100%;
+                                    height:8px;
+                                    overflow:hidden;
+                                    background:#e2e8f0;
+                                    border-radius:999px;
+                                "
+                            >
+                                <div
+                                    style="
+                                        width:${targetFundingPercent.toFixed(2)}%;
+                                        height:100%;
+                                        background:var(--primary);
+                                        border-radius:999px;
+                                        transition:width 0.25s ease;
+                                    "
+                                ></div>
+                            </div>
+
                             <div
                                 style="
-                                    width:${targetFundingPercent.toFixed(2)}%;
-                                    height:100%;
-                                    background:var(--primary);
-                                    border-radius:999px;
-                                    transition:width 0.25s ease;
+                                    font-size:0.78rem;
+                                    color:var(--text-muted);
+                                    margin-top:0.3rem;
                                 "
-                            ></div>
-                        </div>
+                            >
+                                Собрано адресно:
+                                ${targetFundingPercent.toFixed(1)}%
+                            </div>
 
-                        <div style="font-size:0.78rem; color:var(--text-muted); margin-top:0.3rem;">
-                            Собрано адресно: ${targetFundingPercent.toFixed(1)}%
                         </div>
-                    </div>
-                `
-                : `
-                    <div style="margin-top:0.75rem; font-size:0.82rem; color:var(--text-muted);">
-                        Статистика целевых пожертвований временно недоступна.
-                    </div>
-                `;
-
+                    `
+                    : `
+                        <div
+                            style="
+                                margin-top:0.75rem;
+                                font-size:0.82rem;
+                                color:var(--text-muted);
+                            "
+                        >
+                            Статистика целевых пожертвований временно недоступна.
+                        </div>
+                    `;
 
             // ---------------------------------------------
             // Подготовка текста
@@ -810,7 +893,6 @@ async function loadAllRequests() {
 
             const statusClass =
                 escapeHtml(statusObj.cls);
-
 
             // ---------------------------------------------
             // Формирование карточки заявки
@@ -840,7 +922,6 @@ async function loadAllRequests() {
 
                     </div>
 
-
                     <p
                         style="
                             font-size:0.92rem;
@@ -851,7 +932,6 @@ async function loadAllRequests() {
                     >
                         ${description}
                     </p>
-
 
                     <div
                         style="
@@ -889,7 +969,6 @@ async function loadAllRequests() {
                             </strong>
                         </div>
 
-
                         <div>
                             Этапов:
 
@@ -903,7 +982,6 @@ async function loadAllRequests() {
                     </div>
 
                 </div>
-
 
                 <a
                     href="request.html?id=${i}"
@@ -921,7 +999,6 @@ async function loadAllRequests() {
         }
 
     } catch (err) {
-
         console.error(
             "Ошибка загрузки заявок:",
             err

@@ -5,7 +5,7 @@
 
 // Основной контракт DAO: заявки, голосование, участники.
 const DAO_ADDRESS =
-    "0xB2F665D228031C6A596815029D068F53A56eEe52";
+    "0x9FF8A1115B6Dd042b9c06cf6E0827653e5aA480f";
 
 // Контракт NFT-паспортов.
 const NFT_ADDRESS =
@@ -21,11 +21,11 @@ const DAO_VIEW_ADDRESS =
 
 // Финансовый контракт.
 const TREASURY_ADDRESS =
-    "0x8251E86c6Fbfb2276A3Be0fCc237432918612fE8";
+    "0xb75aF740499D62Ef3B41Fe24F564A6eA3E8f6284";
 
 // Контракт NFT-бейджей достижений пользователей.
 const BADGES_ADDRESS =
-    "ВСТАВЬ_АДРЕС_РАЗВЕРНУТОГО_RESCUE_BADGES";
+    "0x5268A10FDa02F61408035ECD28Cfd0FDeCC1743a";
 
 
 // =========================================================

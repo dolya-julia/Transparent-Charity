@@ -1,9 +1,9 @@
 {
   "1": {
     "shelterName": "Приют-партнёр",
-    "fullStory": "Лечение в клинике",
-    "photoUrl": "http://localhost:3001/uploads/photo-1795117014126-434880.jpg",
-    "docUrl": "http://localhost:3001/uploads/doc-1795117014136-942670.jpg",
+    "fullStory": "Лечение к клинике",
+    "photoUrl": "http://localhost:3001/uploads/photo-1795175038983-674475.jpg",
+    "docUrl": "http://localhost:3001/uploads/doc-1795175039012-364955.jpg",
     "milestones": {
       "1": {
         "docUrl": "http://localhost:3001/uploads/ms-1795117365308-705250.jpg",
@@ -13,9 +13,15 @@
   },
   "2": {
     "shelterName": "Приют-партнёр",
-    "fullStory": "Покупка лекарств",
-    "photoUrl": "http://localhost:3001/uploads/photo-1795117179185-389638.jpg",
-    "docUrl": "http://localhost:3001/uploads/doc-1795117179186-851741.jpg"
+    "fullStory": "Покупка  лекарств",
+    "photoUrl": "http://localhost:3001/uploads/photo-1795175500950-8680.jpg",
+    "docUrl": "http://localhost:3001/uploads/doc-1795175500951-991881.jpg",
+    "milestones": {
+      "1": {
+        "docUrl": "http://localhost:3001/uploads/ms-1795175953412-352615.jpg",
+        "uploadedAt": "2026-11-20T11:59:13.491Z"
+      }
+    }
   },
   "3": {
     "milestones": {},

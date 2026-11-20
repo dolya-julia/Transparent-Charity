@@ -59,13 +59,27 @@ function initializeContracts(connection) {
         );
     }
 
+    if (!provider) {
+        throw new Error(
+            "Web3 provider не инициализирован."
+        );
+    }
+
     // --------------------------------------------------
     // RescueDAO
     // --------------------------------------------------
 
     // Основной контракт.
-    // Используется для создания заявок, голосования,
-    // регистрации участников и финализации.
+    // Используется для:
+    // - создания заявок;
+    // - голосования;
+    // - регистрации участников;
+    // - финализации заявок;
+    // - проверки ролей.
+    //
+    // При подключённом кошельке получает signer.
+    // Без кошелька работает только для чтения через provider.
+
     contract = new ethers.Contract(
         DAO_ADDRESS,
         DAO_ABI,
@@ -77,8 +91,12 @@ function initializeContracts(connection) {
     // RescueDAOView
     // --------------------------------------------------
 
-    // Контракт для чтения информации о заявках,
-    // статистики голосования и финансовых показателей.
+    // Контракт для чтения:
+    // - количества заявок;
+    // - информации о заявках;
+    // - статистики голосования;
+    // - информации об участниках.
+
     daoViewContract = new ethers.Contract(
         DAO_VIEW_ADDRESS,
         DAO_VIEW_ABI,
@@ -91,8 +109,13 @@ function initializeContracts(connection) {
     // --------------------------------------------------
 
     // Контракт казначейства.
-    // Используется преимущественно для чтения балансов,
-    // резервов, пожертвований и выплат.
+    // Используется для чтения:
+    // - общего объёма пожертвований;
+    // - зарезервированных средств;
+    // - доступного баланса;
+    // - целевых пожертвований;
+    // - информации о выплатах.
+
     treasuryContract = new ethers.Contract(
         TREASURY_ADDRESS,
         TREASURY_ABI,
@@ -105,8 +128,14 @@ function initializeContracts(connection) {
     // --------------------------------------------------
 
     // Контракт этапов финансирования.
-    // Используется для добавления этапов,
-    // отправки отчётов и подтверждения выплат.
+    // Используется для:
+    // - создания этапов;
+    // - отправки отчётов;
+    // - подтверждения этапов валидаторами;
+    // - получения информации о выплатах.
+    //
+    // При подключённом кошельке получает signer.
+
     milestonesContract = new ethers.Contract(
         MILESTONES_ADDRESS,
         MILESTONES_ABI,
@@ -119,12 +148,25 @@ function initializeContracts(connection) {
     // --------------------------------------------------
 
     // NFT-контракт.
-    // Используется для чтения выпущенных NFT-паспортов.
+    // Используется для чтения:
+    // - идентификатора NFT по заявке;
+    // - владельца NFT;
+    // - metadata паспорта.
+
     nftContract = new ethers.Contract(
         NFT_ADDRESS,
         NFT_ABI,
         provider
     );
+
+
+    console.log("Контракты инициализированы:", {
+        RescueDAO: DAO_ADDRESS,
+        RescueDAOView: DAO_VIEW_ADDRESS,
+        RescueTreasury: TREASURY_ADDRESS,
+        RescueMilestones: MILESTONES_ADDRESS,
+        RescueNFT: NFT_ADDRESS
+    });
 }
 
 
@@ -144,8 +186,10 @@ function validateContractAddresses() {
 
     for (const [name, address] of Object.entries(addresses)) {
 
-        if (!ethers.isAddress(address)) {
-
+        if (
+            typeof address !== "string" ||
+            !ethers.isAddress(address)
+        ) {
             console.error(
                 `Некорректный адрес ${name}:`,
                 address
@@ -156,7 +200,10 @@ function validateContractAddresses() {
             );
         }
 
-        if (address === ethers.ZeroAddress) {
+        if (
+            address.toLowerCase() ===
+            ethers.ZeroAddress.toLowerCase()
+        ) {
             throw new Error(
                 `Для ${name} указан нулевой адрес.`
             );
@@ -242,6 +289,7 @@ async function initWeb3() {
         const networkReady = await checkNetwork();
 
         if (!networkReady) {
+            resetWalletState();
             return false;
         }
 
@@ -263,12 +311,16 @@ async function initWeb3() {
         if (accounts.length > 0) {
 
             // Кошелёк уже подключён.
-            await setupSigner();
+            const ready = await setupSigner();
+
+            if (!ready) {
+                return false;
+            }
 
         } else {
 
             // Кошелёк не подключён.
-            // Разрешаем только чтение данных блокчейна.
+            // Разрешаем чтение данных блокчейна.
 
             resetWalletState();
 
@@ -303,6 +355,8 @@ async function initWeb3() {
             handleChainChanged
         );
 
+
+        console.log("Web3 успешно инициализирован.");
 
         return true;
 
@@ -348,7 +402,8 @@ async function handleAccountsChanged(accounts) {
             updateConnectButton();
             updateRoleBadge();
 
-            // Убираем доступные транзакционные действия.
+            // Обновляем страницу, чтобы убрать
+            // доступные транзакционные действия.
             window.location.reload();
 
             return;
@@ -404,7 +459,10 @@ async function connectWallet() {
         }
 
 
-        // Создаём provider, если он ещё не создан.
+        // --------------------------------------------------
+        // 1. Создаём provider, если он ещё не создан
+        // --------------------------------------------------
+
         if (!provider) {
 
             provider = new ethers.BrowserProvider(
@@ -413,14 +471,27 @@ async function connectWallet() {
         }
 
 
-        // Запрашиваем доступ к аккаунтам.
+        // --------------------------------------------------
+        // 2. Проверяем адреса контрактов
+        // --------------------------------------------------
+
+        validateContractAddresses();
+
+
+        // --------------------------------------------------
+        // 3. Запрашиваем доступ к аккаунтам
+        // --------------------------------------------------
+
         await provider.send(
             "eth_requestAccounts",
             []
         );
 
 
-        // Проверяем правильность сети.
+        // --------------------------------------------------
+        // 4. Проверяем правильность сети
+        // --------------------------------------------------
+
         const networkReady = await checkNetwork();
 
         if (!networkReady) {
@@ -428,7 +499,10 @@ async function connectWallet() {
         }
 
 
-        // Подключаем signer и загружаем роли.
+        // --------------------------------------------------
+        // 5. Подключаем signer и загружаем роли
+        // --------------------------------------------------
+
         const ready = await setupSigner();
 
         if (!ready) {
@@ -485,6 +559,13 @@ async function setupSigner() {
     if (!networkReady) {
 
         resetWalletState();
+
+        if (provider) {
+            initializeContracts(provider);
+        }
+
+        updateConnectButton();
+        updateRoleBadge();
 
         return false;
     }
@@ -557,14 +638,16 @@ async function setupSigner() {
         // 7. Проверяем регистрацию в DAO
         // --------------------------------------------------
 
-        userRoles.isMember = memberFlag;
+        userRoles.isMember =
+            Boolean(memberFlag);
 
 
         // --------------------------------------------------
         // 8. Проверяем роль валидатора
         // --------------------------------------------------
 
-        userRoles.isValidator = valFlag;
+        userRoles.isValidator =
+            Boolean(valFlag);
 
 
         // Обновляем индикатор ролей.
@@ -581,8 +664,6 @@ async function setupSigner() {
             userRoles
         );
 
-
-        return true;
 
     } catch (err) {
 
@@ -603,9 +684,18 @@ async function setupSigner() {
 
         updateRoleBadge();
 
-
-        return false;
+        /*
+         * Важно:
+         * ошибка определения ролей не должна блокировать
+         * чтение данных из DAOView, Treasury и NFT.
+         *
+         * Кошелёк остаётся подключённым, но действия,
+         * требующие роли, будут недоступны.
+         */
     }
+
+
+    return true;
 }
 
 
@@ -758,20 +848,17 @@ async function hashFileOrDefault(
 
 function shortAddr(addr) {
 
-    if (
-        !addr ||
-        typeof addr !== "string"
-    ) {
+    if (!addr) {
         return "Не указан";
     }
 
+    const value = String(addr);
 
-    if (addr.length <= 13) {
-        return addr;
+    if (value.length <= 13) {
+        return value;
     }
 
-
-    return `${addr.slice(0, 6)}...${addr.slice(-4)}`;
+    return `${value.slice(0, 6)}...${value.slice(-4)}`;
 }
 
 

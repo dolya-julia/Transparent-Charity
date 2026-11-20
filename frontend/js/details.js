@@ -1,6 +1,6 @@
 
 // =========================================================
-// 1. ПАРАМЕТРЫ СТРАНИЦЫ
+// 1. ПАРАМЕТРЫ СТРАНИЦЫ И ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ
 // =========================================================
 
 const urlParams = new URLSearchParams(window.location.search);
@@ -8,23 +8,89 @@ const requestId = Number(urlParams.get("id"));
 
 let currentEvidenceHash = "";
 
+function escapeHtml(value) {
+    return String(value ?? "").replace(/[&<>"']/g, char => ({
+        "&": "&amp;",
+        "<": "&lt;",
+        ">": "&gt;",
+        '"': "&quot;",
+        "'": "&#039;"
+    })[char]);
+}
+
+function shortAddr(value) {
+    const str = String(value ?? "");
+
+    if (str.length <= 18) return str;
+
+    return `${str.slice(0, 10)}...${str.slice(-8)}`;
+}
+
+function getErrorMessage(err) {
+    return (
+        err?.reason ||
+        err?.shortMessage ||
+        err?.message ||
+        "Неизвестная ошибка"
+    );
+}
+
 
 // =========================================================
 // 2. ИНИЦИАЛИЗАЦИЯ
 // =========================================================
 
 window.addEventListener("DOMContentLoaded", async () => {
-    if (!requestId || !Number.isInteger(requestId) || requestId <= 0) {
-        document.getElementById("campaignContent").innerHTML =
-            "<p>Не указан корректный ID заявки.</p>";
+    const container = document.getElementById("campaignContent");
+
+    if (!container) {
+        console.error("Не найден элемент campaignContent.");
         return;
     }
 
-    const ready = await initWeb3();
+    if (!requestId || !Number.isInteger(requestId) || requestId <= 0) {
+        container.innerHTML =
+            '<p style="color:var(--danger);">Не указан корректный ID заявки.</p>';
+        return;
+    }
 
-    if (!ready) return;
+    try {
+        const ready = await initWeb3();
 
-    await loadRequestDetails();
+        if (!ready) {
+            container.innerHTML = `
+                <p style="color:var(--danger);">
+                    Не удалось подключиться к блокчейну.
+                    Проверьте подключение кошелька и выбранную сеть.
+                </p>
+            `;
+            return;
+        }
+
+        // Проверяем, что все необходимые контракты инициализированы.
+        if (
+            typeof contract === "undefined" ||
+            typeof daoViewContract === "undefined" ||
+            typeof milestonesContract === "undefined" ||
+            typeof nftContract === "undefined"
+        ) {
+            throw new Error(
+                "Не все контракты инициализированы. Проверьте config.js и wallet.js."
+            );
+        }
+
+        await loadRequestDetails();
+
+    } catch (err) {
+        console.error("Ошибка инициализации страницы заявки:", err);
+
+        container.innerHTML = `
+            <p style="color:var(--danger);">
+                Ошибка инициализации:
+                ${escapeHtml(getErrorMessage(err))}
+            </p>
+        `;
+    }
 });
 
 
@@ -36,7 +102,10 @@ async function loadRequestDetails() {
     const container = document.getElementById("campaignContent");
 
     try {
-        // Проверяем, существует ли заявка.
+        // -------------------------------------------------
+        // Проверяем существование заявки через RescueDAOView
+        // -------------------------------------------------
+
         const exists = await daoViewContract.requestExists(requestId);
 
         if (!exists) {
@@ -48,13 +117,19 @@ async function loadRequestDetails() {
             return;
         }
 
-        // DAOView используется только для чтения информации о заявке.
+        // -------------------------------------------------
+        // Получаем информацию и статистику заявки
+        // -------------------------------------------------
+
         const [info, stats] = await Promise.all([
             daoViewContract.getAidRequestInfo(requestId),
             daoViewContract.getAidRequestStats(requestId)
         ]);
 
-        // Загружаем дополнительные данные с Node.js backend.
+        // -------------------------------------------------
+        // Дополнительные данные с Node.js backend
+        // -------------------------------------------------
+
         let meta = {
             photoUrl: "",
             docUrl: "",
@@ -62,35 +137,50 @@ async function loadRequestDetails() {
         };
 
         try {
-            const res = await fetch(`${API_URL}/requests/${requestId}`);
+            const response = await fetch(
+                `${API_URL}/requests/${requestId}`
+            );
 
-            if (res.ok) {
-                meta = await res.json();
+            if (response.ok) {
+                const serverData = await response.json();
+
+                meta = {
+                    ...meta,
+                    ...serverData
+                };
             }
         } catch (err) {
-            console.warn("Не удалось загрузить дополнительные данные:", err);
+            console.warn(
+                "Не удалось загрузить дополнительные данные:",
+                err
+            );
         }
 
         currentEvidenceHash = info.evidenceHash;
 
         const statusNum = Number(stats.status);
+
         const statusObj =
             STATUS_LABELS[statusNum] || STATUS_LABELS[0];
 
-        const endsDate = new Date(
-            Number(stats.votingEndsAt) * 1000
-        ).toLocaleString("ru-RU");
+        const endsTimestamp = Number(stats.votingEndsAt);
+
+        const endsDate = endsTimestamp
+            ? new Date(endsTimestamp * 1000).toLocaleString("ru-RU")
+            : "Не указано";
 
         const nowSec = Math.floor(Date.now() / 1000);
 
-        const votingEnded =
-            nowSec >= Number(stats.votingEndsAt);
+        const votingEnded = nowSec >= endsTimestamp;
 
         const isRequester =
             !!userAddress &&
             info.requester.toLowerCase() === userAddress.toLowerCase();
 
-        // Проверяем, голосовал ли пользователь.
+        // -------------------------------------------------
+        // Проверяем, голосовал ли пользователь
+        // -------------------------------------------------
+
         const voted = userAddress
             ? await daoViewContract.hasParticipantVoted(
                 requestId,
@@ -102,11 +192,13 @@ async function loadRequestDetails() {
         // ФОТО ЖИВОТНОГО
         // =================================================
 
-        const photoBlock = meta.photoUrl
-            ? `
+        let photoBlock = "";
+
+        if (meta.photoUrl) {
+            photoBlock = `
                 <img
-                    src="${meta.photoUrl}"
-                    alt="${info.animalName}"
+                    src="${escapeHtml(meta.photoUrl)}"
+                    alt="${escapeHtml(info.animalName)}"
                     class="details-hero-img"
                     style="
                         width:100%;
@@ -116,8 +208,9 @@ async function loadRequestDetails() {
                         margin:1rem 0;
                     "
                 >
-            `
-            : `
+            `;
+        } else {
+            photoBlock = `
                 <div
                     class="card-img"
                     style="
@@ -131,6 +224,7 @@ async function loadRequestDetails() {
                     🐾
                 </div>
             `;
+        }
 
         // =================================================
         // ССЫЛКА НА ДОКУМЕНТ
@@ -140,12 +234,12 @@ async function loadRequestDetails() {
             ? `
                 <div style="margin-top:0.4rem;">
                     <a
-                        href="${meta.docUrl}"
+                        href="${escapeHtml(meta.docUrl)}"
                         target="_blank"
                         rel="noopener noreferrer"
                         class="tx-link"
                     >
-                        📄 Скачать документ с сервера для проверки хэша &nearr;
+                        📄 Скачать документ с сервера для проверки хэша ↗
                     </a>
                 </div>
             `
@@ -159,7 +253,11 @@ async function loadRequestDetails() {
 
         if (statusNum === 0) {
 
-            if (!votingEnded && userRoles.isMember && !voted) {
+            if (
+                !votingEnded &&
+                userRoles?.isMember &&
+                !voted
+            ) {
                 votingControls = `
                     <div
                         style="
@@ -194,6 +292,15 @@ async function loadRequestDetails() {
                         Вы уже проголосовали по этой заявке
                     </p>
                 `;
+            } else if (!userRoles?.isMember && !votingEnded) {
+                votingControls = `
+                    <p
+                        style="margin-top:0.75rem;"
+                        class="badge badge-gray"
+                    >
+                        Голосование доступно участникам DAO
+                    </p>
+                `;
             }
 
             if (votingEnded) {
@@ -214,9 +321,10 @@ async function loadRequestDetails() {
         // =================================================
 
         const addMilestoneBlock =
-            (statusNum === 0 && !votingEnded && isRequester)
+            statusNum === 0 && !votingEnded && isRequester
                 ? `
                     <div class="box" style="margin-top:1rem;">
+
                         <h3>Добавить этап финансирования</h3>
 
                         <p
@@ -227,6 +335,7 @@ async function loadRequestDetails() {
                             "
                         >
                             Распределено по этапам:
+
                             <strong>
                                 ${ethers.formatEther(stats.milestoneTotal)}
                                 /
@@ -289,6 +398,7 @@ async function loadRequestDetails() {
                                 id="msAmount"
                                 class="input-field"
                                 step="0.001"
+                                min="0"
                                 placeholder="0.003"
                                 style="
                                     width:100%;
@@ -305,6 +415,7 @@ async function loadRequestDetails() {
                         >
                             Добавить этап
                         </button>
+
                     </div>
                 `
                 : "";
@@ -328,26 +439,29 @@ async function loadRequestDetails() {
                                 display:flex;
                                 justify-content:space-between;
                                 align-items:center;
+                                gap:1rem;
                                 margin-bottom:0.75rem;
                             "
                         >
                             <h1>
-                                Заявка #${requestId}: ${info.animalName}
+                                Заявка #${requestId}:
+                                ${escapeHtml(info.animalName)}
                             </h1>
 
                             <span
-                                class="badge ${statusObj.cls}"
+                                class="badge ${escapeHtml(statusObj.cls)}"
                                 style="
                                     padding:0.3rem 0.6rem;
                                     border-radius:4px;
                                 "
                             >
-                                ${statusObj.text}
+                                ${escapeHtml(statusObj.text)}
                             </span>
                         </div>
 
                         <p class="mono">
-                            Инициатор: ${info.requester}
+                            Инициатор:
+                            ${escapeHtml(info.requester)}
                         </p>
 
                         ${photoBlock}
@@ -357,7 +471,7 @@ async function loadRequestDetails() {
                         </h3>
 
                         <p style="margin:0.5rem 0; color:#334155;">
-                            ${meta.fullStory || info.description}
+                            ${escapeHtml(meta.fullStory || info.description)}
                         </p>
 
                         <!-- NFT-паспорт -->
@@ -381,7 +495,7 @@ async function loadRequestDetails() {
 
                             <div>
                                 <strong>Документы (URI):</strong>
-                                ${info.evidenceURI}
+                                ${escapeHtml(info.evidenceURI)}
                             </div>
 
                             <div
@@ -389,7 +503,7 @@ async function loadRequestDetails() {
                                 style="margin-top:0.25rem;"
                             >
                                 <strong>Хэш в блокчейне:</strong>
-                                ${info.evidenceHash}
+                                ${escapeHtml(info.evidenceHash)}
                             </div>
 
                             ${downloadDocLink}
@@ -428,7 +542,9 @@ async function loadRequestDetails() {
                                     "
                                 ></span>
                             </div>
+
                         </div>
+
                     </div>
 
                     ${addMilestoneBlock}
@@ -444,6 +560,7 @@ async function loadRequestDetails() {
                         <div id="milestonesContainer">
                             Загрузка этапов...
                         </div>
+
                     </div>
 
                 </div>
@@ -517,7 +634,7 @@ async function loadRequestDetails() {
                         >
                             <span>Окончание голосования:</span>
 
-                            <strong>${endsDate}</strong>
+                            <strong>${escapeHtml(endsDate)}</strong>
                         </div>
 
                         <div
@@ -551,26 +668,33 @@ async function loadRequestDetails() {
                     ${votingControls}
 
                 </div>
+
             </div>
         `;
 
-        // Загружаем этапы из RescueMilestones.
+        // -------------------------------------------------
+        // Загружаем этапы из RescueMilestones
+        // -------------------------------------------------
+
         await loadMilestonesList(
             Number(stats.milestoneCount),
             statusNum,
             isRequester
         );
 
-        // Загружаем NFT-паспорт.
+        // -------------------------------------------------
+        // Загружаем NFT-паспорт из RescueNFT
+        // -------------------------------------------------
+
         await loadNftPassport(requestId);
 
     } catch (err) {
         console.error("Ошибка загрузки заявки:", err);
 
         container.innerHTML = `
-            <p style="color:red;">
+            <p style="color:var(--danger);">
                 Ошибка загрузки заявки:
-                ${err.shortMessage || err.reason || err.message}
+                ${escapeHtml(getErrorMessage(err))}
             </p>
         `;
     }
@@ -588,8 +712,8 @@ async function loadNftPassport(requestId) {
     if (!nftContainer) return;
 
     try {
-        // Получаем адрес NFT, привязанный к DAO.
-        const nftAddress = await daoContract.rescueNftContract();
+        // Адрес NFT-контракта читаем из основного RescueDAO.
+        const nftAddress = await contract.rescueNftContract();
 
         if (
             !nftAddress ||
@@ -603,7 +727,7 @@ async function loadNftPassport(requestId) {
             return;
         }
 
-        // Проверяем, что адрес в DAO совпадает с конфигурацией.
+        // Проверяем совпадение адреса в DAO с config.js.
         if (
             ethers.getAddress(nftAddress) !==
             ethers.getAddress(NFT_ADDRESS)
@@ -617,7 +741,7 @@ async function loadNftPassport(requestId) {
             return;
         }
 
-        // Используем отдельный NFT-контракт.
+        // Получаем ID NFT, привязанного к заявке.
         const tokenId =
             await nftContract.getTokenIdForRequest(requestId);
 
@@ -631,7 +755,7 @@ async function loadNftPassport(requestId) {
             return;
         }
 
-        // Получаем владельца и метаданные NFT.
+        // Получаем владельца и URI метаданных.
         const [owner, uri] = await Promise.all([
             nftContract.ownerOf(tokenId),
             nftContract.tokenURI(tokenId)
@@ -641,7 +765,7 @@ async function loadNftPassport(requestId) {
             nftContainer.innerHTML = `
                 <p class="mono">
                     NFT #${tokenId} выпущен.
-                    URI: ${uri}
+                    URI: ${escapeHtml(uri)}
                 </p>
             `;
             return;
@@ -672,11 +796,13 @@ async function loadNftPassport(requestId) {
                         display:inline-block;
                     "
                 >
-                    ${attr.trait_type}: ${attr.value}
+                    ${escapeHtml(attr.trait_type)}:
+                    ${escapeHtml(attr.value)}
                 </span>
             `)
             .join("");
 
+        // Показываем NFT-паспорт.
         nftContainer.innerHTML = `
             <div
                 style="
@@ -714,8 +840,8 @@ async function loadNftPassport(requestId) {
                 >
 
                     <img
-                        src="${metadata.image}"
-                        alt="${metadata.name || "NFT-паспорт"}"
+                        id="nftPassportImage"
+                        alt="${escapeHtml(metadata.name || "NFT-паспорт")}"
                         style="
                             width:200px;
                             height:auto;
@@ -733,7 +859,7 @@ async function loadNftPassport(requestId) {
                                 margin-bottom:0.35rem;
                             "
                         >
-                            ${metadata.name || "NFT-паспорт животного"}
+                            ${escapeHtml(metadata.name || "NFT-паспорт животного")}
                         </div>
 
                         <p
@@ -743,7 +869,7 @@ async function loadNftPassport(requestId) {
                                 margin-bottom:0.6rem;
                             "
                         >
-                            ${metadata.description || ""}
+                            ${escapeHtml(metadata.description || "")}
                         </p>
 
                         <div
@@ -754,7 +880,7 @@ async function loadNftPassport(requestId) {
                                 word-break:break-all;
                             "
                         >
-                            Владелец: ${owner}
+                            Владелец: ${escapeHtml(owner)}
                         </div>
 
                         <div>
@@ -762,9 +888,26 @@ async function loadNftPassport(requestId) {
                         </div>
 
                     </div>
+
                 </div>
+
             </div>
         `;
+
+        // Устанавливаем изображение после проверки формата URI.
+        const imageElement =
+            document.getElementById("nftPassportImage");
+
+        if (
+            imageElement &&
+            typeof metadata.image === "string" &&
+            metadata.image.startsWith("data:image/svg+xml;base64,")
+        ) {
+            imageElement.src = metadata.image;
+        } else if (imageElement) {
+            imageElement.alt = "Изображение NFT недоступно";
+            imageElement.style.display = "none";
+        }
 
     } catch (err) {
         console.error(
@@ -793,11 +936,13 @@ async function loadNftPassport(requestId) {
 // =========================================================
 
 async function verifyDocumentHash() {
-    const input = document.getElementById("verifyFileInput");
+    const input =
+        document.getElementById("verifyFileInput");
 
-    const resSpan = document.getElementById("verifyResult");
+    const resSpan =
+        document.getElementById("verifyResult");
 
-    if (!input.files || !input.files.length) return;
+    if (!input?.files?.length) return;
 
     try {
         const buffer = await input.files[0].arrayBuffer();
@@ -843,8 +988,8 @@ async function castVote(support) {
             throw new Error("Сначала подключите кошелёк.");
         }
 
-        // Голосование выполняется через RescueDAO.
-        const tx = await daoContract.vote(
+        // Голосование выполняется через основной RescueDAO.
+        const tx = await contract.vote(
             requestId,
             support
         );
@@ -867,8 +1012,7 @@ async function castVote(support) {
         console.error("Ошибка голосования:", err);
 
         alert(
-            "Ошибка голосования: " +
-            (err.reason || err.shortMessage || err.message)
+            "Ошибка голосования: " + getErrorMessage(err)
         );
     }
 }
@@ -880,8 +1024,12 @@ async function castVote(support) {
 
 async function finalizeReq() {
     try {
-        // Финализация выполняется через RescueDAO.
-        const tx = await daoContract.finalizeRequest(
+        if (!userAddress) {
+            throw new Error("Сначала подключите кошелёк.");
+        }
+
+        // Финализация выполняется через основной RescueDAO.
+        const tx = await contract.finalizeRequest(
             requestId
         );
 
@@ -901,8 +1049,7 @@ async function finalizeReq() {
         console.error("Ошибка финализации:", err);
 
         alert(
-            "Ошибка финализации: " +
-            (err.reason || err.shortMessage || err.message)
+            "Ошибка финализации: " + getErrorMessage(err)
         );
     }
 }
@@ -914,13 +1061,13 @@ async function finalizeReq() {
 
 async function createNewMilestone() {
     const desc =
-        document.getElementById("msDesc").value.trim();
+        document.getElementById("msDesc")?.value.trim();
 
     const recipient =
-        document.getElementById("msRecipient").value.trim();
+        document.getElementById("msRecipient")?.value.trim();
 
     const amount =
-        document.getElementById("msAmount").value;
+        document.getElementById("msAmount")?.value;
 
     if (
         !desc ||
@@ -939,8 +1086,7 @@ async function createNewMilestone() {
             throw new Error("Сначала подключите кошелёк.");
         }
 
-        // Добавление этапа теперь выполняется через RescueMilestones,
-        // а не через основной DAO.
+        // Добавление этапа выполняется через RescueMilestones.
         const tx = await milestonesContract.addMilestone(
             requestId,
             desc,
@@ -964,8 +1110,7 @@ async function createNewMilestone() {
         console.error("Ошибка добавления этапа:", err);
 
         alert(
-            "Ошибка добавления этапа: " +
-            (err.reason || err.shortMessage || err.message)
+            "Ошибка добавления этапа: " + getErrorMessage(err)
         );
     }
 }
@@ -1040,11 +1185,9 @@ async function loadMilestonesList(
 
         // Форма отправки доказательства выполнения этапа.
         const evidenceForm =
-            (
-                reqStatus === 1 &&
-                isRequester &&
-                !ms.released
-            )
+            reqStatus === 1 &&
+            isRequester &&
+            !ms.released
                 ? `
                     <div
                         style="
@@ -1093,10 +1236,11 @@ async function loadMilestonesList(
                     style="
                         margin-top:0.25rem;
                         font-size:0.8rem;
+                        word-break:break-all;
                     "
                 >
-                    Отчёт: ${ms.evidenceURI}
-                    | Hash: ${shortAddr(ms.evidenceHash)}
+                    Отчёт: ${escapeHtml(ms.evidenceURI)}
+                    | Hash: ${escapeHtml(shortAddr(ms.evidenceHash))}
                 </div>
             `
             : "";
@@ -1117,11 +1261,14 @@ async function loadMilestonesList(
                             display:flex;
                             justify-content:space-between;
                             align-items:center;
+                            gap:0.5rem;
+                            flex-wrap:wrap;
                         "
                     >
 
                         <strong>
-                            Этап #${m}: ${ms.description}
+                            Этап #${m}:
+                            ${escapeHtml(ms.description)}
                         </strong>
 
                         ${statusBadge}
@@ -1143,7 +1290,7 @@ async function loadMilestonesList(
                         · Получатель:
 
                         <span class="mono">
-                            ${ms.recipient}
+                            ${escapeHtml(ms.recipient)}
                         </span>
                     </div>
 
@@ -1164,9 +1311,8 @@ async function loadMilestonesList(
 // =========================================================
 
 async function submitEvidence(milestoneId) {
-
     const uriInput =
-        document.getElementById(`evUri_${milestoneId}`).value.trim();
+        document.getElementById(`evUri_${milestoneId}`)?.value.trim();
 
     const fileInput =
         document.getElementById(`evFile_${milestoneId}`);
@@ -1224,7 +1370,7 @@ async function submitEvidence(milestoneId) {
         }
 
         // ---------------------------------------------
-        // Вычисление хэша
+        // Вычисление хэша документа
         // ---------------------------------------------
 
         let hash = ethers.keccak256(
@@ -1274,11 +1420,7 @@ async function submitEvidence(milestoneId) {
 
         alert(
             "Не удалось отправить отчёт:\n" +
-            (
-                err.reason ||
-                err.shortMessage ||
-                err.message
-            )
+            getErrorMessage(err)
         );
     }
 }
