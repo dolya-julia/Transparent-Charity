@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html lang="ru">
 
@@ -16,6 +17,10 @@
 </head>
 
 <body>
+
+    <!-- ===================================================== -->
+    <!-- HEADER -->
+    <!-- ===================================================== -->
 
     <header>
 
@@ -65,43 +70,73 @@
 
     </header>
 
+
+    <!-- ===================================================== -->
+    <!-- MAIN -->
+    <!-- ===================================================== -->
+
     <main>
 
+        <!-- Возврат к списку заявок -->
+
         <div style="margin-bottom: 1.25rem;">
-            <a href="index.html" class="tx-link">
+
+            <a
+                href="index.html"
+                class="tx-link"
+            >
                 &larr; Назад к фонду и списку заявок
             </a>
+
         </div>
 
+
+        <!-- Заголовок -->
+
         <div class="page-header">
+
             <h1>
                 Информация о заявке
             </h1>
 
             <p>
                 Здесь представлена информация о заявке,
-                её статусе, этапах финансирования,
+                её текущем статусе, финансировании, этапах помощи,
                 подтверждающих документах и NFT-паспорте животного.
             </p>
+
         </div>
+
+
+        <!-- ================================================= -->
+        <!-- ПОДКЛЮЧЕНИЕ К БЛОКЧЕЙНУ -->
+        <!-- ================================================= -->
 
         <section
             class="box"
             id="connectionInfo"
             style="margin-bottom: 1.5rem;"
         >
+
             <div class="row-between">
+
                 <div>
+
                     <h3 style="margin-bottom: 0.35rem;">
                         Подключение к блокчейну
                     </h3>
 
                     <p
                         id="connectionStatus"
-                        style="font-size: 0.9rem; color: var(--text-muted); margin: 0;"
+                        style="
+                            font-size: 0.9rem;
+                            color: var(--text-muted);
+                            margin: 0;
+                        "
                     >
                         Проверка подключения к локальной сети Geth...
                     </p>
+
                 </div>
 
                 <span
@@ -110,75 +145,203 @@
                 >
                     Проверка сети
                 </span>
+
             </div>
+
         </section>
 
+
+        <!-- ================================================= -->
+        <!-- ДЕТАЛИ ЗАЯВКИ -->
+        <!-- ================================================= -->
+
         <section>
+
             <div
                 id="requestDetailsContainer"
                 class="request-details-container"
             >
+
                 <div class="box">
-                    <p>Загрузка данных заявки из блокчейна...</p>
-                    <p style="font-size: 0.85rem; color: var(--text-muted); margin-top: 0.5rem;">
+
+                    <p>
+                        Загрузка данных заявки из блокчейна...
+                    </p>
+
+                    <p
+                        style="
+                            font-size: 0.85rem;
+                            color: var(--text-muted);
+                            margin-top: 0.5rem;
+                        "
+                    >
                         Пожалуйста, подождите.
                     </p>
+
                 </div>
+
             </div>
+
         </section>
 
     </main>
 
+
+    <!-- ===================================================== -->
+    <!-- FOOTER -->
+    <!-- ===================================================== -->
+
     <footer>
+
         <p>
             RescueDAO — децентрализованная платформа
             прозрачной благотворительности на базе Ethereum.
         </p>
 
-        <p style="font-size: 0.8rem; color: var(--text-muted); margin-top: 0.5rem;">
+        <p
+            style="
+                font-size: 0.8rem;
+                color: var(--text-muted);
+                margin-top: 0.5rem;
+            "
+        >
             Локальная тестовая сеть Geth · Chain ID 1337
         </p>
+
     </footer>
 
+
+    <!-- ===================================================== -->
+    <!-- БИБЛИОТЕКИ И СКРИПТЫ -->
+    <!-- ===================================================== -->
+
     <script src="https://cdnjs.cloudflare.com/ajax/libs/ethers/6.13.1/ethers.umd.min.js"></script>
+
     <script src="js/config.js"></script>
     <script src="js/wallet.js"></script>
     <script src="js/request.js"></script>
 
+
+    <!-- ===================================================== -->
+    <!-- ПРОВЕРКА СОЕДИНЕНИЯ С СЕТЬЮ -->
+    <!-- ===================================================== -->
+
     <script>
+
         window.addEventListener("DOMContentLoaded", () => {
-            const connectionStatus = document.getElementById("connectionStatus");
-            const networkBadge = document.getElementById("networkBadge");
+
+            const connectionStatus =
+                document.getElementById("connectionStatus");
+
+            const networkBadge =
+                document.getElementById("networkBadge");
+
 
             window.updateConnectionInfo = function (connected) {
-                if (!connectionStatus || !networkBadge) return;
+
+                if (!connectionStatus || !networkBadge) {
+                    return;
+                }
+
 
                 if (connected) {
-                    connectionStatus.textContent =
-                        typeof userAddress !== "undefined" && userAddress
-                            ? "Кошелёк подключён. Доступны операции с блокчейном."
-                            : "Сеть Geth доступна. Для выполнения транзакций подключите MetaMask.";
-                    networkBadge.textContent = "Geth · 1337";
-                    networkBadge.className = "badge badge-green";
+
+                    const hasWallet =
+                        typeof userAddress !== "undefined" &&
+                        Boolean(userAddress);
+
+
+                    connectionStatus.textContent = hasWallet
+                        ? "Кошелёк подключён. Доступны операции с блокчейном."
+                        : "Сеть Geth доступна. Для выполнения транзакций подключите MetaMask.";
+
+
+                    networkBadge.textContent =
+                        "Geth · 1337";
+
+                    networkBadge.className =
+                        "badge badge-green";
+
                 } else {
+
                     connectionStatus.textContent =
                         "Нет подключения к локальной сети Geth. Проверьте работу узла и настройки MetaMask.";
-                    networkBadge.textContent = "Нет подключения";
-                    networkBadge.className = "badge badge-red";
+
+                    networkBadge.textContent =
+                        "Нет подключения";
+
+                    networkBadge.className =
+                        "badge badge-red";
                 }
+
             };
 
-            if (typeof provider !== "undefined" && provider) {
-                provider.getNetwork()
-                    .then(network => window.updateConnectionInfo(network.chainId === 1337n))
-                    .catch(error => {
-                        console.error("Ошибка проверки сети:", error);
+
+            async function checkConnection() {
+
+                try {
+
+                    if (
+                        typeof provider === "undefined" ||
+                        !provider
+                    ) {
+
                         window.updateConnectionInfo(false);
-                    });
-            } else {
-                window.updateConnectionInfo(false);
+                        return;
+                    }
+
+
+                    const network =
+                        await provider.getNetwork();
+
+
+                    window.updateConnectionInfo(
+                        network.chainId === 1337n
+                    );
+
+
+                } catch (error) {
+
+                    console.error(
+                        "Ошибка проверки сети:",
+                        error
+                    );
+
+                    window.updateConnectionInfo(false);
+
+                }
+
             }
+
+
+            checkConnection();
+
+
+            // Обновление информации после смены сети
+
+            if (window.ethereum) {
+
+                window.ethereum.on(
+                    "chainChanged",
+                    () => {
+                        setTimeout(checkConnection, 300);
+                    }
+                );
+
+
+                // Обновление информации после смены аккаунта
+
+                window.ethereum.on(
+                    "accountsChanged",
+                    () => {
+                        setTimeout(checkConnection, 300);
+                    }
+                );
+
+            }
+
         });
+
     </script>
 
 </body>

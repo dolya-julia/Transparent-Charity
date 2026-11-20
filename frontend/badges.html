@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html lang="ru">
 
@@ -57,7 +58,7 @@
                     id="connectBtn"
                     class="btn btn-primary"
                     type="button"
-                    onclick="connectUserWallet()"
+                    onclick="connectWallet()"
                 >
                     Подключить MetaMask
                 </button>
@@ -75,6 +76,7 @@
     <main>
 
         <div class="page-header">
+
             <h1>
                 Мои достижения
             </h1>
@@ -82,8 +84,10 @@
             <p>
                 Каждое пожертвование помогает животным и приближает
                 вас к новым достижениям. Получайте NFT-бейджи,
-                поддерживайте заявки и собирайте историю участия в RescueDAO.
+                поддерживайте заявки и собирайте историю участия
+                в RescueDAO.
             </p>
+
         </div>
 
 
@@ -94,19 +98,28 @@
         <section
             class="box"
             id="connectionInfo"
+            style="margin-bottom: 1.5rem;"
         >
+
             <div class="row-between">
+
                 <div>
+
                     <h3 style="margin-bottom: 0.35rem;">
                         Подключение к блокчейну
                     </h3>
 
                     <p
                         id="connectionStatus"
-                        style="font-size: 0.9rem; color: var(--text-muted); margin: 0;"
+                        style="
+                            font-size: 0.9rem;
+                            color: var(--text-muted);
+                            margin: 0;
+                        "
                     >
                         Проверка подключения к локальной сети Geth...
                     </p>
+
                 </div>
 
                 <span
@@ -115,7 +128,9 @@
                 >
                     Проверка сети
                 </span>
+
             </div>
+
         </section>
 
 
@@ -126,27 +141,41 @@
         <section class="stats-grid">
 
             <div class="stat-card">
+
                 <div class="stat-label">
                     Успешных пожертвований
                 </div>
-                <div class="stat-value" id="donationCount">
+
+                <div
+                    class="stat-value"
+                    id="donationCount"
+                >
                     —
                 </div>
+
             </div>
 
             <div class="stat-card">
+
                 <div class="stat-label">
                     Поддержанных заявок
                 </div>
-                <div class="stat-value" id="uniqueRequests">
+
+                <div
+                    class="stat-value"
+                    id="uniqueRequests"
+                >
                     —
                 </div>
+
             </div>
 
             <div class="stat-card">
+
                 <div class="stat-label">
                     Получено бейджей
                 </div>
+
                 <div
                     class="stat-value"
                     style="color: var(--primary);"
@@ -154,6 +183,7 @@
                 >
                     — / 4
                 </div>
+
             </div>
 
         </section>
@@ -164,14 +194,29 @@
         ================================================== -->
 
         <section class="box">
-            <div class="row-between" style="margin-bottom: 1rem;">
+
+            <div
+                class="row-between"
+                style="margin-bottom: 1rem;"
+            >
+
                 <div>
+
                     <h2 style="margin-bottom: 0.25rem;">
                         Коллекция достижений
                     </h2>
-                    <p style="font-size: 0.9rem; color: var(--text-muted); margin: 0;">
-                        NFT-бейджи, подтверждающие ваш вклад в помощь животным
+
+                    <p
+                        style="
+                            font-size: 0.9rem;
+                            color: var(--text-muted);
+                            margin: 0;
+                        "
+                    >
+                        NFT-бейджи, подтверждающие ваш вклад
+                        в помощь животным.
                     </p>
+
                 </div>
 
                 <button
@@ -183,13 +228,23 @@
                 >
                     Обновить
                 </button>
+
             </div>
 
-            <div class="badges-grid" id="badgesGrid">
-                <div class="empty-box" style="grid-column: 1 / -1;">
+            <div
+                class="badges-grid"
+                id="badgesGrid"
+            >
+
+                <div
+                    class="empty-box"
+                    style="grid-column: 1 / -1;"
+                >
                     Подключите кошелёк, чтобы посмотреть свои достижения.
                 </div>
+
             </div>
+
         </section>
 
 
@@ -198,20 +253,32 @@
         ================================================== -->
 
         <section class="box">
+
             <h2>
                 Герой спасения
             </h2>
 
-            <p style="font-size: 0.9rem; color: var(--text-muted); margin-bottom: 1rem;">
-                Если вы жертвовали на заявку, которая получила статус «Завершена»,
-                вы можете получить NFT-бейдж «Герой спасения».
-                Укажите номер заявки, которую поддерживали.
+            <p
+                style="
+                    font-size: 0.9rem;
+                    color: var(--text-muted);
+                    margin-bottom: 1rem;
+                "
+            >
+                Если вы жертвовали на заявку, которая получила статус
+                «Завершена», вы можете получить NFT-бейдж
+                «Герой спасения».
+                Укажите идентификатор заявки, которую поддерживали.
             </p>
 
-            <div class="row-between" style="gap: 0.75rem;">
+            <div
+                class="row-between"
+                style="gap: 0.75rem;"
+            >
+
                 <input
                     type="number"
-                    min="1"
+                    min="0"
                     step="1"
                     id="claimRequestId"
                     placeholder="Номер заявки, например: 1"
@@ -227,9 +294,14 @@
                 >
                     Получить бейдж
                 </button>
+
             </div>
 
-            <div id="claimNotice" class="notice"></div>
+            <div
+                id="claimNotice"
+                class="notice"
+            ></div>
+
         </section>
 
 
@@ -238,34 +310,88 @@
         ================================================== -->
 
         <section class="box">
+
             <h2>
                 Параметры интеграции
             </h2>
 
             <div class="info-row">
-                <span class="stat-label">Кошелёк</span>
-                <span class="mono" id="infoWallet">Не подключён</span>
+
+                <span class="stat-label">
+                    Кошелёк
+                </span>
+
+                <span
+                    class="mono"
+                    id="infoWallet"
+                >
+                    Не подключён
+                </span>
+
             </div>
 
             <div class="info-row">
-                <span class="stat-label">Контракт DAO</span>
-                <span class="mono" id="infoDAO">—</span>
+
+                <span class="stat-label">
+                    Контракт DAO
+                </span>
+
+                <span
+                    class="mono"
+                    id="infoDAO"
+                >
+                    —
+                </span>
+
             </div>
 
             <div class="info-row">
-                <span class="stat-label">Контракт бейджей</span>
-                <span class="mono" id="infoBadges">—</span>
+
+                <span class="stat-label">
+                    Контракт бейджей
+                </span>
+
+                <span
+                    class="mono"
+                    id="infoBadges"
+                >
+                    —
+                </span>
+
             </div>
 
             <div class="info-row">
-                <span class="stat-label">Связь контрактов</span>
-                <span class="stat-value" style="font-size: 0.9rem;" id="infoConnection">Не проверена</span>
+
+                <span class="stat-label">
+                    Связь контрактов
+                </span>
+
+                <span
+                    class="stat-value"
+                    style="font-size: 0.9rem;"
+                    id="infoConnection"
+                >
+                    Не проверена
+                </span>
+
             </div>
 
             <div class="info-row">
-                <span class="stat-label">Всего выпущено бейджей</span>
-                <span class="stat-value" style="font-size: 0.9rem;" id="totalIssued">—</span>
+
+                <span class="stat-label">
+                    Всего выпущено бейджей
+                </span>
+
+                <span
+                    class="stat-value"
+                    style="font-size: 0.9rem;"
+                    id="totalIssued"
+                >
+                    —
+                </span>
+
             </div>
+
         </section>
 
     </main>
@@ -276,14 +402,22 @@
     ================================================== -->
 
     <footer>
+
         <p>
             RescueDAO — децентрализованная платформа
             прозрачной благотворительности на базе Ethereum.
         </p>
 
-        <p style="font-size: 0.8rem; color: var(--text-muted); margin-top: 0.5rem;">
+        <p
+            style="
+                font-size: 0.8rem;
+                color: var(--text-muted);
+                margin-top: 0.5rem;
+            "
+        >
             Локальная тестовая сеть Geth · Chain ID 1337
         </p>
+
     </footer>
 
 
@@ -296,487 +430,1216 @@
     <script src="js/wallet.js"></script>
 
     <script>
+
+        // =================================================
+        // СОСТОЯНИЕ СТРАНИЦЫ
+        // =================================================
+
         let badgesContract = null;
         let badgesReadContract = null;
         let currentUser = null;
 
+        let badgesPageInitialized = false;
+
+
+        // =================================================
+        // ОПИСАНИЕ БЕЙДЖЕЙ
+        // =================================================
+
         const BADGE_INFO = [
+
             {
                 id: 0,
                 name: "Первое доброе дело",
-                description: "Выдаётся за первое успешное пожертвование в RescueDAO.",
+                description:
+                    "Выдаётся за первое успешное пожертвование в RescueDAO.",
                 icon: "💚",
                 requirement: "Не менее 1 пожертвования"
             },
+
             {
                 id: 1,
                 name: "Постоянная поддержка",
-                description: "Отмечает регулярную помощь и участие в финансировании спасения животных.",
+                description:
+                    "Отмечает регулярную помощь и участие в финансировании спасения животных.",
                 icon: "🤝",
                 requirement: "Не менее 5 пожертвований"
             },
+
             {
                 id: 2,
                 name: "Друг животных",
-                description: "Выдаётся участникам, поддержавшим несколько разных заявок.",
+                description:
+                    "Выдаётся участникам, поддержавшим несколько разных заявок.",
                 icon: "🐾",
                 requirement: "Не менее 3 разных заявок"
             },
+
             {
                 id: 3,
                 name: "Герой спасения",
-                description: "Выдаётся за поддержку заявки, которая успешно завершена.",
+                description:
+                    "Выдаётся за поддержку заявки, которая успешно завершена.",
                 icon: "🏆",
                 requirement: "Пожертвование в завершённую заявку"
             }
+
         ];
 
-        function shortAddress(address) {
-            if (!address) return "—";
-            return address.slice(0, 6) + "..." + address.slice(-4);
-        }
+
+        // =================================================
+        // ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ
+        // =================================================
 
         function showNotice(elementId, message, type) {
-            const element = document.getElementById(elementId);
+
+            const element =
+                document.getElementById(elementId);
+
             if (!element) return;
+
             element.className = "notice notice-" + type;
             element.textContent = message;
+
         }
+
 
         function clearNotice(elementId) {
-            const element = document.getElementById(elementId);
+
+            const element =
+                document.getElementById(elementId);
+
             if (!element) return;
+
             element.className = "notice";
             element.textContent = "";
+
         }
+
 
         function decodeBase64Utf8(value) {
+
             const binary = atob(value);
-            const bytes = Uint8Array.from(binary, char => char.charCodeAt(0));
+
+            const bytes = Uint8Array.from(
+                binary,
+                char => char.charCodeAt(0)
+            );
+
             return new TextDecoder().decode(bytes);
+
         }
+
 
         function decodeTokenMetadata(tokenURI) {
-            if (!tokenURI || !tokenURI.startsWith("data:")) {
-                throw new Error("Неизвестный формат NFT metadata");
+
+            if (
+                !tokenURI ||
+                !tokenURI.startsWith("data:")
+            ) {
+                throw new Error(
+                    "Неизвестный формат NFT metadata."
+                );
             }
 
-            const commaIndex = tokenURI.indexOf(",");
+            const commaIndex =
+                tokenURI.indexOf(",");
+
             if (commaIndex === -1) {
-                throw new Error("Некорректный tokenURI");
+                throw new Error(
+                    "Некорректный tokenURI."
+                );
             }
 
-            const metadataPart = tokenURI.slice(0, commaIndex);
-            const dataPart = tokenURI.slice(commaIndex + 1);
+            const metadataPart =
+                tokenURI.slice(0, commaIndex);
+
+            const dataPart =
+                tokenURI.slice(commaIndex + 1);
 
             if (metadataPart.includes(";base64")) {
-                return JSON.parse(decodeBase64Utf8(dataPart));
+
+                return JSON.parse(
+                    decodeBase64Utf8(dataPart)
+                );
+
             }
 
-            return JSON.parse(decodeURIComponent(dataPart));
+            return JSON.parse(
+                decodeURIComponent(dataPart)
+            );
+
         }
 
+
+        function getBadgeProgress(badge, donations, uniqueRequests, earned) {
+
+            if (badge.id === 0) {
+
+                const progress =
+                    Math.min(donations, 1);
+
+                return {
+                    value: progress,
+                    percent: progress * 100,
+                    label: `${progress} / 1`
+                };
+
+            }
+
+            if (badge.id === 1) {
+
+                const progress =
+                    Math.min(donations, 5);
+
+                return {
+                    value: progress,
+                    percent: (progress / 5) * 100,
+                    label: `${progress} / 5`
+                };
+
+            }
+
+            if (badge.id === 2) {
+
+                const progress =
+                    Math.min(uniqueRequests, 3);
+
+                return {
+                    value: progress,
+                    percent: (progress / 3) * 100,
+                    label: `${progress} / 3`
+                };
+
+            }
+
+            return {
+                value: earned ? 1 : 0,
+                percent: earned ? 100 : 0,
+                label: earned
+                    ? "Получено"
+                    : "Ожидает завершения заявки"
+            };
+
+        }
+
+
+        function getBadgeStatus(earned, progress) {
+
+            if (earned) {
+
+                return {
+                    className: "badge-green",
+                    text: "Получен"
+                };
+
+            }
+
+            if (progress > 0) {
+
+                return {
+                    className: "badge-yellow",
+                    text: "В процессе"
+                };
+
+            }
+
+            return {
+                className: "badge-gray",
+                text: "Не получен"
+            };
+
+        }
+
+
+        // =================================================
+        // ПРОВЕРКА ПОДКЛЮЧЕНИЯ
+        // =================================================
+
         async function updatePageConnectionInfo() {
-            const statusEl = document.getElementById("connectionStatus");
-            const badgeEl = document.getElementById("networkBadge");
+
+            const statusEl =
+                document.getElementById("connectionStatus");
+
+            const badgeEl =
+                document.getElementById("networkBadge");
+
             if (!statusEl || !badgeEl) return;
 
             try {
-                if (typeof provider === "undefined" || !provider) {
-                    statusEl.textContent = "Проверка подключения к локальной сети Geth...";
-                    badgeEl.textContent = "Нет подключения";
-                    badgeEl.className = "badge badge-gray";
+
+                if (
+                    typeof provider === "undefined" ||
+                    !provider
+                ) {
+
+                    statusEl.textContent =
+                        "Нет подключения к локальной сети Geth.";
+
+                    badgeEl.textContent =
+                        "Нет подключения";
+
+                    badgeEl.className =
+                        "badge badge-gray";
+
                     return;
+
                 }
 
-                const network = await provider.getNetwork();
-                if (network.chainId !== 1337n) {
-                    statusEl.textContent = "Подключена другая сеть. Выберите локальную сеть Geth с Chain ID 1337.";
-                    badgeEl.textContent = "Неверная сеть";
-                    badgeEl.className = "badge badge-red";
+
+                const network =
+                    await provider.getNetwork();
+
+
+                if (network.chainId !== EXPECTED_CHAIN_ID) {
+
+                    statusEl.textContent =
+                        "Подключена другая сеть. Выберите локальную сеть Geth с Chain ID 1337.";
+
+                    badgeEl.textContent =
+                        "Неверная сеть";
+
+                    badgeEl.className =
+                        "badge badge-red";
+
                     return;
+
                 }
+
 
                 statusEl.textContent = currentUser
                     ? "Кошелёк подключён. Доступны просмотр достижений и получение наград."
                     : "Сеть Geth доступна. Для работы с достижениями подключите MetaMask.";
-                badgeEl.textContent = "Geth · 1337";
-                badgeEl.className = "badge badge-green";
+
+
+                badgeEl.textContent =
+                    "Geth · 1337";
+
+                badgeEl.className =
+                    "badge badge-green";
+
+
             } catch (error) {
-                console.error("Ошибка проверки сети:", error);
-                statusEl.textContent = "Не удалось подключиться к локальной сети Geth.";
-                badgeEl.textContent = "Нет подключения";
-                badgeEl.className = "badge badge-red";
+
+                console.error(
+                    "Ошибка проверки сети:",
+                    error
+                );
+
+                statusEl.textContent =
+                    "Не удалось подключиться к локальной сети Geth.";
+
+                badgeEl.textContent =
+                    "Нет подключения";
+
+                badgeEl.className =
+                    "badge badge-red";
+
             }
+
         }
 
-        async function connectUserWallet() {
-            try {
-                if (!window.ethereum) {
-                    alert("Установите MetaMask для подключения кошелька.");
-                    return;
-                }
 
-                const connectBtn = document.getElementById("connectBtn");
-                connectBtn.disabled = true;
-                connectBtn.textContent = "Подключение...";
+        // =================================================
+        // ПРОВЕРКА КОНФИГУРАЦИИ
+        // =================================================
 
-                if (typeof connectWallet === "function") {
-                    await connectWallet();
-                } else {
-                    await window.ethereum.request({ method: "eth_requestAccounts" });
-                    if (typeof initWeb3 === "function") {
-                        await initWeb3();
-                    }
-                }
+        function validateBadgesConfiguration() {
 
-                await initializeBadgesPage();
-            } catch (error) {
-                console.error("Ошибка подключения кошелька:", error);
-                alert(error.shortMessage || error.message || "Не удалось подключить кошелёк.");
-            } finally {
-                const connectBtn = document.getElementById("connectBtn");
-                connectBtn.disabled = false;
-                connectBtn.textContent = "Подключить MetaMask";
+            if (
+                typeof BADGES_ADDRESS === "undefined" ||
+                !ethers.isAddress(BADGES_ADDRESS)
+            ) {
+
+                throw new Error(
+                    "Не указан корректный BADGES_ADDRESS в js/config.js."
+                );
+
             }
+
+
+            if (
+                typeof DAO_ADDRESS === "undefined" ||
+                !ethers.isAddress(DAO_ADDRESS)
+            ) {
+
+                throw new Error(
+                    "Не указан корректный DAO_ADDRESS в js/config.js."
+                );
+
+            }
+
+
+            if (
+                typeof BADGES_ABI === "undefined" ||
+                !Array.isArray(BADGES_ABI)
+            ) {
+
+                throw new Error(
+                    "BADGES_ABI не найден в js/config.js."
+                );
+
+            }
+
+
+            if (
+                typeof DAO_ABI === "undefined" ||
+                !Array.isArray(DAO_ABI)
+            ) {
+
+                throw new Error(
+                    "DAO_ABI не найден в js/config.js."
+                );
+
+            }
+
         }
+
+
+        // =================================================
+        // ИНИЦИАЛИЗАЦИЯ КОНТРАКТОВ
+        // =================================================
 
         async function initializeBadgesPage() {
+
             try {
-                if (!window.ethereum) return;
 
-                if (typeof initWeb3 === "function") {
-                    await initWeb3();
+                if (
+                    typeof provider === "undefined" ||
+                    !provider
+                ) {
+
+                    throw new Error(
+                        "Провайдер блокчейна не инициализирован."
+                    );
+
                 }
 
-                if (typeof provider === "undefined" || !provider) {
-                    provider = new ethers.BrowserProvider(window.ethereum);
+
+                const network =
+                    await provider.getNetwork();
+
+
+                if (network.chainId !== EXPECTED_CHAIN_ID) {
+
+                    throw new Error(
+                        "Подключитесь к локальной сети Geth с Chain ID 1337."
+                    );
+
                 }
 
-                await updatePageConnectionInfo();
 
-                const accounts = await provider.send("eth_accounts", []);
+                validateBadgesConfiguration();
+
+
+                const accounts =
+                    await provider.send(
+                        "eth_accounts",
+                        []
+                    );
+
+
                 if (!accounts || accounts.length === 0) {
+
                     currentUser = null;
+
+                    badgesContract = null;
+                    badgesReadContract = null;
+
+                    document.getElementById("refreshBtn").disabled = true;
+                    document.getElementById("claimBtn").disabled = true;
+
+                    document.getElementById("infoWallet").textContent =
+                        "Не подключён";
+
+                    document.getElementById("badgesGrid").innerHTML = `
+                        <div class="empty-box" style="grid-column: 1 / -1;">
+                            Подключите MetaMask, чтобы посмотреть свои достижения.
+                        </div>
+                    `;
+
+                    await updatePageConnectionInfo();
+
                     return;
+
                 }
 
-                currentUser = accounts[0];
-                await updatePageConnectionInfo();
 
-                const configuredAddress = typeof BADGES_ADDRESS !== "undefined" ? BADGES_ADDRESS : "";
-                if (!configuredAddress || !ethers.isAddress(configuredAddress)) {
-                    throw new Error("Не указан корректный BADGES_ADDRESS в js/config.js.");
+                currentUser =
+                    ethers.getAddress(accounts[0]);
+
+
+                // Контракт для чтения
+
+                badgesReadContract = new ethers.Contract(
+                    BADGES_ADDRESS,
+                    BADGES_ABI,
+                    provider
+                );
+
+
+                // Контракт для транзакций
+
+                if (
+                    typeof signer === "undefined" ||
+                    !signer
+                ) {
+
+                    throw new Error(
+                        "Не удалось получить signer. Переподключите MetaMask."
+                    );
+
                 }
 
-                const configuredDao = typeof DAO_ADDRESS !== "undefined" ? DAO_ADDRESS : "";
-                if (!configuredDao || !ethers.isAddress(configuredDao)) {
-                    throw new Error("Не указан корректный DAO_ADDRESS в js/config.js.");
-                }
 
-                const configuredAbi = typeof BADGES_ABI !== "undefined" ? BADGES_ABI : null;
-                if (!configuredAbi) {
-                    throw new Error("BADGES_ABI не найден в js/config.js.");
-                }
+                badgesContract = new ethers.Contract(
+                    BADGES_ADDRESS,
+                    BADGES_ABI,
+                    signer
+                );
 
-                badgesReadContract = new ethers.Contract(configuredAddress, configuredAbi, provider);
-                const signer = await provider.getSigner();
-                badgesContract = new ethers.Contract(configuredAddress, configuredAbi, signer);
 
                 document.getElementById("refreshBtn").disabled = false;
                 document.getElementById("claimBtn").disabled = false;
 
-                document.getElementById("infoWallet").textContent = currentUser;
-                document.getElementById("infoDAO").textContent = shortAddress(configuredDao);
-                document.getElementById("infoBadges").textContent = shortAddress(configuredAddress);
 
-                await checkContractConnection(configuredDao);
+                document.getElementById("infoWallet").textContent =
+                    currentUser;
+
+                document.getElementById("infoDAO").textContent =
+                    shortAddr(DAO_ADDRESS);
+
+                document.getElementById("infoBadges").textContent =
+                    shortAddr(BADGES_ADDRESS);
+
+
+                await updatePageConnectionInfo();
+
+                await checkContractConnection();
+
                 await loadBadgesData();
+
+                badgesPageInitialized = true;
+
+
             } catch (error) {
-                console.error("Ошибка инициализации страницы достижений:", error);
-                showNotice(
-                    "claimNotice",
-                    error.shortMessage || error.message || "Ошибка подключения к контракту.",
-                    "error"
+
+                console.error(
+                    "Ошибка инициализации страницы достижений:",
+                    error
                 );
-            }
-        }
 
-        async function checkContractConnection(configuredDao) {
-            try {
-                if (typeof DAO_ABI === "undefined" || !DAO_ABI) {
-                    document.getElementById("infoConnection").textContent = "DAO_ABI не задан";
-                    return;
-                }
-
-                const daoContract = new ethers.Contract(configuredDao, DAO_ABI, provider);
-                const daoAddressInBadges = await badgesReadContract.daoContract();
-                const badgesAddressInDAO = await daoContract.badgesContract();
-
-                const isCorrect =
-                    daoAddressInBadges.toLowerCase() === configuredDao.toLowerCase() &&
-                    badgesAddressInDAO.toLowerCase() === BADGES_ADDRESS.toLowerCase();
+                document.getElementById("refreshBtn").disabled = true;
+                document.getElementById("claimBtn").disabled = true;
 
                 document.getElementById("infoConnection").textContent =
-                    isCorrect ? "Контракты связаны" : "Ошибка настройки адресов";
-                document.getElementById("infoConnection").style.color =
-                    isCorrect ? "var(--primary)" : "var(--danger)";
-            } catch (error) {
-                console.warn("Ошибка проверки контрактов:", error);
-                document.getElementById("infoConnection").textContent = "Не удалось проверить связь";
+                    "Ошибка инициализации";
+
+                showNotice(
+                    "claimNotice",
+                    getErrorMessage(error),
+                    "error"
+                );
+
             }
+
         }
 
-        async function loadBadgesData() {
-            if (!badgesReadContract || !currentUser) return;
 
-            const refreshBtn = document.getElementById("refreshBtn");
+        // =================================================
+        // ПРОВЕРКА СВЯЗИ КОНТРАКТОВ
+        // =================================================
+
+        async function checkContractConnection() {
+
+            const connectionEl =
+                document.getElementById("infoConnection");
+
+            try {
+
+                const daoContract = new ethers.Contract(
+                    DAO_ADDRESS,
+                    DAO_ABI,
+                    provider
+                );
+
+
+                if (
+                    typeof badgesReadContract.daoContract !== "function"
+                ) {
+
+                    throw new Error(
+                        "В ABI RescueBadges отсутствует метод daoContract()."
+                    );
+
+                }
+
+
+                if (
+                    typeof daoContract.badgesContract !== "function"
+                ) {
+
+                    throw new Error(
+                        "В ABI RescueDAO отсутствует метод badgesContract()."
+                    );
+
+                }
+
+
+                const [
+                    daoAddressInBadges,
+                    badgesAddressInDAO
+                ] = await Promise.all([
+
+                    badgesReadContract.daoContract(),
+
+                    daoContract.badgesContract()
+
+                ]);
+
+
+                const isCorrect =
+                    daoAddressInBadges.toLowerCase() ===
+                        DAO_ADDRESS.toLowerCase() &&
+
+                    badgesAddressInDAO.toLowerCase() ===
+                        BADGES_ADDRESS.toLowerCase();
+
+
+                connectionEl.textContent = isCorrect
+                    ? "Контракты связаны"
+                    : "Ошибка настройки адресов";
+
+                connectionEl.style.color = isCorrect
+                    ? "var(--primary)"
+                    : "var(--danger)";
+
+
+            } catch (error) {
+
+                console.warn(
+                    "Ошибка проверки связи контрактов:",
+                    error
+                );
+
+                connectionEl.textContent =
+                    "Не удалось проверить связь";
+
+                connectionEl.style.color =
+                    "var(--danger)";
+
+            }
+
+        }
+
+
+        // =================================================
+        // ЗАГРУЗКА СТАТИСТИКИ
+        // =================================================
+
+        async function loadBadgesData() {
+
+            if (
+                !badgesReadContract ||
+                !currentUser
+            ) {
+
+                return;
+
+            }
+
+
+            const refreshBtn =
+                document.getElementById("refreshBtn");
+
             refreshBtn.disabled = true;
             refreshBtn.textContent = "Загрузка...";
 
+
             try {
-                const stats = await badgesReadContract.getDonorStats(currentUser);
-                const donations = Number(stats[0]);
-                const uniqueRequests = Number(stats[1]);
-                const received = Number(stats[2]);
 
-                document.getElementById("donationCount").textContent = donations;
-                document.getElementById("uniqueRequests").textContent = uniqueRequests;
-                document.getElementById("badgesReceived").textContent = received + " / 4";
+                const stats =
+                    await badgesReadContract.getDonorStats(
+                        currentUser
+                    );
 
-                const totalIssued = await badgesReadContract.totalBadgesIssued();
-                document.getElementById("totalIssued").textContent = totalIssued.toString();
 
-                await renderBadges(donations, uniqueRequests);
+                const donations =
+                    Number(stats[0]);
+
+                const uniqueRequests =
+                    Number(stats[1]);
+
+                const received =
+                    Number(stats[2]);
+
+
+                document.getElementById("donationCount").textContent =
+                    donations;
+
+                document.getElementById("uniqueRequests").textContent =
+                    uniqueRequests;
+
+                document.getElementById("badgesReceived").textContent =
+                    received + " / 4";
+
+
+                const totalIssued =
+                    await badgesReadContract.totalBadgesIssued();
+
+
+                document.getElementById("totalIssued").textContent =
+                    totalIssued.toString();
+
+
+                await renderBadges(
+                    donations,
+                    uniqueRequests
+                );
+
+
             } catch (error) {
-                console.error("Ошибка загрузки статистики:", error);
+
+                console.error(
+                    "Ошибка загрузки статистики:",
+                    error
+                );
+
                 showNotice(
                     "claimNotice",
-                    "Не удалось загрузить информацию о достижениях. Проверьте сеть и адрес контракта.",
+                    "Не удалось загрузить информацию о достижениях. Проверьте сеть, ABI и адрес контракта.",
                     "error"
                 );
+
+
             } finally {
+
                 refreshBtn.disabled = false;
                 refreshBtn.textContent = "Обновить";
+
             }
+
         }
 
-        async function renderBadges(donations, uniqueRequests) {
-            const grid = document.getElementById("badgesGrid");
+
+        // =================================================
+        // ОТОБРАЖЕНИЕ КОЛЛЕКЦИИ БЕЙДЖЕЙ
+        // =================================================
+
+        async function renderBadges(
+            donations,
+            uniqueRequests
+        ) {
+
+            const grid =
+                document.getElementById("badgesGrid");
+
             grid.innerHTML = "";
 
+
             for (const badge of BADGE_INFO) {
-                const earned = await badgesReadContract.hasBadge(currentUser, badge.id);
-                let tokenId = 0n;
+
+                const earned =
+                    await badgesReadContract.hasBadge(
+                        currentUser,
+                        badge.id
+                    );
+
+
+                let tokenId = null;
                 let metadata = null;
 
+
                 if (earned) {
-                    tokenId = await badgesReadContract.getBadgeTokenId(currentUser, badge.id);
+
                     try {
-                        const tokenURI = await badgesReadContract.tokenURI(tokenId);
-                        metadata = decodeTokenMetadata(tokenURI);
+
+                        tokenId =
+                            await badgesReadContract.getBadgeTokenId(
+                                currentUser,
+                                badge.id
+                            );
+
+
+                        const tokenURI =
+                            await badgesReadContract.tokenURI(
+                                tokenId
+                            );
+
+
+                        metadata =
+                            decodeTokenMetadata(tokenURI);
+
+
                     } catch (error) {
-                        console.warn("Не удалось загрузить метаданные бейджа:", badge.name, error);
+
+                        console.warn(
+                            "Не удалось загрузить метаданные бейджа:",
+                            badge.name,
+                            error
+                        );
+
                     }
+
                 }
 
-                let progress = 0;
-                let progressLabel = "";
 
-                if (badge.id === 0) {
-                    progress = Math.min(donations, 1);
-                    progressLabel = `${progress} / 1`;
-                } else if (badge.id === 1) {
-                    progress = Math.min(donations, 5);
-                    progressLabel = `${progress} / 5`;
-                } else if (badge.id === 2) {
-                    progress = Math.min(uniqueRequests, 3);
-                    progressLabel = `${progress} / 3`;
+                const progress =
+                    getBadgeProgress(
+                        badge,
+                        donations,
+                        uniqueRequests,
+                        earned
+                    );
+
+
+                const status =
+                    getBadgeStatus(
+                        earned,
+                        progress.value
+                    );
+
+
+                // Карточка
+
+                const card =
+                    document.createElement("div");
+
+                card.className =
+                    "badge-item-card";
+
+
+                // Верхняя часть карточки
+
+                const topPart =
+                    document.createElement("div");
+
+
+                const imageBox =
+                    document.createElement("div");
+
+                imageBox.className =
+                    "badge-image-box";
+
+
+                if (
+                    earned &&
+                    metadata &&
+                    metadata.image
+                ) {
+
+                    const img =
+                        document.createElement("img");
+
+                    img.src =
+                        metadata.image;
+
+                    img.alt =
+                        badge.name;
+
+                    img.onerror = () => {
+                        img.remove();
+                        imageBox.textContent = badge.icon;
+                    };
+
+                    imageBox.appendChild(img);
+
                 } else {
-                    progress = earned ? 1 : 0;
-                    progressLabel = earned ? "Получено" : "Ожидает завершения заявки";
+
+                    imageBox.textContent =
+                        badge.icon;
+
                 }
 
-                const progressPercent =
-                    badge.id === 3
-                        ? (earned ? 100 : 0)
-                        : badge.id === 0
-                            ? progress * 100
-                            : badge.id === 1
-                                ? (progress / 5) * 100
-                                : (progress / 3) * 100;
 
-                const statusClass = earned
-                    ? "badge-green"
-                    : progress > 0
-                        ? "badge-yellow"
-                        : "badge-gray";
+                const title =
+                    document.createElement("h3");
 
-                const statusText = earned
-                    ? "Получен"
-                    : progress > 0
-                        ? "В процессе"
-                        : "Не получен";
+                title.textContent =
+                    badge.name;
 
-                const card = document.createElement("div");
-                card.className = "badge-item-card";
+                title.style.marginTop =
+                    "0.85rem";
 
-                const topPart = document.createElement("div");
+                title.style.marginBottom =
+                    "0.35rem";
 
-                const imgBox = document.createElement("div");
-                imgBox.className = "badge-image-box";
 
-                if (earned && metadata && metadata.image) {
-                    const img = document.createElement("img");
-                    img.src = metadata.image;
-                    img.alt = badge.name;
-                    imgBox.appendChild(img);
-                } else {
-                    imgBox.textContent = badge.icon;
-                }
+                const description =
+                    document.createElement("div");
 
-                const title = document.createElement("h3");
-                title.textContent = badge.name;
-                title.style.marginTop = "0.85rem";
-                title.style.marginBottom = "0.35rem";
+                description.className =
+                    "badge-desc";
 
-                const desc = document.createElement("div");
-                desc.className = "badge-desc";
-                desc.textContent = badge.description;
+                description.textContent =
+                    badge.description;
 
-                topPart.appendChild(imgBox);
+
+                topPart.appendChild(imageBox);
                 topPart.appendChild(title);
-                topPart.appendChild(desc);
+                topPart.appendChild(description);
 
-                const bottomPart = document.createElement("div");
 
-                const statusBadge = document.createElement("span");
-                statusBadge.className = "badge " + statusClass;
-                statusBadge.textContent = statusText;
+                // Нижняя часть карточки
 
-                const reqText = document.createElement("div");
-                reqText.className = "mono";
-                reqText.style.marginTop = "0.5rem";
-                reqText.textContent = badge.requirement;
+                const bottomPart =
+                    document.createElement("div");
+
+
+                const statusBadge =
+                    document.createElement("span");
+
+                statusBadge.className =
+                    "badge " + status.className;
+
+                statusBadge.textContent =
+                    status.text;
+
+
+                const requirement =
+                    document.createElement("div");
+
+                requirement.className =
+                    "mono";
+
+                requirement.style.marginTop =
+                    "0.5rem";
+
+                requirement.textContent =
+                    badge.requirement;
+
 
                 bottomPart.appendChild(statusBadge);
-                bottomPart.appendChild(reqText);
+                bottomPart.appendChild(requirement);
+
 
                 if (earned) {
-                    const tokenText = document.createElement("div");
-                    tokenText.className = "mono";
-                    tokenText.style.marginTop = "0.25rem";
-                    tokenText.textContent = "Token ID: #" + tokenId.toString();
+
+                    const tokenText =
+                        document.createElement("div");
+
+                    tokenText.className =
+                        "mono";
+
+                    tokenText.style.marginTop =
+                        "0.25rem";
+
+                    tokenText.textContent =
+                        "Token ID: #" + tokenId.toString();
+
                     bottomPart.appendChild(tokenText);
+
+
                 } else {
-                    const bar = document.createElement("div");
-                    bar.className = "progress-bar";
 
-                    const fill = document.createElement("div");
-                    fill.className = "progress-fill";
-                    fill.style.width = progressPercent + "%";
+                    const progressBar =
+                        document.createElement("div");
 
-                    const label = document.createElement("div");
-                    label.className = "mono";
-                    label.textContent = "Прогресс: " + progressLabel;
+                    progressBar.className =
+                        "progress-bar";
 
-                    bar.appendChild(fill);
-                    bottomPart.appendChild(bar);
-                    bottomPart.appendChild(label);
+
+                    const progressFill =
+                        document.createElement("div");
+
+                    progressFill.className =
+                        "progress-fill";
+
+                    progressFill.style.width =
+                        progress.percent + "%";
+
+
+                    const progressLabel =
+                        document.createElement("div");
+
+                    progressLabel.className =
+                        "mono";
+
+                    progressLabel.textContent =
+                        "Прогресс: " + progress.label;
+
+
+                    progressBar.appendChild(progressFill);
+
+                    bottomPart.appendChild(progressBar);
+                    bottomPart.appendChild(progressLabel);
+
                 }
+
 
                 card.appendChild(topPart);
                 card.appendChild(bottomPart);
+
                 grid.appendChild(card);
+
             }
+
         }
+
+
+        // =================================================
+        // ПОЛУЧЕНИЕ БЕЙДЖА «ГЕРОЙ СПАСЕНИЯ»
+        // =================================================
 
         async function claimHeroBadge() {
-            if (!badgesContract || !currentUser) {
-                showNotice("claimNotice", "Сначала подключите кошелёк.", "error");
+
+            if (
+                !badgesContract ||
+                !badgesReadContract ||
+                !currentUser
+            ) {
+
+                showNotice(
+                    "claimNotice",
+                    "Сначала подключите кошелёк.",
+                    "error"
+                );
+
                 return;
+
             }
 
-            const input = document.getElementById("claimRequestId");
-            const requestId = input.value.trim();
 
-            if (!requestId || !/^[1-9]\d*$/.test(requestId)) {
-                showNotice("claimNotice", "Введите корректный номер заявки.", "error");
+            const input =
+                document.getElementById("claimRequestId");
+
+            const requestId =
+                input.value.trim();
+
+
+            if (
+                !requestId ||
+                !/^(0|[1-9]\d*)$/.test(requestId)
+            ) {
+
+                showNotice(
+                    "claimNotice",
+                    "Введите корректный идентификатор заявки.",
+                    "error"
+                );
+
                 return;
+
             }
 
-            const claimBtn = document.getElementById("claimBtn");
+
+            const claimBtn =
+                document.getElementById("claimBtn");
+
             claimBtn.disabled = true;
             claimBtn.textContent = "Отправка...";
+
             clearNotice("claimNotice");
 
+
             try {
-                const completed = await badgesReadContract.completedRequests(requestId);
+
+                // Проверяем завершение заявки
+
+                const completed =
+                    await badgesReadContract.completedRequests(
+                        requestId
+                    );
+
+
                 if (!completed) {
-                    throw new Error("Эта заявка ещё не отмечена как завершённая в RescueBadges.");
+
+                    throw new Error(
+                        "Эта заявка ещё не отмечена как завершённая в RescueBadges."
+                    );
+
                 }
 
-                const supported = await badgesReadContract.donatedToRequest(currentUser, requestId);
+
+                // Проверяем пожертвование пользователя
+
+                const supported =
+                    await badgesReadContract.donatedToRequest(
+                        currentUser,
+                        requestId
+                    );
+
+
                 if (!supported) {
-                    throw new Error("Вы не делали пожертвование на эту заявку.");
+
+                    throw new Error(
+                        "Вы не делали пожертвование на эту заявку."
+                    );
+
                 }
 
-                const alreadyEarned = await badgesReadContract.hasBadge(currentUser, 3);
+
+                // Проверяем наличие бейджа
+
+                const alreadyEarned =
+                    await badgesReadContract.hasBadge(
+                        currentUser,
+                        3
+                    );
+
+
                 if (alreadyEarned) {
-                    throw new Error("Вы уже получили бейдж «Герой спасения».");
+
+                    throw new Error(
+                        "Вы уже получили бейдж «Герой спасения»."
+                    );
+
                 }
 
-                showNotice("claimNotice", "Условия выполнены. Подтвердите транзакцию в MetaMask.", "info");
-                const tx = await badgesContract.claimRescueHeroBadge(requestId);
 
-                showNotice("claimNotice", "Транзакция отправлена. Ожидаем подтверждение блокчейна...", "info");
+                showNotice(
+                    "claimNotice",
+                    "Условия выполнены. Подтвердите транзакцию в MetaMask.",
+                    "info"
+                );
+
+
+                // Отправляем транзакцию
+
+                const tx =
+                    await badgesContract.claimRescueHeroBadge(
+                        requestId
+                    );
+
+
+                showNotice(
+                    "claimNotice",
+                    "Транзакция отправлена. Ожидаем подтверждение блокчейна...",
+                    "info"
+                );
+
+
                 await tx.wait();
 
-                showNotice("claimNotice", "Поздравляем! Бейдж «Герой спасения» получен.", "success");
-                input.value = "";
-                await loadBadgesData();
-            } catch (error) {
-                console.error("Ошибка получения бейджа:", error);
-                let message =
-                    error.reason ||
-                    error.shortMessage ||
-                    error.message ||
-                    "Не удалось получить бейдж.";
 
-                if (error.code === "ACTION_REJECTED" || error.code === 4001) {
-                    message = "Транзакция отклонена пользователем.";
+                showNotice(
+                    "claimNotice",
+                    "Поздравляем! Бейдж «Герой спасения» получен.",
+                    "success"
+                );
+
+
+                input.value = "";
+
+
+                await loadBadgesData();
+
+
+            } catch (error) {
+
+                console.error(
+                    "Ошибка получения бейджа:",
+                    error
+                );
+
+
+                let message =
+                    getErrorMessage(error);
+
+
+                if (
+                    error.code === "ACTION_REJECTED" ||
+                    error.code === 4001
+                ) {
+
+                    message =
+                        "Транзакция отклонена пользователем.";
+
                 }
 
-                showNotice("claimNotice", message, "error");
+
+                showNotice(
+                    "claimNotice",
+                    message,
+                    "error"
+                );
+
+
             } finally {
+
                 claimBtn.disabled = false;
                 claimBtn.textContent = "Получить бейдж";
-            }
-        }
 
-        if (window.ethereum) {
-            window.ethereum.on("accountsChanged", () => location.reload());
-            window.ethereum.on("chainChanged", () => location.reload());
-        }
-
-        window.addEventListener("DOMContentLoaded", async () => {
-            await updatePageConnectionInfo();
-
-            if (!window.ethereum) {
-                document.getElementById("connectBtn").textContent = "MetaMask не найден";
-                showNotice("claimNotice", "Для работы с достижениями установите MetaMask.", "info");
-                return;
             }
 
-            try {
-                if (typeof initWeb3 === "function") {
-                    await initWeb3();
+        }
+
+
+        // =================================================
+        // ОБРАБОТКА ИЗМЕНЕНИЯ АККАУНТА И СЕТИ
+        // =================================================
+
+        // wallet.js уже регистрирует обработчики MetaMask.
+        // При смене аккаунта или сети он обновляет состояние
+        // подключения и перезагружает страницу.
+
+
+        // =================================================
+        // ЗАПУСК СТРАНИЦЫ
+        // =================================================
+
+        window.addEventListener(
+            "DOMContentLoaded",
+            async () => {
+
+                await updatePageConnectionInfo();
+
+
+                if (!window.ethereum) {
+
+                    document.getElementById("connectBtn").textContent =
+                        "MetaMask не найден";
+
+                    showNotice(
+                        "claimNotice",
+                        "Для работы с достижениями установите MetaMask.",
+                        "info"
+                    );
+
+                    return;
+
                 }
-                await initializeBadgesPage();
-            } catch (error) {
-                console.error("Автоматическая инициализация не удалась:", error);
+
+
+                try {
+
+                    // Используем общую инициализацию wallet.js
+
+                    const ready =
+                        await initWeb3();
+
+
+                    if (!ready) {
+
+                        await updatePageConnectionInfo();
+
+                        return;
+
+                    }
+
+
+                    await initializeBadgesPage();
+
+
+                } catch (error) {
+
+                    console.error(
+                        "Автоматическая инициализация страницы достижений не удалась:",
+                        error
+                    );
+
+
+                    showNotice(
+                        "claimNotice",
+                        getErrorMessage(error),
+                        "error"
+                    );
+
+                }
+
             }
-        });
+        );
+
     </script>
 
 </body>

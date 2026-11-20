@@ -1,12 +1,17 @@
+
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
-// ---------------------------------------------------------
+// =========================================================
 // ИНТЕРФЕЙС ДЛЯ ЧТЕНИЯ ДАННЫХ RESCUEDAO
-// ---------------------------------------------------------
+// =========================================================
 
 interface IRescueDAORead {
-    function requestCount() external view returns (uint256);
+
+    function requestCount()
+        external
+        view
+        returns (uint256);
 
     function getRequestCore(uint256 requestId)
         external
@@ -49,87 +54,177 @@ interface IRescueDAORead {
     function getMilestoneSummary(uint256 requestId)
         external
         view
-        returns (uint256 total, uint256 count);
+        returns (
+            uint256 total,
+            uint256 count
+        );
 
-    function hasVoted(uint256 requestId, address voter)
+    function hasVoted(
+        uint256 requestId,
+        address voter
+    )
         external
         view
         returns (bool);
 }
 
-// ---------------------------------------------------------
-// ИНТЕРФЕЙС ДЛЯ ЧТЕНИЯ ДАННЫХ TREASURY
-// ---------------------------------------------------------
+// =========================================================
+// ИНТЕРФЕЙС ДЛЯ ЧТЕНИЯ ДАННЫХ RESCUETREASURY
+// =========================================================
 
 interface IRescueTreasuryRead {
-    function getAvailableBalance() external view returns (uint256);
 
-    function getAvailableRequestDonations(uint256 requestId)
+    function getAvailableBalance()
         external
         view
         returns (uint256);
 
-    function getContractBalance() external view returns (uint256);
-
-    function totalDonated() external view returns (uint256);
-
-    function totalReserved() external view returns (uint256);
-
-    function totalSpent() external view returns (uint256);
-
-    function totalTargetDonations() external view returns (uint256);
-
-    function totalTargetReserved() external view returns (uint256);
-
-    function totalTargetSpent() external view returns (uint256);
-
-    function totalTargetReassigned() external view returns (uint256);
-
-    function requestDonations(uint256 requestId)
+    function getAvailableRequestDonations(
+        uint256 requestId
+    )
         external
         view
         returns (uint256);
 
-    function requestTargetReserved(uint256 requestId)
+    function getContractBalance()
         external
         view
         returns (uint256);
 
-    function requestGeneralReserved(uint256 requestId)
+    function totalDonated()
         external
         view
         returns (uint256);
 
-    function requestTargetSpent(uint256 requestId)
+    function totalReserved()
         external
         view
         returns (uint256);
 
-    function requestTargetReassigned(uint256 requestId)
+    function totalSpent()
         external
         view
         returns (uint256);
 
-    function userRequestDonations(uint256 requestId, address user)
+    function totalTargetDonations()
+        external
+        view
+        returns (uint256);
+
+    function totalTargetReserved()
+        external
+        view
+        returns (uint256);
+
+    function totalTargetSpent()
+        external
+        view
+        returns (uint256);
+
+    function totalTargetReassigned()
+        external
+        view
+        returns (uint256);
+
+    function requestDonations(
+        uint256 requestId
+    )
+        external
+        view
+        returns (uint256);
+
+    function requestTargetReserved(
+        uint256 requestId
+    )
+        external
+        view
+        returns (uint256);
+
+    function requestGeneralReserved(
+        uint256 requestId
+    )
+        external
+        view
+        returns (uint256);
+
+    function requestTargetSpent(
+        uint256 requestId
+    )
+        external
+        view
+        returns (uint256);
+
+    function requestTargetReassigned(
+        uint256 requestId
+    )
+        external
+        view
+        returns (uint256);
+
+    function userRequestDonations(
+        uint256 requestId,
+        address user
+    )
         external
         view
         returns (uint256);
 }
 
-// ---------------------------------------------------------
+// =========================================================
 // RESCUEDAOVIEW
-// ---------------------------------------------------------
+// =========================================================
 
 contract RescueDAOView {
+
+    // -----------------------------------------------------
+    // АДРЕСА КОНТРАКТОВ
+    // -----------------------------------------------------
+
     address public immutable daoContract;
     address public immutable treasuryContract;
 
     IRescueDAORead private dao;
     IRescueTreasuryRead private treasury;
 
-    constructor(address daoAddress, address treasuryAddress) {
-        require(daoAddress != address(0), "Invalid DAO");
-        require(treasuryAddress != address(0), "Invalid Treasury");
+    // -----------------------------------------------------
+    // СТАТУСЫ ЗАЯВОК
+    // -----------------------------------------------------
+
+    uint8 public constant STATUS_UNDER_REVIEW = 0;
+    uint8 public constant STATUS_CHANGES_REQUESTED = 1;
+    uint8 public constant STATUS_VOTING = 2;
+    uint8 public constant STATUS_APPROVED = 3;
+    uint8 public constant STATUS_REJECTED = 4;
+    uint8 public constant STATUS_COMPLETED = 5;
+    uint8 public constant STATUS_CANCELLED = 6;
+
+    // -----------------------------------------------------
+    // КОНСТРУКТОР
+    // -----------------------------------------------------
+
+    constructor(
+        address daoAddress,
+        address treasuryAddress
+    ) {
+        require(
+            daoAddress != address(0),
+            "Invalid DAO"
+        );
+
+        require(
+            treasuryAddress != address(0),
+            "Invalid Treasury"
+        );
+
+        require(
+            daoAddress.code.length > 0,
+            "DAO is not a contract"
+        );
+
+        require(
+            treasuryAddress.code.length > 0,
+            "Treasury is not a contract"
+        );
 
         daoContract = daoAddress;
         treasuryContract = treasuryAddress;
@@ -138,14 +233,24 @@ contract RescueDAOView {
         treasury = IRescueTreasuryRead(treasuryAddress);
     }
 
-    // -----------------------------------------------------
+    // =====================================================
     // ОБЩАЯ ИНФОРМАЦИЯ О ЗАЯВКАХ
-    // -----------------------------------------------------
+    // =====================================================
 
-    function getRequestCount() external view returns (uint256) {
+    /**
+     * @notice Возвращает количество созданных заявок.
+     */
+    function getRequestCount()
+        external
+        view
+        returns (uint256)
+    {
         return dao.requestCount();
     }
 
+    /**
+     * @notice Возвращает основные данные заявки.
+     */
     function getRequestCore(uint256 requestId)
         external
         view
@@ -160,6 +265,9 @@ contract RescueDAOView {
         return dao.getRequestCore(requestId);
     }
 
+    /**
+     * @notice Возвращает текстовые данные заявки.
+     */
     function getAidRequestInfo(uint256 requestId)
         external
         view
@@ -177,9 +285,14 @@ contract RescueDAOView {
             evidenceURI,
             evidenceHash,
             requester,
+
         ) = dao.getRequestTextAndMeta(requestId);
     }
 
+    /**
+     * @notice Возвращает финансовые данные,
+     * информацию о голосовании и этапах.
+     */
     function getAidRequestStats(uint256 requestId)
         external
         view
@@ -198,19 +311,38 @@ contract RescueDAOView {
         return dao.getRequestFinancialAndVoting(requestId);
     }
 
+    /**
+     * @notice Возвращает сумму и количество этапов.
+     */
     function getMilestoneSummary(uint256 requestId)
         external
         view
-        returns (uint256 total, uint256 count)
+        returns (
+            uint256 total,
+            uint256 count
+        )
     {
         return dao.getMilestoneSummary(requestId);
     }
 
-    // -----------------------------------------------------
+    // =====================================================
     // ФИНАНСОВАЯ СТАТИСТИКА ЗАЯВКИ
-    // -----------------------------------------------------
+    // =====================================================
 
-    function getAidRequestFundingStats(uint256 requestId)
+    /**
+     * @notice Возвращает статистику финансирования заявки.
+     *
+     * fundingGoal       — требуемая сумма;
+     * targetRaised      — целевые пожертвования;
+     * fundingProgress   — процент сбора;
+     * targetReserved    — зарезервированные целевые средства;
+     * generalReserved   — зарезервированные общие средства;
+     * targetSpent       — потраченные целевые средства;
+     * targetReassigned  — перенаправленные целевые средства.
+     */
+    function getAidRequestFundingStats(
+        uint256 requestId
+    )
         external
         view
         returns (
@@ -238,15 +370,27 @@ contract RescueDAOView {
         targetRaised = treasury.requestDonations(requestId);
 
         if (fundingGoal > 0) {
-            fundingProgress = targetRaised * 100 / fundingGoal;
+            fundingProgress =
+                targetRaised * 100 / fundingGoal;
         }
 
-        targetReserved = treasury.requestTargetReserved(requestId);
-        generalReserved = treasury.requestGeneralReserved(requestId);
-        targetSpent = treasury.requestTargetSpent(requestId);
-        targetReassigned = treasury.requestTargetReassigned(requestId);
+        targetReserved =
+            treasury.requestTargetReserved(requestId);
+
+        generalReserved =
+            treasury.requestGeneralReserved(requestId);
+
+        targetSpent =
+            treasury.requestTargetSpent(requestId);
+
+        targetReassigned =
+            treasury.requestTargetReassigned(requestId);
     }
 
+    /**
+     * @notice Возвращает пожертвование конкретного пользователя
+     * на конкретную заявку.
+     */
     function getUserRequestDonation(
         uint256 requestId,
         address user
@@ -255,33 +399,69 @@ contract RescueDAOView {
         view
         returns (uint256)
     {
-        return treasury.userRequestDonations(requestId, user);
+        return treasury.userRequestDonations(
+            requestId,
+            user
+        );
     }
 
-    // -----------------------------------------------------
+    // =====================================================
     // ОБЩАЯ ФИНАНСОВАЯ СТАТИСТИКА
-    // -----------------------------------------------------
+    // =====================================================
 
-    function getAvailableBalance() external view returns (uint256) {
-        return treasury.getAvailableBalance();
-    }
-
-    function getAvailableRequestDonations(uint256 requestId)
+    /**
+     * @notice Доступный общий баланс фонда.
+     */
+    function getAvailableBalance()
         external
         view
         returns (uint256)
     {
-        return treasury.getAvailableRequestDonations(requestId);
+        return treasury.getAvailableBalance();
     }
 
-    function getContractBalance() external view returns (uint256) {
+    /**
+     * @notice Доступные целевые пожертвования заявки.
+     */
+    function getAvailableRequestDonations(
+        uint256 requestId
+    )
+        external
+        view
+        returns (uint256)
+    {
+        return treasury.getAvailableRequestDonations(
+            requestId
+        );
+    }
+
+    /**
+     * @notice Полный баланс Treasury.
+     */
+    function getContractBalance()
+        external
+        view
+        returns (uint256)
+    {
         return treasury.getContractBalance();
     }
 
-    function getTotalSpentAllSources() external view returns (uint256) {
-        return treasury.totalSpent() + treasury.totalTargetSpent();
+    /**
+     * @notice Общая сумма расходов из всех источников.
+     */
+    function getTotalSpentAllSources()
+        external
+        view
+        returns (uint256)
+    {
+        return
+            treasury.totalSpent() +
+            treasury.totalTargetSpent();
     }
 
+    /**
+     * @notice Возвращает общую финансовую статистику фонда.
+     */
     function getTreasuryTotals()
         external
         view
@@ -306,11 +486,16 @@ contract RescueDAOView {
         );
     }
 
-    // -----------------------------------------------------
+    // =====================================================
     // ДОПОЛНИТЕЛЬНЫЕ ПРОВЕРКИ
-    // -----------------------------------------------------
+    // =====================================================
 
-    function requestExists(uint256 requestId)
+    /**
+     * @notice Проверяет существование заявки.
+     */
+    function requestExists(
+        uint256 requestId
+    )
         external
         view
         returns (bool)
@@ -326,6 +511,9 @@ contract RescueDAOView {
         return exists;
     }
 
+    /**
+     * @notice Проверяет, голосовал ли участник.
+     */
     function hasParticipantVoted(
         uint256 requestId,
         address participant
@@ -334,6 +522,125 @@ contract RescueDAOView {
         view
         returns (bool)
     {
-        return dao.hasVoted(requestId, participant);
+        return dao.hasVoted(
+            requestId,
+            participant
+        );
+    }
+
+    // =====================================================
+    // ПРОВЕРКА СТАТУСА ЗАЯВКИ
+    // =====================================================
+
+    /**
+     * @notice Возвращает числовой статус заявки.
+     *
+     * 0 — UnderReview
+     * 1 — ChangesRequested
+     * 2 — Voting
+     * 3 — Approved
+     * 4 — Rejected
+     * 5 — Completed
+     * 6 — Cancelled
+     */
+    function getRequestStatus(
+        uint256 requestId
+    )
+        external
+        view
+        returns (uint8)
+    {
+        (
+            ,
+            ,
+            uint8 status,
+            ,
+            bool exists
+        ) = dao.getRequestCore(requestId);
+
+        require(
+            exists,
+            "Request does not exist"
+        );
+
+        return status;
+    }
+
+    /**
+     * @notice Проверяет, находится ли заявка на модерации.
+     */
+    function isRequestUnderReview(
+        uint256 requestId
+    )
+        external
+        view
+        returns (bool)
+    {
+        return getStatusInternal(requestId) == STATUS_UNDER_REVIEW;
+    }
+
+    /**
+     * @notice Проверяет, возвращена ли заявка на доработку.
+     */
+    function isRequestChangesRequested(
+        uint256 requestId
+    )
+        external
+        view
+        returns (bool)
+    {
+        return getStatusInternal(requestId) == STATUS_CHANGES_REQUESTED;
+    }
+
+    /**
+     * @notice Проверяет, идёт ли голосование.
+     */
+    function isRequestVoting(
+        uint256 requestId
+    )
+        external
+        view
+        returns (bool)
+    {
+        return getStatusInternal(requestId) == STATUS_VOTING;
+    }
+
+    /**
+     * @notice Проверяет, одобрена ли заявка.
+     */
+    function isRequestApproved(
+        uint256 requestId
+    )
+        external
+        view
+        returns (bool)
+    {
+        return getStatusInternal(requestId) == STATUS_APPROVED;
+    }
+
+    /**
+     * @notice Внутренняя функция получения статуса.
+     */
+    function getStatusInternal(
+        uint256 requestId
+    )
+        internal
+        view
+        returns (uint8)
+    {
+        (
+            ,
+            ,
+            uint8 status,
+            ,
+            bool exists
+        ) = dao.getRequestCore(requestId);
+
+        require(
+            exists,
+            "Request does not exist"
+        );
+
+        return status;
     }
 }

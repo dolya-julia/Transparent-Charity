@@ -1,3 +1,4 @@
+
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
@@ -5,7 +6,7 @@ import "@openzeppelin/contracts@4.9.6/token/ERC721/ERC721.sol";
 import "@openzeppelin/contracts@4.9.6/access/Ownable.sol";
 
 // =========================================================
-// ИНТЕРФЕЙС RescueDAO
+// ИНТЕРФЕЙС RESCUEDAO
 // =========================================================
 
 interface IRescueDAO {
@@ -47,7 +48,10 @@ interface IRescueDAO {
             uint8 status
         );
 
-    function treasuryContract() external view returns (address);
+    function treasuryContract()
+        external
+        view
+        returns (address);
 }
 
 // =========================================================
@@ -55,6 +59,7 @@ interface IRescueDAO {
 // =========================================================
 
 interface IRescuePassportRenderer {
+
     struct RenderParams {
         uint256 tokenId;
         uint256 requestId;
@@ -72,7 +77,7 @@ interface IRescuePassportRenderer {
 }
 
 // =========================================================
-// ИНТЕРФЕЙС RescueTreasury
+// ИНТЕРФЕЙС RESCUETREASURY
 // =========================================================
 
 interface IRescueTreasuryView {
@@ -87,33 +92,58 @@ interface IRescueTreasuryView {
  * @dev ERC-721 NFT-паспорта животных для RescueDAO.
  *
  * Контракт обеспечивает:
- * 1. Выпуск NFT-паспортов для заявок DAO.
- * 2. Связь NFT с заявками.
+ *
+ * 1. Выпуск NFT-паспортов после публикации заявок.
+ * 2. Связь NFT с заявками DAO.
  * 3. Получение актуальной информации о животном.
  * 4. Получение прогресса лечения.
  * 5. Получение суммы целевых пожертвований.
  * 6. Формирование динамических metadata через Renderer.
+ *
+ * NFT выпускается только после перехода заявки
+ * в статус Voting.
  */
 contract RescueNFT is ERC721, Ownable {
 
     // =========================================================
-    // АДРЕСА ВНЕШНИХ КОНТРАКТОВ
+    // 1. КОНСТАНТЫ СТАТУСОВ DAO
+    // =========================================================
+
+    // Статусы RescueDAO:
+    // 0 — UnderReview
+    // 1 — ChangesRequested
+    // 2 — Voting
+    // 3 — Approved
+    // 4 — Rejected
+    // 5 — Completed
+    // 6 — Cancelled
+
+    uint8 private constant STATUS_VOTING = 2;
+
+    // =========================================================
+    // 2. АДРЕСА ВНЕШНИХ КОНТРАКТОВ
     // =========================================================
 
     address public rescueDaoContract;
+
     address public rendererContract;
 
-    // Счётчик выпущенных NFT
+    // =========================================================
+    // 3. СЧЁТЧИК И СВЯЗИ NFT
+    // =========================================================
+
     uint256 private _tokenIds;
 
     // NFT -> заявка DAO
-    mapping(uint256 => uint256) public tokenToRequest;
+    mapping(uint256 => uint256)
+        public tokenToRequest;
 
     // Заявка DAO -> NFT
-    mapping(uint256 => uint256) public requestToToken;
+    mapping(uint256 => uint256)
+        public requestToToken;
 
     // =========================================================
-    // СОБЫТИЯ
+    // 4. СОБЫТИЯ
     // =========================================================
 
     event PassportMinted(
@@ -133,27 +163,17 @@ contract RescueNFT is ERC721, Ownable {
     );
 
     // =========================================================
-    // МОДИФИКАТОРЫ
-    // =========================================================
-
-    modifier onlyDAOorOwner() {
-        require(
-            msg.sender == rescueDaoContract ||
-            msg.sender == owner(),
-            "Only DAO or owner"
-        );
-        _;
-    }
-
-    // =========================================================
-    // КОНСТРУКТОР
+    // 5. КОНСТРУКТОР
     // =========================================================
 
     constructor(
         address _rescueDao,
         address _renderer
     )
-        ERC721("RescueDAO Animal Passport", "RAP")
+        ERC721(
+            "RescueDAO Animal Passport",
+            "RAP"
+        )
         Ownable()
     {
         require(
@@ -181,11 +201,13 @@ contract RescueNFT is ERC721, Ownable {
     }
 
     // =========================================================
-    // УПРАВЛЕНИЕ АДРЕСАМИ
+    // 6. УПРАВЛЕНИЕ АДРЕСАМИ
     // =========================================================
 
     /**
-     * @dev Обновление адреса DAO.
+     * @notice Обновление адреса DAO.
+     *
+     * Доступно только владельцу NFT-контракта.
      */
     function setRescueDao(
         address _rescueDao
@@ -202,6 +224,7 @@ contract RescueNFT is ERC721, Ownable {
         );
 
         address oldAddress = rescueDaoContract;
+
         rescueDaoContract = _rescueDao;
 
         emit RescueDAOUpdated(
@@ -211,7 +234,9 @@ contract RescueNFT is ERC721, Ownable {
     }
 
     /**
-     * @dev Обновление главного Renderer.
+     * @notice Обновление главного Renderer.
+     *
+     * Доступно только владельцу NFT-контракта.
      */
     function setRenderer(
         address _renderer
@@ -224,10 +249,11 @@ contract RescueNFT is ERC721, Ownable {
 
         require(
             _renderer.code.length > 0,
-            "Renderer contract does not exist"
+            "Renderer does not exist"
         );
 
         address oldAddress = rendererContract;
+
         rendererContract = _renderer;
 
         emit RendererUpdated(
@@ -237,24 +263,34 @@ contract RescueNFT is ERC721, Ownable {
     }
 
     // =========================================================
-    // ВЫПУСК NFT
+    // 7. ВЫПУСК NFT
     // =========================================================
 
     /**
-     * @dev Выпускает NFT-паспорт для существующей заявки DAO.
+     * @notice Выпускает NFT-паспорт для опубликованной заявки.
      *
-     * Вызвать функцию может:
-     * - DAO при создании заявки;
-     * - владелец NFT-контракта вручную.
+     * Функцию может вызвать только RescueDAO.
+     *
+     * Условия выпуска:
+     * - заявка существует;
+     * - заявка находится в статусе Voting;
+     * - получатель является инициатором заявки;
+     * - для заявки ещё не выпускался NFT.
+     *
+     * Вызов выполняется из publishRequest() основного DAO.
      */
     function mintPassport(
         address to,
         uint256 requestId
     )
         external
-        onlyDAOorOwner
         returns (uint256)
     {
+        require(
+            msg.sender == rescueDaoContract,
+            "Only DAO contract"
+        );
+
         require(
             to != address(0),
             "Invalid recipient"
@@ -270,11 +306,14 @@ contract RescueNFT is ERC721, Ownable {
             "Passport already exists"
         );
 
-        // Проверяем существование заявки
+        // -----------------------------------------------------
+        // Проверяем существование и статус заявки
+        // -----------------------------------------------------
+
         (
+            address requester,
             ,
-            ,
-            ,
+            uint8 status,
             ,
             bool exists
         ) = IRescueDAO(rescueDaoContract).getRequestCore(
@@ -286,16 +325,30 @@ contract RescueNFT is ERC721, Ownable {
             "Request does not exist"
         );
 
-        // Увеличиваем счётчик
+        require(
+            status == STATUS_VOTING,
+            "Request is not published"
+        );
+
+        require(
+            to == requester,
+            "Recipient must be requester"
+        );
+
+        // -----------------------------------------------------
+        // Создаём новый NFT
+        // -----------------------------------------------------
+
         _tokenIds++;
 
         uint256 newTokenId = _tokenIds;
 
-        // Сохраняем связь NFT и заявки
+        // Сохраняем связь NFT и заявки.
         tokenToRequest[newTokenId] = requestId;
+
         requestToToken[requestId] = newTokenId;
 
-        // Выпускаем NFT
+        // Выпускаем NFT.
         _safeMint(to, newTokenId);
 
         emit PassportMinted(
@@ -308,11 +361,11 @@ contract RescueNFT is ERC721, Ownable {
     }
 
     // =========================================================
-    // ИНФОРМАЦИЯ О NFT
+    // 8. ИНФОРМАЦИЯ О NFT
     // =========================================================
 
     /**
-     * @dev Общее количество выпущенных NFT.
+     * @notice Общее количество выпущенных NFT.
      */
     function totalSupply()
         external
@@ -323,7 +376,7 @@ contract RescueNFT is ERC721, Ownable {
     }
 
     /**
-     * @dev Получение ID заявки, связанной с NFT.
+     * @notice Получение ID заявки, связанной с NFT.
      */
     function getRequestId(
         uint256 tokenId
@@ -338,7 +391,7 @@ contract RescueNFT is ERC721, Ownable {
     }
 
     /**
-     * @dev Получение ID NFT по ID заявки.
+     * @notice Получение ID NFT по ID заявки.
      */
     function getTokenIdForRequest(
         uint256 requestId
@@ -358,11 +411,11 @@ contract RescueNFT is ERC721, Ownable {
     }
 
     // =========================================================
-    // ДИНАМИЧЕСКИЕ МЕТАДАННЫЕ NFT
+    // 9. ДИНАМИЧЕСКИЕ МЕТАДАННЫЕ NFT
     // =========================================================
 
     /**
-     * @dev Формирует актуальные metadata NFT.
+     * @notice Формирует актуальные metadata NFT.
      *
      * Получает из DAO:
      * - имя животного;
@@ -374,7 +427,7 @@ contract RescueNFT is ERC721, Ownable {
      * Получает из Treasury:
      * - общую сумму целевых пожертвований на заявку.
      *
-     * Все данные передаются главному Renderer.
+     * Передаёт данные главному Renderer.
      */
     function tokenURI(
         uint256 tokenId
@@ -384,10 +437,16 @@ contract RescueNFT is ERC721, Ownable {
         override
         returns (string memory)
     {
+        // -----------------------------------------------------
         // Проверяем существование NFT
+        // -----------------------------------------------------
+
         ownerOf(tokenId);
 
+        // -----------------------------------------------------
         // Получаем ID заявки
+        // -----------------------------------------------------
+
         uint256 requestId = tokenToRequest[tokenId];
 
         require(
@@ -406,9 +465,8 @@ contract RescueNFT is ERC721, Ownable {
             ,
             ,
             bool requestExists
-        ) = IRescueDAO(rescueDaoContract).getRequestTextAndMeta(
-            requestId
-        );
+        ) = IRescueDAO(rescueDaoContract)
+            .getRequestTextAndMeta(requestId);
 
         require(
             requestExists,
@@ -429,9 +487,8 @@ contract RescueNFT is ERC721, Ownable {
             uint256 milestoneCount,
             uint256 completedMilestones,
             uint8 status
-        ) = IRescueDAO(rescueDaoContract).getRequestFinancialAndVoting(
-            requestId
-        );
+        ) = IRescueDAO(rescueDaoContract)
+            .getRequestFinancialAndVoting(requestId);
 
         // -----------------------------------------------------
         // Получаем сумму целевых пожертвований
@@ -440,13 +497,13 @@ contract RescueNFT is ERC721, Ownable {
         uint256 targetDonations;
 
         address treasuryAddress =
-            IRescueDAO(rescueDaoContract).treasuryContract();
+            IRescueDAO(rescueDaoContract)
+                .treasuryContract();
 
         if (treasuryAddress != address(0)) {
             targetDonations =
-                IRescueTreasuryView(treasuryAddress).requestDonations(
-                    requestId
-                );
+                IRescueTreasuryView(treasuryAddress)
+                    .requestDonations(requestId);
         }
 
         // -----------------------------------------------------

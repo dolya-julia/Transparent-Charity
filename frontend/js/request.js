@@ -54,9 +54,6 @@ window.addEventListener("DOMContentLoaded", async () => {
 // 2. ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ
 // =========================================================
 
-/**
- * Экранирование текста перед вставкой в innerHTML.
- */
 function escapeHtml(value) {
     return String(value ?? "").replace(/[&<>"']/g, char => ({
         "&": "&amp;",
@@ -67,9 +64,7 @@ function escapeHtml(value) {
     })[char]);
 }
 
-/**
- * Разрешаем только HTTP(S)-ссылки.
- */
+
 function safeHttpUrl(value) {
     if (!value) return "";
 
@@ -93,53 +88,17 @@ function safeHttpUrl(value) {
     return "";
 }
 
-/**
- * Получение сообщения об ошибке.
- */
-function getErrorMessage(err) {
-    return (
-        err?.reason ||
-        err?.shortMessage ||
-        err?.info?.error?.message ||
-        err?.message ||
-        "Неизвестная ошибка"
-    );
-}
 
-/**
- * Безопасное форматирование ETH.
- */
 function formatEth(value) {
     try {
         return ethers.formatEther(value);
     } catch (err) {
-        console.warn(
-            "Ошибка форматирования ETH:",
-            err
-        );
-
+        console.warn("Ошибка форматирования ETH:", err);
         return "0";
     }
 }
 
-/**
- * Сокращение адреса или хэша.
- */
-function shortAddr(value) {
-    if (!value) return "—";
 
-    const str = String(value);
-
-    if (str.length <= 14) {
-        return str;
-    }
-
-    return `${str.slice(0, 8)}...${str.slice(-6)}`;
-}
-
-/**
- * Проверка наличия контракта.
- */
 function requireContract(instance, name) {
     if (!instance) {
         throw new Error(
@@ -148,9 +107,7 @@ function requireContract(instance, name) {
     }
 }
 
-/**
- * Проверка наличия метода контракта.
- */
+
 function requireMethod(instance, methodName, contractName) {
     requireContract(instance, contractName);
 
@@ -161,9 +118,7 @@ function requireMethod(instance, methodName, contractName) {
     }
 }
 
-/**
- * Проверка подключения кошелька.
- */
+
 function isWalletConnected() {
     return (
         typeof signer !== "undefined" &&
@@ -173,9 +128,7 @@ function isWalletConnected() {
     );
 }
 
-/**
- * Проверка роли участника DAO.
- */
+
 function isDaoMember() {
     return (
         typeof userRoles !== "undefined" &&
@@ -183,9 +136,16 @@ function isDaoMember() {
     );
 }
 
-/**
- * Получение статуса заявки.
- */
+
+function isRequesterAddress(requester) {
+    return (
+        isWalletConnected() &&
+        String(requester).toLowerCase() ===
+        String(userAddress).toLowerCase()
+    );
+}
+
+
 function getStatusInfo(status) {
     const statusNum = Number(status);
 
@@ -196,10 +156,62 @@ function getStatusInfo(status) {
         return STATUS_LABELS[statusNum];
     }
 
-    return {
+    const fallback = {
+        0: { text: "На проверке", cls: "badge-yellow" },
+        1: { text: "Требуются изменения", cls: "badge-yellow" },
+        2: { text: "Голосование", cls: "badge-blue" },
+        3: { text: "Одобрена", cls: "badge-green" },
+        4: { text: "Отклонена", cls: "badge-red" },
+        5: { text: "Завершена", cls: "badge-green" },
+        6: { text: "Отменена", cls: "badge-gray" }
+    };
+
+    return fallback[statusNum] || {
         text: "Неизвестный статус",
         cls: "badge-gray"
     };
+}
+
+
+function isPreparationStatus(status) {
+    return (
+        Number(status) === REQUEST_STATUS.UNDER_REVIEW ||
+        Number(status) === REQUEST_STATUS.CHANGES_REQUESTED
+    );
+}
+
+
+// Проверка существования этапа.
+//
+// В актуальном ABI getMilestone() может возвращать структуру
+// без поля exists. В таком случае проверяем основные поля
+// самого этапа. Если поле exists присутствует в ABI,
+// учитываем его значение.
+
+function isValidMilestone(ms) {
+    if (!ms) return false;
+
+    if (ms.exists !== undefined) {
+        return Boolean(ms.exists);
+    }
+
+    const description = String(ms.description ?? "").trim();
+    const recipient = String(ms.recipient ?? "");
+
+    return (
+        description.length > 0 &&
+        ethers.isAddress(recipient) &&
+        recipient.toLowerCase() !== ethers.ZeroAddress.toLowerCase()
+    );
+}
+
+
+function getTransactionError(err) {
+    if (err?.code === 4001) {
+        return "Вы отклонили транзакцию в MetaMask.";
+    }
+
+    return getErrorMessage(err);
 }
 
 
@@ -213,19 +225,11 @@ async function loadRequestDetails() {
     );
 
     if (!container) {
-        console.error(
-            "Не найден requestDetailsContainer."
-        );
-
+        console.error("Не найден requestDetailsContainer.");
         return;
     }
 
     try {
-
-        // -------------------------------------------------
-        // Проверка необходимых контрактов
-        // -------------------------------------------------
-
         requireMethod(
             daoViewContract,
             "getAidRequestInfo",
@@ -244,18 +248,12 @@ async function loadRequestDetails() {
             "RescueDAOView"
         );
 
-        requireContract(
-            contract,
-            "RescueDAO"
-        );
-
-        requireContract(
-            milestonesContract,
-            "RescueMilestones"
-        );
+        requireContract(contract, "RescueDAO");
+        requireContract(milestonesContract, "RescueMilestones");
+        requireContract(treasuryContract, "RescueTreasury");
 
         // -------------------------------------------------
-        // Получение данных заявки через RescueDAOView
+        // Получение данных заявки
         // -------------------------------------------------
 
         const [info, stats] = await Promise.all([
@@ -263,8 +261,16 @@ async function loadRequestDetails() {
             daoViewContract.getAidRequestStats(requestId)
         ]);
 
+        const statusNum = Number(stats.status);
+
+        const statusObj = getStatusInfo(statusNum);
+
+        const isRequester = isRequesterAddress(
+            info.requester
+        );
+
         // -------------------------------------------------
-        // Получение дополнительных данных с backend
+        // Дополнительные данные с backend
         // -------------------------------------------------
 
         let meta = {
@@ -279,11 +285,8 @@ async function loadRequestDetails() {
             );
 
             if (response.ok) {
-                const responseData =
-                    await response.json();
+                const responseData = await response.json();
 
-                // Backend может возвращать данные
-                // как response.data, так и напрямую.
                 meta = {
                     ...meta,
                     ...(responseData.data || responseData)
@@ -297,47 +300,26 @@ async function loadRequestDetails() {
             );
         }
 
-        // -------------------------------------------------
-        // Сохранение хэша документа
-        // -------------------------------------------------
-
         currentEvidenceHash = String(
             info.evidenceHash || ""
         );
 
         // -------------------------------------------------
-        // Статус заявки
+        // Срок голосования
         // -------------------------------------------------
-
-        const statusNum = Number(stats.status);
-
-        const statusObj = getStatusInfo(statusNum);
 
         const votingEndsAt = Number(
             stats.votingEndsAt
         );
 
         const endsDate = votingEndsAt > 0
-            ? new Date(
-                votingEndsAt * 1000
-            ).toLocaleString("ru-RU")
-            : "Не определено";
+            ? new Date(votingEndsAt * 1000).toLocaleString("ru-RU")
+            : "Ещё не назначено";
 
-        const nowSec = Math.floor(
-            Date.now() / 1000
-        );
+        const nowSec = Math.floor(Date.now() / 1000);
 
         const votingEnded =
-            nowSec >= votingEndsAt;
-
-        // -------------------------------------------------
-        // Проверка инициатора
-        // -------------------------------------------------
-
-        const isRequester =
-            Boolean(userAddress) &&
-            String(info.requester).toLowerCase() ===
-            String(userAddress).toLowerCase();
+            votingEndsAt > 0 && nowSec >= votingEndsAt;
 
         // -------------------------------------------------
         // Проверка голоса пользователя
@@ -375,9 +357,7 @@ async function loadRequestDetails() {
 
             const [totalDonations, myDonations] =
                 await Promise.all([
-                    treasuryContract.requestDonations(
-                        requestId
-                    ),
+                    treasuryContract.requestDonations(requestId),
 
                     userAddress
                         ? treasuryContract.userRequestDonations(
@@ -387,29 +367,9 @@ async function loadRequestDetails() {
                         : Promise.resolve(0n)
                 ]);
 
-            targetDonations = BigInt(
-                totalDonations
-            );
-
-            personalDonations = BigInt(
-                myDonations
-            );
-
+            targetDonations = BigInt(totalDonations);
+            personalDonations = BigInt(myDonations);
             treasuryAvailable = true;
-
-            console.log(
-                "Целевое финансирование заявки:",
-                {
-                    requestId,
-                    targetDonations: formatEth(
-                        targetDonations
-                    ),
-                    personalDonations: formatEth(
-                        personalDonations
-                    ),
-                    userAddress
-                }
-            );
 
         } catch (err) {
             treasuryError = getErrorMessage(err);
@@ -438,29 +398,24 @@ async function loadRequestDetails() {
                 ? Number(
                     targetDonations >= requestedAmount
                         ? 100n
-                        : (
-                            targetDonations * 100n /
-                            requestedAmount
-                        )
+                        : targetDonations * 100n / requestedAmount
                 )
                 : 0;
 
-        // Принимать целевые пожертвования можно,
-        // пока заявка находится на голосовании.
+        // Целевые пожертвования принимаются только
+        // во время голосования.
         const canDonateToRequest =
-            statusNum === 0 &&
+            statusNum === REQUEST_STATUS.VOTING &&
             !votingEnded &&
             remainingAmount > 0n &&
             treasuryAvailable &&
             isWalletConnected();
 
         // =================================================
-        // ФОТОГРАФИЯ ЖИВОТНОГО
+        // ФОТОГРАФИЯ
         // =================================================
 
-        const photoUrl = safeHttpUrl(
-            meta.photoUrl
-        );
+        const photoUrl = safeHttpUrl(meta.photoUrl);
 
         const photoBlock = photoUrl
             ? `
@@ -496,9 +451,7 @@ async function loadRequestDetails() {
         // ДОКУМЕНТ ЗАЯВКИ
         // =================================================
 
-        const docUrl = safeHttpUrl(
-            meta.docUrl
-        );
+        const docUrl = safeHttpUrl(meta.docUrl);
 
         const downloadDocLink = docUrl
             ? `
@@ -509,11 +462,64 @@ async function loadRequestDetails() {
                         rel="noopener noreferrer"
                         class="tx-link"
                     >
-                        📄 Скачать документ с сервера для проверки хэша &nearr;
+                        📄 Скачать документ для проверки хэша &nearr;
                     </a>
                 </div>
             `
             : "";
+
+        // =================================================
+        // ИНФОРМАЦИОННОЕ СООБЩЕНИЕ О СТАДИИ ЗАЯВКИ
+        // =================================================
+
+        let lifecycleMessage = "";
+
+        if (statusNum === REQUEST_STATUS.UNDER_REVIEW) {
+            lifecycleMessage = `
+                <div class="box" style="margin-top:1rem;">
+                    <strong>Заявка находится на проверке.</strong>
+                    <p style="margin-top:0.4rem;color:var(--text-muted);">
+                        Администратор проверяет материалы заявки.
+                        Инициатор может дополнять описание и редактировать
+                        этапы финансирования до публикации заявки.
+                    </p>
+                </div>
+            `;
+
+        } else if (statusNum === REQUEST_STATUS.CHANGES_REQUESTED) {
+            lifecycleMessage = `
+                <div class="box" style="margin-top:1rem;border-left:4px solid var(--warning);">
+                    <strong>По заявке требуются изменения.</strong>
+                    <p style="margin-top:0.4rem;color:var(--text-muted);">
+                        Инициатор может исправить материалы и этапы,
+                        после чего повторно отправить заявку на проверку.
+                    </p>
+                </div>
+            `;
+
+        } else if (statusNum === REQUEST_STATUS.VOTING) {
+            lifecycleMessage = `
+                <div class="box" style="margin-top:1rem;">
+                    <strong>Заявка опубликована.</strong>
+                    <p style="margin-top:0.4rem;color:var(--text-muted);">
+                        Состав и суммы этапов зафиксированы.
+                        Изменение этапов на этой стадии недоступно.
+                    </p>
+                </div>
+            `;
+
+        } else if (statusNum === REQUEST_STATUS.APPROVED) {
+            lifecycleMessage = `
+                <div class="box" style="margin-top:1rem;">
+                    <strong>Заявка одобрена.</strong>
+                    <p style="margin-top:0.4rem;color:var(--text-muted);">
+                        Инициатор может отправлять подтверждающие документы
+                        по этапам. После проверки валидаторами средства
+                        перечисляются соответствующим получателям.
+                    </p>
+                </div>
+            `;
+        }
 
         // =================================================
         // ГОЛОСОВАНИЕ DAO
@@ -521,21 +527,15 @@ async function loadRequestDetails() {
 
         let votingControls = "";
 
-        if (statusNum === 0) {
+        if (statusNum === REQUEST_STATUS.VOTING) {
 
-            if (
-                !votingEnded &&
-                isDaoMember() &&
-                !voted &&
-                isWalletConnected()
-            ) {
+            if (!votingEnded && isDaoMember() && !voted && isWalletConnected()) {
                 votingControls = `
                     <div style="
                         display:flex;
                         gap:0.75rem;
                         margin-top:1rem;
                     ">
-
                         <button
                             class="btn btn-primary"
                             style="flex:1;"
@@ -551,17 +551,28 @@ async function loadRequestDetails() {
                         >
                             👎 Голосовать ПРОТИВ
                         </button>
-
                     </div>
                 `;
 
             } else if (voted) {
                 votingControls = `
-                    <p
-                        style="margin-top:0.75rem;"
-                        class="badge badge-blue"
-                    >
+                    <p style="margin-top:0.75rem;" class="badge badge-blue">
                         Вы уже проголосовали по этой заявке
+                    </p>
+                `;
+
+            } else if (!isWalletConnected()) {
+                votingControls = `
+                    <p style="margin-top:0.75rem;color:var(--text-muted);">
+                        Подключите кошелёк, чтобы проголосовать.
+                    </p>
+                `;
+
+            } else if (!isDaoMember()) {
+                votingControls = `
+                    <p style="margin-top:0.75rem;color:var(--text-muted);">
+                        Голосовать могут только зарегистрированные
+                        участники DAO.
                     </p>
                 `;
             }
@@ -570,10 +581,7 @@ async function loadRequestDetails() {
                 votingControls += `
                     <button
                         class="btn btn-dark"
-                        style="
-                            width:100%;
-                            margin-top:1rem;
-                        "
+                        style="width:100%;margin-top:1rem;"
                         onclick="finalizeReq()"
                     >
                         Подвести итоги голосования
@@ -589,15 +597,8 @@ async function loadRequestDetails() {
         let targetFundingBlock = "";
 
         if (treasuryAvailable) {
-
             targetFundingBlock = `
-                <div
-                    class="box"
-                    style="
-                        margin-top:1rem;
-                        border:1px solid var(--border);
-                    "
-                >
+                <div class="box" style="margin-top:1rem;border:1px solid var(--border);">
 
                     <h3 style="margin-bottom:0.75rem;">
                         🎯 Целевое финансирование заявки
@@ -611,10 +612,7 @@ async function loadRequestDetails() {
                         font-size:0.9rem;
                     ">
                         <span>Собрано:</span>
-
-                        <strong>
-                            ${formatEth(targetDonations)} ETH
-                        </strong>
+                        <strong>${formatEth(targetDonations)} ETH</strong>
                     </div>
 
                     <div style="
@@ -653,10 +651,7 @@ async function loadRequestDetails() {
                         font-size:0.9rem;
                     ">
                         <span>Цель сбора:</span>
-
-                        <strong>
-                            ${formatEth(requestedAmount)} ETH
-                        </strong>
+                        <strong>${formatEth(requestedAmount)} ETH</strong>
                     </div>
 
                     <div style="
@@ -667,7 +662,6 @@ async function loadRequestDetails() {
                         font-size:0.9rem;
                     ">
                         <span>Осталось собрать:</span>
-
                         <strong style="color:var(--primary);">
                             ${formatEth(remainingAmount)} ETH
                         </strong>
@@ -684,7 +678,6 @@ async function loadRequestDetails() {
                                     font-size:0.9rem;
                                 ">
                                     <span>Ваш вклад:</span>
-
                                     <strong>
                                         ${formatEth(personalDonations)} ETH
                                     </strong>
@@ -710,7 +703,6 @@ async function loadRequestDetails() {
                                     padding-top:0.85rem;
                                     border-top:1px solid var(--border);
                                 ">
-
                                     <h4 style="margin-bottom:0.5rem;">
                                         Поддержать эту заявку
                                     </h4>
@@ -726,7 +718,6 @@ async function loadRequestDetails() {
                                     </p>
 
                                     <div class="form-group">
-
                                         <label for="targetDonationAmount">
                                             Сумма пожертвования (ETH)
                                         </label>
@@ -745,31 +736,27 @@ async function loadRequestDetails() {
                                                 margin-top:0.25rem;
                                             "
                                         >
-
                                     </div>
 
                                     <button
                                         class="btn btn-primary"
-                                        style="
-                                            width:100%;
-                                            margin-top:0.75rem;
-                                        "
+                                        style="width:100%;margin-top:0.75rem;"
                                         onclick="donateToCurrentRequest()"
                                     >
                                         ❤️ Пожертвовать на эту заявку
                                     </button>
-
                                 </div>
                             `
-                            : statusNum !== 0
+                            : statusNum !== REQUEST_STATUS.VOTING
                                 ? `
                                     <p style="
                                         margin-top:1rem;
                                         font-size:0.85rem;
                                         color:var(--text-muted);
                                     ">
-                                        Приём целевых пожертвований закрыт:
-                                        заявка уже не находится на этапе голосования.
+                                        Приём целевых пожертвований откроется
+                                        после публикации заявки и завершится
+                                        вместе с голосованием.
                                     </p>
                                 `
                                 : votingEnded
@@ -807,18 +794,13 @@ async function loadRequestDetails() {
                                             `
                                             : ""
                     }
-
                 </div>
             `;
 
         } else {
-
             targetFundingBlock = `
                 <div class="box" style="margin-top:1rem;">
-
-                    <h3>
-                        🎯 Целевое финансирование
-                    </h3>
+                    <h3>🎯 Целевое финансирование</h3>
 
                     <p style="
                         margin-top:0.5rem;
@@ -838,7 +820,6 @@ async function loadRequestDetails() {
                     ">
                         ${escapeHtml(treasuryError)}
                     </p>
-
                 </div>
             `;
         }
@@ -847,17 +828,15 @@ async function loadRequestDetails() {
         // ФОРМА ДОБАВЛЕНИЯ ЭТАПА
         // =================================================
 
-        const addMilestoneBlock = (
-            statusNum === 0 &&
-            !votingEnded &&
-            isRequester
-        )
+        const canPrepareMilestones =
+            isPreparationStatus(statusNum) &&
+            isRequester;
+
+        const addMilestoneBlock = canPrepareMilestones
             ? `
                 <div class="box" style="margin-top:1rem;">
 
-                    <h3>
-                        Добавить этап финансирования
-                    </h3>
+                    <h3>Добавить этап финансирования</h3>
 
                     <p style="
                         font-size:0.85rem;
@@ -873,31 +852,25 @@ async function loadRequestDetails() {
                             ETH
                         </strong>.
 
-                        Для одобрения заявки сумма этапов должна
-                        совпасть с запрошенной суммой!
+                        Сумма всех этапов должна совпадать
+                        с запрошенной суммой до публикации заявки.
                     </p>
 
                     <div class="form-group" style="margin-bottom:0.75rem;">
-
-                        <label>Название этапа</label>
+                        <label for="msDesc">Название этапа</label>
 
                         <input
                             type="text"
                             id="msDesc"
                             class="input-field"
+                            maxlength="200"
                             placeholder="Например: Операция в ветклинике"
-                            style="
-                                width:100%;
-                                padding:0.5rem;
-                                margin-top:0.25rem;
-                            "
+                            style="width:100%;padding:0.5rem;margin-top:0.25rem;"
                         >
-
                     </div>
 
                     <div class="form-group" style="margin-bottom:0.75rem;">
-
-                        <label>
+                        <label for="msRecipient">
                             Адрес получателя (клиника / аптека)
                         </label>
 
@@ -906,18 +879,12 @@ async function loadRequestDetails() {
                             id="msRecipient"
                             class="input-field"
                             placeholder="0x..."
-                            style="
-                                width:100%;
-                                padding:0.5rem;
-                                margin-top:0.25rem;
-                            "
+                            style="width:100%;padding:0.5rem;margin-top:0.25rem;"
                         >
-
                     </div>
 
                     <div class="form-group" style="margin-bottom:0.75rem;">
-
-                        <label>Сумма этапа (ETH)</label>
+                        <label for="msAmount">Сумма этапа (ETH)</label>
 
                         <input
                             type="number"
@@ -926,13 +893,8 @@ async function loadRequestDetails() {
                             step="0.001"
                             min="0"
                             placeholder="0.003"
-                            style="
-                                width:100%;
-                                padding:0.5rem;
-                                margin-top:0.25rem;
-                            "
+                            style="width:100%;padding:0.5rem;margin-top:0.25rem;"
                         >
-
                     </div>
 
                     <button
@@ -964,10 +926,10 @@ async function loadRequestDetails() {
                                 display:flex;
                                 justify-content:space-between;
                                 align-items:center;
+                                gap:0.75rem;
                                 margin-bottom:0.75rem;
                             "
                         >
-
                             <h1>
                                 Заявка #${requestId}:
                                 ${escapeHtml(info.animalName)}
@@ -975,14 +937,10 @@ async function loadRequestDetails() {
 
                             <span
                                 class="badge ${escapeHtml(statusObj.cls)}"
-                                style="
-                                    padding:0.3rem 0.6rem;
-                                    border-radius:4px;
-                                "
+                                style="padding:0.3rem 0.6rem;border-radius:4px;"
                             >
                                 ${escapeHtml(statusObj.text)}
                             </span>
-
                         </div>
 
                         <p class="mono">
@@ -1002,8 +960,7 @@ async function loadRequestDetails() {
                             white-space:pre-wrap;
                         ">
                             ${escapeHtml(
-                                meta.fullStory ||
-                                info.description
+                                meta.fullStory || info.description
                             )}
                         </p>
 
@@ -1025,10 +982,7 @@ async function loadRequestDetails() {
                                 ${escapeHtml(info.evidenceURI)}
                             </div>
 
-                            <div
-                                class="mono"
-                                style="margin-top:0.25rem;"
-                            >
+                            <div class="mono" style="margin-top:0.25rem;">
                                 <strong>Хэш в блокчейне:</strong>
                                 ${escapeHtml(info.evidenceHash)}
                             </div>
@@ -1040,14 +994,13 @@ async function loadRequestDetails() {
                                 padding-top:0.6rem;
                                 border-top:1px solid #cbd5e1;
                             ">
-
                                 <label style="
                                     display:block;
                                     font-size:0.8rem;
                                     font-weight:600;
                                     margin-bottom:0.25rem;
                                 ">
-                                    Проверить подлинность файла по хэшу в блокчейне:
+                                    Проверить подлинность файла по хэшу:
                                 </label>
 
                                 <input
@@ -1064,12 +1017,13 @@ async function loadRequestDetails() {
                                         margin-left:0.5rem;
                                     "
                                 ></span>
-
                             </div>
 
                         </div>
 
                     </div>
+
+                    ${lifecycleMessage}
 
                     ${addMilestoneBlock}
 
@@ -1104,7 +1058,7 @@ async function loadRequestDetails() {
 
                     <div class="box">
 
-                        <h3>Статус и Голосование DAO</h3>
+                        <h3>Статус и голосование DAO</h3>
 
                         <div style="
                             display:flex;
@@ -1114,73 +1068,39 @@ async function loadRequestDetails() {
                             margin:1rem 0;
                         ">
 
-                            <div style="
-                                display:flex;
-                                justify-content:space-between;
-                                gap:1rem;
-                            ">
+                            <div style="display:flex;justify-content:space-between;gap:1rem;">
                                 <span>Запрошено:</span>
-
-                                <strong>
-                                    ${formatEth(stats.requestedAmount)} ETH
-                                </strong>
+                                <strong>${formatEth(stats.requestedAmount)} ETH</strong>
                             </div>
 
-                            <div style="
-                                display:flex;
-                                justify-content:space-between;
-                                gap:1rem;
-                            ">
+                            <div style="display:flex;justify-content:space-between;gap:1rem;">
                                 <span>Запланировано этапов:</span>
-
-                                <strong>
-                                    ${formatEth(stats.milestoneTotal)} ETH
-                                </strong>
+                                <strong>${formatEth(stats.milestoneTotal)} ETH</strong>
                             </div>
 
-                            <div style="
-                                display:flex;
-                                justify-content:space-between;
-                                gap:1rem;
-                            ">
+                            <div style="display:flex;justify-content:space-between;gap:1rem;">
                                 <span>Выплачено:</span>
-
                                 <strong style="color:var(--primary);">
                                     ${formatEth(stats.releasedAmount)} ETH
                                 </strong>
                             </div>
 
-                            <div style="
-                                display:flex;
-                                justify-content:space-between;
-                                gap:1rem;
-                            ">
+                            <div style="display:flex;justify-content:space-between;gap:1rem;">
                                 <span>Окончание голосования:</span>
-
                                 <strong style="text-align:right;">
                                     ${endsDate}
                                 </strong>
                             </div>
 
-                            <div style="
-                                display:flex;
-                                justify-content:space-between;
-                                gap:1rem;
-                            ">
+                            <div style="display:flex;justify-content:space-between;gap:1rem;">
                                 <span>Голоса ЗА:</span>
-
                                 <strong style="color:var(--primary);">
                                     ${stats.yesVotes}
                                 </strong>
                             </div>
 
-                            <div style="
-                                display:flex;
-                                justify-content:space-between;
-                                gap:1rem;
-                            ">
+                            <div style="display:flex;justify-content:space-between;gap:1rem;">
                                 <span>Голоса ПРОТИВ:</span>
-
                                 <strong style="color:var(--danger);">
                                     ${stats.noVotes}
                                 </strong>
@@ -1209,15 +1129,18 @@ async function loadRequestDetails() {
 
         // -------------------------------------------------
         // Загрузка NFT-паспорта
+        //
+        // Передаём статус заявки, чтобы не обращаться
+        // к NFT-контракту до публикации заявки.
         // -------------------------------------------------
 
-        await loadNftPassport(requestId);
+        await loadNftPassport(
+            requestId,
+            statusNum
+        );
 
     } catch (err) {
-        console.error(
-            "Ошибка загрузки заявки:",
-            err
-        );
+        console.error("Ошибка загрузки заявки:", err);
 
         container.innerHTML = `
             <p style="color:var(--danger);">
@@ -1241,15 +1164,8 @@ async function donateToCurrentRequest() {
     const amount = amountInput?.value?.trim();
 
     try {
-
-        // -------------------------------------------------
-        // Проверки подключения и контрактов
-        // -------------------------------------------------
-
         if (!isWalletConnected()) {
-            throw new Error(
-                "Сначала подключите MetaMask."
-            );
+            throw new Error("Сначала подключите MetaMask.");
         }
 
         requireMethod(
@@ -1270,22 +1186,14 @@ async function donateToCurrentRequest() {
             "RescueTreasury"
         );
 
-        // -------------------------------------------------
-        // Проверка суммы
-        // -------------------------------------------------
-
         if (
             !amount ||
             !/^\d+(\.\d+)?$/.test(amount)
         ) {
-            throw new Error(
-                "Введите корректную сумму в ETH."
-            );
+            throw new Error("Введите корректную сумму в ETH.");
         }
 
-        const donationWei = ethers.parseEther(
-            amount
-        );
+        const donationWei = ethers.parseEther(amount);
 
         if (donationWei <= 0n) {
             throw new Error(
@@ -1293,28 +1201,36 @@ async function donateToCurrentRequest() {
             );
         }
 
-        // -------------------------------------------------
-        // Получение актуальной статистики
-        // -------------------------------------------------
-
         const [targetDonations, stats] =
             await Promise.all([
-                treasuryContract.requestDonations(
-                    requestId
-                ),
-
-                daoViewContract.getAidRequestStats(
-                    requestId
-                )
+                treasuryContract.requestDonations(requestId),
+                daoViewContract.getAidRequestStats(requestId)
             ]);
 
-        const requestedAmount = BigInt(
-            stats.requestedAmount
-        );
+        const statusNum = Number(stats.status);
 
-        const currentDonations = BigInt(
-            targetDonations
-        );
+        if (statusNum !== REQUEST_STATUS.VOTING) {
+            throw new Error(
+                "Целевые пожертвования принимаются только " +
+                "для опубликованных заявок на этапе голосования."
+            );
+        }
+
+        const votingEndsAt = Number(stats.votingEndsAt);
+        const nowSec = Math.floor(Date.now() / 1000);
+
+        if (
+            votingEndsAt <= 0 ||
+            nowSec >= votingEndsAt
+        ) {
+            throw new Error(
+                "Время голосования завершилось. " +
+                "Целевые пожертвования больше не принимаются."
+            );
+        }
+
+        const requestedAmount = BigInt(stats.requestedAmount);
+        const currentDonations = BigInt(targetDonations);
 
         const remainingAmount =
             requestedAmount > currentDonations
@@ -1336,77 +1252,24 @@ async function donateToCurrentRequest() {
             );
         }
 
-        // -------------------------------------------------
-        // Проверка статуса и срока голосования
-        // -------------------------------------------------
-
-        const statusNum = Number(stats.status);
-
-        const votingEndsAt = Number(
-            stats.votingEndsAt
-        );
-
-        const nowSec = Math.floor(
-            Date.now() / 1000
-        );
-
-        if (statusNum !== 0) {
-            throw new Error(
-                "Целевые пожертвования принимаются только " +
-                "для заявок на этапе голосования."
-            );
-        }
-
-        if (nowSec >= votingEndsAt) {
-            throw new Error(
-                "Время голосования завершилось. " +
-                "Целевые пожертвования больше не принимаются."
-            );
-        }
-
-        // -------------------------------------------------
-        // Подтверждение пользователя
-        // -------------------------------------------------
-
         const confirmed = confirm(
             `Вы действительно хотите пожертвовать ${amount} ETH на заявку #${requestId}?`
         );
 
         if (!confirmed) return;
 
-        // -------------------------------------------------
-        // Отправка через RescueDAO
-        // -------------------------------------------------
-
-        /*
-         * RescueDAO выполняет проверку:
-         * - существования заявки;
-         * - статуса Voting;
-         * - срока голосования;
-         * - суммы пожертвования;
-         * - ограничения запрошенной суммы.
-         *
-         * RescueTreasury учитывает общий и персональный вклад.
-         */
-
         const tx = await contract.donateToRequest(
             requestId,
-            {
-                value: donationWei
-            }
+            { value: donationWei }
         );
 
         alert(
-            "Пожертвование отправлено. " +
-            "Ожидаем подтверждения транзакции..."
+            "Пожертвование отправлено. Ожидаем подтверждения транзакции..."
         );
 
         const receipt = await tx.wait();
 
-        if (
-            !receipt ||
-            Number(receipt.status) !== 1
-        ) {
+        if (!receipt || Number(receipt.status) !== 1) {
             throw new Error(
                 "Транзакция пожертвования не была успешно подтверждена."
             );
@@ -1419,14 +1282,11 @@ async function donateToCurrentRequest() {
         window.location.reload();
 
     } catch (err) {
-        console.error(
-            "Ошибка целевого пожертвования:",
-            err
-        );
+        console.error("Ошибка целевого пожертвования:", err);
 
         alert(
             "Не удалось выполнить пожертвование:\n" +
-            getErrorMessage(err)
+            getTransactionError(err)
         );
     }
 }
@@ -1436,19 +1296,56 @@ async function donateToCurrentRequest() {
 // 5. ЗАГРУЗКА NFT-ПАСПОРТА
 // =========================================================
 
-async function loadNftPassport(requestId) {
+async function loadNftPassport(requestId, statusNum) {
     const nftContainer = document.getElementById(
         "nftPassportSection"
     );
 
     if (!nftContainer) return;
 
+    // -----------------------------------------------------
+    // До публикации заявки NFT-паспорт не существует.
+    //
+    // Статусы:
+    // 0 — UnderReview
+    // 1 — ChangesRequested
+    //
+    // В этих случаях не вызываем getTokenIdForRequest(),
+    // поскольку контракт может делать revert, если паспорта нет.
+    // -----------------------------------------------------
+
+    if (
+        Number(statusNum) === REQUEST_STATUS.UNDER_REVIEW ||
+        Number(statusNum) === REQUEST_STATUS.CHANGES_REQUESTED
+    ) {
+        nftContainer.innerHTML = `
+            <div style="
+                padding:0.85rem 1rem;
+                border:1px dashed var(--border);
+                border-radius:0.6rem;
+                background:var(--surface);
+            ">
+                <strong>
+                    🐾 NFT-паспорт ещё не выпущен
+                </strong>
+
+                <p style="
+                    margin-top:0.4rem;
+                    font-size:0.88rem;
+                    color:var(--text-muted);
+                ">
+                    NFT-паспорт будет автоматически создан
+                    после публикации заявки администратором.
+                    Сейчас заявка находится на стадии подготовки
+                    и проверки материалов.
+                </p>
+            </div>
+        `;
+
+        return;
+    }
+
     try {
-
-        // -------------------------------------------------
-        // Проверка глобального NFT-контракта
-        // -------------------------------------------------
-
         requireMethod(
             nftContract,
             "getTokenIdForRequest",
@@ -1468,19 +1365,18 @@ async function loadNftPassport(requestId) {
         );
 
         // -------------------------------------------------
-        // Получение ID токена по ID заявки
+        // Получение ID токена
         // -------------------------------------------------
 
         const tokenId =
-            await nftContract.getTokenIdForRequest(
-                requestId
-            );
+            await nftContract.getTokenIdForRequest(requestId);
 
         if (BigInt(tokenId) === 0n) {
             nftContainer.innerHTML = `
                 <p style="color:var(--text-muted);">
                     NFT-паспорт для заявки #${requestId}
                     ещё не выпущен.
+                    Он создаётся после публикации заявки.
                 </p>
             `;
 
@@ -1488,17 +1384,13 @@ async function loadNftPassport(requestId) {
         }
 
         // -------------------------------------------------
-        // Получение владельца и URI
+        // Получение владельца и метаданных
         // -------------------------------------------------
 
         const [owner, uri] = await Promise.all([
             nftContract.ownerOf(tokenId),
             nftContract.tokenURI(tokenId)
         ]);
-
-        // -------------------------------------------------
-        // Проверка формата URI
-        // -------------------------------------------------
 
         if (
             !String(uri).startsWith(
@@ -1508,9 +1400,7 @@ async function loadNftPassport(requestId) {
             nftContainer.innerHTML = `
                 <p class="mono">
                     NFT #${escapeHtml(tokenId)} выпущен.
-
-                    URI:
-                    ${escapeHtml(uri)}
+                    URI: ${escapeHtml(uri)}
                 </p>
             `;
 
@@ -1518,27 +1408,19 @@ async function loadNftPassport(requestId) {
         }
 
         // -------------------------------------------------
-        // Декодирование Base64 JSON
+        // Декодирование JSON metadata
         // -------------------------------------------------
 
         const base64Json = String(uri).split(",")[1];
-
-        const binaryString = window.atob(
-            base64Json
-        );
+        const binaryString = window.atob(base64Json);
 
         const bytes = Uint8Array.from(
             binaryString,
             char => char.charCodeAt(0)
         );
 
-        const jsonString = new TextDecoder().decode(
-            bytes
-        );
-
-        const metadata = JSON.parse(
-            jsonString
-        );
+        const jsonString = new TextDecoder().decode(bytes);
+        const metadata = JSON.parse(jsonString);
 
         // -------------------------------------------------
         // Атрибуты NFT
@@ -1568,9 +1450,7 @@ async function loadNftPassport(requestId) {
         // Изображение NFT
         // -------------------------------------------------
 
-        const imageUrl = String(
-            metadata.image || ""
-        );
+        const imageUrl = String(metadata.image || "");
 
         const isDataImage =
             /^data:image\/(svg\+xml|png|jpeg|jpg|webp);base64,/i
@@ -1588,9 +1468,7 @@ async function loadNftPassport(requestId) {
             ? `
                 <img
                     src="${safeImageUrl}"
-                    alt="${escapeHtml(
-                        metadata.name || "NFT-паспорт"
-                    )}"
+                    alt="${escapeHtml(metadata.name || "NFT-паспорт")}"
                     style="
                         width:200px;
                         height:auto;
@@ -1617,7 +1495,6 @@ async function loadNftPassport(requestId) {
                     class="row-between"
                     style="margin-bottom:0.75rem;"
                 >
-
                     <h4 style="margin:0;">
                         🐾 Цифровой NFT-паспорт #${escapeHtml(tokenId)}
                     </h4>
@@ -1625,7 +1502,6 @@ async function loadNftPassport(requestId) {
                     <span class="badge badge-green">
                         On-Chain SVG
                     </span>
-
                 </div>
 
                 <div style="
@@ -1634,22 +1510,16 @@ async function loadNftPassport(requestId) {
                     flex-wrap:wrap;
                     align-items:center;
                 ">
-
                     ${imageBlock}
 
-                    <div style="
-                        flex:1;
-                        min-width:200px;
-                    ">
-
+                    <div style="flex:1;min-width:200px;">
                         <div style="
                             font-weight:600;
                             font-size:1.05rem;
                             margin-bottom:0.35rem;
                         ">
                             ${escapeHtml(
-                                metadata.name ||
-                                "NFT-паспорт животного"
+                                metadata.name || "NFT-паспорт животного"
                             )}
                         </div>
 
@@ -1658,9 +1528,7 @@ async function loadNftPassport(requestId) {
                             color:#475569;
                             margin-bottom:0.6rem;
                         ">
-                            ${escapeHtml(
-                                metadata.description || ""
-                            )}
+                            ${escapeHtml(metadata.description || "")}
                         </p>
 
                         <div
@@ -1671,18 +1539,12 @@ async function loadNftPassport(requestId) {
                                 word-break:break-all;
                             "
                         >
-                            Владелец:
-                            ${escapeHtml(owner)}
+                            Владелец: ${escapeHtml(owner)}
                         </div>
 
-                        <div>
-                            ${attributesHtml}
-                        </div>
-
+                        <div>${attributesHtml}</div>
                     </div>
-
                 </div>
-
             </div>
         `;
 
@@ -1699,8 +1561,8 @@ async function loadNftPassport(requestId) {
                 padding:0.5rem 0;
             ">
                 Не удалось загрузить NFT-паспорт.
-                Проверьте привязку NFT-контракта,
-                его ABI и наличие токена.
+                Проверьте состояние публикации заявки,
+                привязку NFT-контракта и его ABI.
             </div>
         `;
     }
@@ -1712,13 +1574,8 @@ async function loadNftPassport(requestId) {
 // =========================================================
 
 async function verifyDocumentHash() {
-    const input = document.getElementById(
-        "verifyFileInput"
-    );
-
-    const resSpan = document.getElementById(
-        "verifyResult"
-    );
+    const input = document.getElementById("verifyFileInput");
+    const resSpan = document.getElementById("verifyResult");
 
     if (
         !input ||
@@ -1758,10 +1615,7 @@ async function verifyDocumentHash() {
         }
 
     } catch (err) {
-        console.error(
-            "Ошибка проверки документа:",
-            err
-        );
+        console.error("Ошибка проверки документа:", err);
 
         resSpan.textContent =
             "Не удалось проверить документ.";
@@ -1777,15 +1631,8 @@ async function verifyDocumentHash() {
 
 async function castVote(support) {
     try {
-
-        // -------------------------------------------------
-        // Проверки
-        // -------------------------------------------------
-
         if (!isWalletConnected()) {
-            throw new Error(
-                "Сначала подключите MetaMask!"
-            );
+            throw new Error("Сначала подключите MetaMask!");
         }
 
         if (!isDaoMember()) {
@@ -1794,31 +1641,50 @@ async function castVote(support) {
             );
         }
 
-        requireMethod(
-            contract,
-            "vote",
-            "RescueDAO"
-        );
+        requireMethod(contract, "vote", "RescueDAO");
 
-        // -------------------------------------------------
-        // Отправка голоса через RescueDAO
-        // -------------------------------------------------
+        const stats =
+            await daoViewContract.getAidRequestStats(requestId);
+
+        if (Number(stats.status) !== REQUEST_STATUS.VOTING) {
+            throw new Error(
+                "Голосование по этой заявке сейчас недоступно."
+            );
+        }
+
+        const voted =
+            await daoViewContract.hasParticipantVoted(
+                requestId,
+                userAddress
+            );
+
+        if (voted) {
+            throw new Error(
+                "Вы уже проголосовали по этой заявке."
+            );
+        }
+
+        const votingEndsAt = Number(stats.votingEndsAt);
+
+        if (
+            votingEndsAt <= 0 ||
+            Math.floor(Date.now() / 1000) >= votingEndsAt
+        ) {
+            throw new Error(
+                "Срок голосования уже завершился."
+            );
+        }
 
         const tx = await contract.vote(
             requestId,
             Boolean(support)
         );
 
-        alert(
-            "Голос отправлен! Ожидаем подтверждения..."
-        );
+        alert("Голос отправлен! Ожидаем подтверждения...");
 
         const receipt = await tx.wait();
 
-        if (
-            !receipt ||
-            Number(receipt.status) !== 1
-        ) {
+        if (!receipt || Number(receipt.status) !== 1) {
             throw new Error(
                 "Транзакция голосования не подтверждена."
             );
@@ -1827,14 +1693,11 @@ async function castVote(support) {
         window.location.reload();
 
     } catch (err) {
-        console.error(
-            "Ошибка голосования:",
-            err
-        );
+        console.error("Ошибка голосования:", err);
 
         alert(
             "Ошибка голосования: " +
-            getErrorMessage(err)
+            getTransactionError(err)
         );
     }
 }
@@ -1846,15 +1709,8 @@ async function castVote(support) {
 
 async function finalizeReq() {
     try {
-
-        // -------------------------------------------------
-        // Проверки
-        // -------------------------------------------------
-
         if (!isWalletConnected()) {
-            throw new Error(
-                "Сначала подключите MetaMask!"
-            );
+            throw new Error("Сначала подключите MetaMask!");
         }
 
         requireMethod(
@@ -1863,24 +1719,39 @@ async function finalizeReq() {
             "RescueDAO"
         );
 
-        // -------------------------------------------------
-        // Финализация через RescueDAO
-        // -------------------------------------------------
+        const stats =
+            await daoViewContract.getAidRequestStats(requestId);
 
-        const tx = await contract.finalizeRequest(
-            requestId
+        if (Number(stats.status) !== REQUEST_STATUS.VOTING) {
+            throw new Error(
+                "Финализировать можно только заявку на этапе голосования."
+            );
+        }
+
+        const votingEndsAt = Number(stats.votingEndsAt);
+
+        if (
+            votingEndsAt <= 0 ||
+            Math.floor(Date.now() / 1000) < votingEndsAt
+        ) {
+            throw new Error(
+                "Срок голосования ещё не завершился."
+            );
+        }
+
+        const confirmed = confirm(
+            `Подвести итоги голосования по заявке #${requestId}?`
         );
 
-        alert(
-            "Подводим итоги голосования..."
-        );
+        if (!confirmed) return;
+
+        const tx = await contract.finalizeRequest(requestId);
+
+        alert("Подводим итоги голосования...");
 
         const receipt = await tx.wait();
 
-        if (
-            !receipt ||
-            Number(receipt.status) !== 1
-        ) {
+        if (!receipt || Number(receipt.status) !== 1) {
             throw new Error(
                 "Транзакция финализации не подтверждена."
             );
@@ -1889,14 +1760,11 @@ async function finalizeReq() {
         window.location.reload();
 
     } catch (err) {
-        console.error(
-            "Ошибка финализации:",
-            err
-        );
+        console.error("Ошибка финализации:", err);
 
         alert(
             "Ошибка финализации: " +
-            getErrorMessage(err)
+            getTransactionError(err)
         );
     }
 }
@@ -1907,28 +1775,13 @@ async function finalizeReq() {
 // =========================================================
 
 async function createNewMilestone() {
-    const desc = document.getElementById(
-        "msDesc"
-    )?.value.trim();
-
-    const recipient = document.getElementById(
-        "msRecipient"
-    )?.value.trim();
-
-    const amount = document.getElementById(
-        "msAmount"
-    )?.value.trim();
+    const desc = document.getElementById("msDesc")?.value.trim();
+    const recipient = document.getElementById("msRecipient")?.value.trim();
+    const amount = document.getElementById("msAmount")?.value.trim();
 
     try {
-
-        // -------------------------------------------------
-        // Проверки
-        // -------------------------------------------------
-
         if (!isWalletConnected()) {
-            throw new Error(
-                "Сначала подключите MetaMask!"
-            );
+            throw new Error("Сначала подключите MetaMask!");
         }
 
         requireMethod(
@@ -1937,23 +1790,50 @@ async function createNewMilestone() {
             "RescueMilestones"
         );
 
-        if (
-            !desc ||
-            !recipient ||
-            !ethers.isAddress(recipient) ||
-            recipient === ethers.ZeroAddress ||
-            !amount ||
-            !Number.isFinite(Number(amount)) ||
-            Number(amount) <= 0
-        ) {
+        const stats =
+            await daoViewContract.getAidRequestStats(requestId);
+
+        const statusNum = Number(stats.status);
+
+        if (!isPreparationStatus(statusNum)) {
             throw new Error(
-                "Проверьте описание, корректность адреса получателя и сумму."
+                "Добавлять этапы можно только до публикации заявки."
             );
         }
 
-        const amountWei = ethers.parseEther(
-            amount
-        );
+        const info =
+            await daoViewContract.getAidRequestInfo(requestId);
+
+        if (!isRequesterAddress(info.requester)) {
+            throw new Error(
+                "Добавлять этапы может только инициатор заявки."
+            );
+        }
+
+        if (!desc || desc.length > 200) {
+            throw new Error(
+                "Введите название этапа длиной не более 200 символов."
+            );
+        }
+
+        if (
+            !recipient ||
+            !ethers.isAddress(recipient) ||
+            recipient.toLowerCase() === ethers.ZeroAddress.toLowerCase()
+        ) {
+            throw new Error(
+                "Укажите корректный адрес получателя."
+            );
+        }
+
+        if (
+            !amount ||
+            !/^\d+(\.\d+)?$/.test(amount)
+        ) {
+            throw new Error("Введите корректную сумму этапа.");
+        }
+
+        const amountWei = ethers.parseEther(amount);
 
         if (amountWei <= 0n) {
             throw new Error(
@@ -1961,9 +1841,17 @@ async function createNewMilestone() {
             );
         }
 
-        // -------------------------------------------------
-        // Добавление этапа через RescueMilestones
-        // -------------------------------------------------
+        const currentTotal = BigInt(stats.milestoneTotal);
+        const requestedAmount = BigInt(stats.requestedAmount);
+
+        if (currentTotal + amountWei > requestedAmount) {
+            throw new Error(
+                "Сумма этапов превысит запрошенную сумму заявки. " +
+                "Остаток для распределения: " +
+                formatEth(requestedAmount - currentTotal) +
+                " ETH."
+            );
+        }
 
         const tx = await milestonesContract.addMilestone(
             requestId,
@@ -1972,16 +1860,11 @@ async function createNewMilestone() {
             amountWei
         );
 
-        alert(
-            "Этап добавляется в блокчейн..."
-        );
+        alert("Этап добавляется в блокчейн...");
 
         const receipt = await tx.wait();
 
-        if (
-            !receipt ||
-            Number(receipt.status) !== 1
-        ) {
+        if (!receipt || Number(receipt.status) !== 1) {
             throw new Error(
                 "Транзакция добавления этапа не подтверждена."
             );
@@ -1990,21 +1873,174 @@ async function createNewMilestone() {
         window.location.reload();
 
     } catch (err) {
-        console.error(
-            "Ошибка добавления этапа:",
-            err
-        );
+        console.error("Ошибка добавления этапа:", err);
 
         alert(
             "Ошибка добавления этапа: " +
-            getErrorMessage(err)
+            getTransactionError(err)
         );
     }
 }
 
 
 // =========================================================
-// 10. ЗАГРУЗКА СПИСКА ЭТАПОВ
+// 10. РЕДАКТИРОВАНИЕ ЭТАПА ДО ПУБЛИКАЦИИ
+// =========================================================
+
+async function updateMilestone(milestoneId) {
+    const desc = document.getElementById(
+        `editMsDesc_${milestoneId}`
+    )?.value.trim();
+
+    const recipient = document.getElementById(
+        `editMsRecipient_${milestoneId}`
+    )?.value.trim();
+
+    const amount = document.getElementById(
+        `editMsAmount_${milestoneId}`
+    )?.value.trim();
+
+    try {
+        if (!isWalletConnected()) {
+            throw new Error("Сначала подключите MetaMask.");
+        }
+
+        requireMethod(
+            milestonesContract,
+            "updateMilestone",
+            "RescueMilestones"
+        );
+
+        const stats =
+            await daoViewContract.getAidRequestStats(requestId);
+
+        if (!isPreparationStatus(Number(stats.status))) {
+            throw new Error(
+                "Редактировать этапы можно только до публикации заявки."
+            );
+        }
+
+        const info =
+            await daoViewContract.getAidRequestInfo(requestId);
+
+        if (!isRequesterAddress(info.requester)) {
+            throw new Error(
+                "Редактировать этапы может только инициатор заявки."
+            );
+        }
+
+        if (!desc || desc.length > 200) {
+            throw new Error(
+                "Введите название этапа длиной не более 200 символов."
+            );
+        }
+
+        if (
+            !recipient ||
+            !ethers.isAddress(recipient) ||
+            recipient.toLowerCase() === ethers.ZeroAddress.toLowerCase()
+        ) {
+            throw new Error(
+                "Укажите корректный адрес получателя."
+            );
+        }
+
+        if (
+            !amount ||
+            !/^\d+(\.\d+)?$/.test(amount)
+        ) {
+            throw new Error("Введите корректную сумму этапа.");
+        }
+
+        const newAmountWei = ethers.parseEther(amount);
+
+        if (newAmountWei <= 0n) {
+            throw new Error(
+                "Сумма этапа должна быть больше нуля."
+            );
+        }
+
+        const oldMilestone =
+            await milestonesContract.getMilestone(
+                requestId,
+                milestoneId
+            );
+
+        if (!isValidMilestone(oldMilestone)) {
+            throw new Error(
+                "Указанный этап не существует."
+            );
+        }
+
+        if (oldMilestone.released) {
+            throw new Error(
+                "Нельзя изменить уже оплаченный этап."
+            );
+        }
+
+        const oldAmountWei = BigInt(oldMilestone.amount);
+        const currentTotal = BigInt(stats.milestoneTotal);
+        const requestedAmount = BigInt(stats.requestedAmount);
+
+        const updatedTotal =
+            currentTotal - oldAmountWei + newAmountWei;
+
+        if (updatedTotal > requestedAmount) {
+            throw new Error(
+                "После изменения сумма этапов превысит запрошенную сумму. " +
+                "Максимально доступная сумма для этого этапа: " +
+                formatEth(
+                    requestedAmount - (currentTotal - oldAmountWei)
+                ) +
+                " ETH."
+            );
+        }
+
+        const confirmed = confirm(
+            `Сохранить изменения этапа #${milestoneId}?\n\n` +
+            `Новое название: ${desc}\n` +
+            `Новая сумма: ${amount} ETH\n\n` +
+            "После изменения ранее загруженный отчёт этапа будет сброшен."
+        );
+
+        if (!confirmed) return;
+
+        const tx = await milestonesContract.updateMilestone(
+            requestId,
+            milestoneId,
+            desc,
+            recipient,
+            newAmountWei
+        );
+
+        alert("Изменение этапа отправлено в блокчейн...");
+
+        const receipt = await tx.wait();
+
+        if (!receipt || Number(receipt.status) !== 1) {
+            throw new Error(
+                "Транзакция изменения этапа не подтверждена."
+            );
+        }
+
+        window.location.reload();
+
+    } catch (err) {
+        console.error(
+            `Ошибка изменения этапа #${milestoneId}:`,
+            err
+        );
+
+        alert(
+            "Не удалось изменить этап:\n" +
+            getTransactionError(err)
+        );
+    }
+}
+
+
+// =========================================================
+// 11. ЗАГРУЗКА СПИСКА ЭТАПОВ
 // =========================================================
 
 async function loadMilestonesList(
@@ -2020,14 +2056,10 @@ async function loadMilestonesList(
 
     if (!Number.isInteger(mCount) || mCount <= 0) {
         box.innerHTML = `
-            <p style="
-                color:var(--text-muted);
-                font-size:0.9rem;
-            ">
+            <p style="color:var(--text-muted);font-size:0.9rem;">
                 Этапы ещё не добавлены.
             </p>
         `;
-
         return;
     }
 
@@ -2040,16 +2072,26 @@ async function loadMilestonesList(
 
         box.innerHTML = "";
 
+        const canEdit =
+            isPreparationStatus(reqStatus) &&
+            isRequester;
+
+        const canSubmitEvidence =
+            Number(reqStatus) === REQUEST_STATUS.APPROVED &&
+            isRequester;
+
         for (let m = 1; m <= mCount; m++) {
-
-            // ---------------------------------------------
-            // Чтение этапа из RescueMilestones
-            // ---------------------------------------------
-
             const ms = await milestonesContract.getMilestone(
                 requestId,
                 m
             );
+
+            if (!isValidMilestone(ms)) {
+                console.warn(
+                    `Этап #${m} не существует или содержит некорректные данные.`
+                );
+                continue;
+            }
 
             // ---------------------------------------------
             // Статус этапа
@@ -2057,7 +2099,7 @@ async function loadMilestonesList(
 
             let statusBadge = `
                 <span class="badge badge-gray">
-                    Ожидает одобрения заявки
+                    Ожидает публикации заявки
                 </span>
             `;
 
@@ -2075,21 +2117,119 @@ async function loadMilestonesList(
                     </span>
                 `;
 
-            } else if (reqStatus === 1) {
+            } else if (Number(reqStatus) === REQUEST_STATUS.APPROVED) {
                 statusBadge = `
                     <span class="badge badge-yellow">
                         Ожидает отчёт инициатора
                     </span>
                 `;
+
+            } else if (Number(reqStatus) === REQUEST_STATUS.VOTING) {
+                statusBadge = `
+                    <span class="badge badge-blue">
+                        Этап зафиксирован
+                    </span>
+                `;
             }
 
             // ---------------------------------------------
-            // Форма отправки доказательства
+            // Форма редактирования этапа
+            // ---------------------------------------------
+
+            const editForm = (
+                canEdit &&
+                !ms.released
+            )
+                ? `
+                    <details style="
+                        margin-top:0.75rem;
+                        padding-top:0.65rem;
+                        border-top:1px dashed var(--border);
+                    ">
+                        <summary style="
+                            cursor:pointer;
+                            font-weight:600;
+                            font-size:0.88rem;
+                        ">
+                            ✏️ Изменить этап
+                        </summary>
+
+                        <div style="
+                            display:flex;
+                            flex-direction:column;
+                            gap:0.55rem;
+                            margin-top:0.65rem;
+                        ">
+                            <div>
+                                <label for="editMsDesc_${m}">
+                                    Название этапа
+                                </label>
+
+                                <input
+                                    type="text"
+                                    id="editMsDesc_${m}"
+                                    value="${escapeHtml(ms.description)}"
+                                    maxlength="200"
+                                    class="input-field"
+                                    style="width:100%;padding:0.5rem;"
+                                >
+                            </div>
+
+                            <div>
+                                <label for="editMsRecipient_${m}">
+                                    Адрес получателя
+                                </label>
+
+                                <input
+                                    type="text"
+                                    id="editMsRecipient_${m}"
+                                    value="${escapeHtml(ms.recipient)}"
+                                    class="input-field"
+                                    style="width:100%;padding:0.5rem;"
+                                >
+                            </div>
+
+                            <div>
+                                <label for="editMsAmount_${m}">
+                                    Новая сумма (ETH)
+                                </label>
+
+                                <input
+                                    type="number"
+                                    id="editMsAmount_${m}"
+                                    value="${escapeHtml(formatEth(ms.amount))}"
+                                    step="0.001"
+                                    min="0"
+                                    class="input-field"
+                                    style="width:100%;padding:0.5rem;"
+                                >
+                            </div>
+
+                            <p style="
+                                font-size:0.8rem;
+                                color:var(--text-muted);
+                            ">
+                                Изменение этапа сбросит ранее загруженный
+                                отчёт, если он был добавлен.
+                            </p>
+
+                            <button
+                                class="btn btn-outline"
+                                onclick="updateMilestone(${m})"
+                            >
+                                Сохранить изменения
+                            </button>
+                        </div>
+                    </details>
+                `
+                : "";
+
+            // ---------------------------------------------
+            // Форма отправки отчёта
             // ---------------------------------------------
 
             const evidenceForm = (
-                reqStatus === 1 &&
-                isRequester &&
+                canSubmitEvidence &&
                 !ms.released &&
                 !ms.evidenceSubmitted
             )
@@ -2103,7 +2243,6 @@ async function loadMilestonesList(
                         gap:0.5rem;
                         flex-wrap:wrap;
                     ">
-
                         <input
                             type="text"
                             id="evUri_${m}"
@@ -2126,7 +2265,6 @@ async function loadMilestonesList(
                         >
                             Отправить отчёт
                         </button>
-
                     </div>
                 `
                 : "";
@@ -2154,16 +2292,15 @@ async function loadMilestonesList(
                             justify-content:space-between;
                             align-items:center;
                             gap:0.5rem;
+                            flex-wrap:wrap;
                         "
                     >
-
                         <strong>
                             Этап #${m}:
                             ${escapeHtml(ms.description)}
                         </strong>
 
                         ${statusBadge}
-
                     </div>
 
                     <div style="
@@ -2171,13 +2308,8 @@ async function loadMilestonesList(
                         margin-top:0.35rem;
                     ">
                         Сумма:
-
-                        <strong>
-                            ${formatEth(ms.amount)} ETH
-                        </strong>
-
+                        <strong>${formatEth(ms.amount)} ETH</strong>
                         · Получатель:
-
                         <span class="mono">
                             ${escapeHtml(ms.recipient)}
                         </span>
@@ -2196,29 +2328,24 @@ async function loadMilestonesList(
                                 >
                                     Отчёт:
                                     ${escapeHtml(ms.evidenceURI)}
-
                                     | Hash:
-                                    ${escapeHtml(
-                                        shortAddr(ms.evidenceHash)
-                                    )}
+                                    ${escapeHtml(shortAddr(ms.evidenceHash))}
                                 </div>
                             `
                             : ""
                     }
 
-                </div>
+                    ${editForm}
+                    ${evidenceForm}
 
-                ${evidenceForm}
+                </div>
             `;
 
             box.appendChild(item);
         }
 
     } catch (err) {
-        console.error(
-            "Ошибка загрузки этапов:",
-            err
-        );
+        console.error("Ошибка загрузки этапов:", err);
 
         box.innerHTML = `
             <p style="color:var(--danger);">
@@ -2231,7 +2358,7 @@ async function loadMilestonesList(
 
 
 // =========================================================
-// 11. ОТПРАВКА ОТЧЁТА ПО ЭТАПУ
+// 12. ОТПРАВКА ОТЧЁТА ПО ЭТАПУ
 // =========================================================
 
 async function submitEvidence(milestoneId) {
@@ -2244,19 +2371,11 @@ async function submitEvidence(milestoneId) {
     );
 
     const uri = uriInput?.value.trim();
-
     const file = fileInput?.files?.[0];
 
     try {
-
-        // -------------------------------------------------
-        // Проверки
-        // -------------------------------------------------
-
         if (!isWalletConnected()) {
-            throw new Error(
-                "Сначала подключите MetaMask."
-            );
+            throw new Error("Сначала подключите MetaMask.");
         }
 
         requireMethod(
@@ -2265,9 +2384,47 @@ async function submitEvidence(milestoneId) {
             "RescueMilestones"
         );
 
-        if (!file) {
+        const stats =
+            await daoViewContract.getAidRequestStats(requestId);
+
+        if (Number(stats.status) !== REQUEST_STATUS.APPROVED) {
             throw new Error(
-                "Выберите файл отчёта."
+                "Отчёты по этапам можно отправлять только после одобрения заявки."
+            );
+        }
+
+        const info =
+            await daoViewContract.getAidRequestInfo(requestId);
+
+        if (!isRequesterAddress(info.requester)) {
+            throw new Error(
+                "Отправлять отчёты может только инициатор заявки."
+            );
+        }
+
+        if (!file) {
+            throw new Error("Выберите файл отчёта.");
+        }
+
+        const milestone =
+            await milestonesContract.getMilestone(
+                requestId,
+                milestoneId
+            );
+
+        if (!isValidMilestone(milestone)) {
+            throw new Error(
+                "Указанный этап не существует или содержит некорректные данные."
+            );
+        }
+
+        if (milestone.released) {
+            throw new Error("Этот этап уже оплачен.");
+        }
+
+        if (milestone.evidenceSubmitted) {
+            throw new Error(
+                "Отчёт по этому этапу уже отправлен."
             );
         }
 
@@ -2287,10 +2444,7 @@ async function submitEvidence(milestoneId) {
 
         const formData = new FormData();
 
-        formData.append(
-            "milestoneDoc",
-            file
-        );
+        formData.append("milestoneDoc", file);
 
         const response = await fetch(
             `${API_URL}/requests/${requestId}/milestones/${milestoneId}`,
@@ -2344,10 +2498,7 @@ async function submitEvidence(milestoneId) {
 
         const receipt = await tx.wait();
 
-        if (
-            !receipt ||
-            Number(receipt.status) !== 1
-        ) {
+        if (!receipt || Number(receipt.status) !== 1) {
             throw new Error(
                 "Транзакция не была успешно подтверждена."
             );
@@ -2360,14 +2511,11 @@ async function submitEvidence(milestoneId) {
         window.location.reload();
 
     } catch (err) {
-        console.error(
-            "Ошибка отправки отчёта:",
-            err
-        );
+        console.error("Ошибка отправки отчёта:", err);
 
         alert(
             "Не удалось отправить отчёт:\n" +
-            getErrorMessage(err)
+            getTransactionError(err)
         );
     }
 }

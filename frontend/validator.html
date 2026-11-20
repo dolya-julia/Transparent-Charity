@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html lang="ru">
 
@@ -7,10 +8,10 @@
 
     <meta
         name="description"
-        content="Панель валидаторов RescueDAO: проверка отчётов, подтверждение выплат и история операций."
+        content="Панель администрирования и валидаторов RescueDAO: модерация заявок, проверка отчётов, подтверждение выплат и история операций."
     >
 
-    <title>Валидаторы и история — RescueDAO</title>
+    <title>Администрирование и валидаторы — RescueDAO</title>
 
     <link rel="stylesheet" href="css/style.css">
 </head>
@@ -18,37 +19,21 @@
 <body>
 
     <header>
-
         <div class="header-inner">
 
             <a href="index.html" class="logo">
-
                 🐾 RescueDAO
-
                 <span class="badge badge-green">
                     Local Geth · 1337
                 </span>
-
             </a>
 
             <nav>
+                <a href="index.html">Фонд и заявки</a>
+                <a href="validator.html" class="active">Валидаторы и история</a>
+                <a href="badges.html">Мои достижения</a>
 
-                <a href="index.html">
-                    Фонд и заявки
-                </a>
-
-                <a href="validator.html" class="active">
-                    Валидаторы и история
-                </a>
-
-                <a href="badges.html">
-                    Мои достижения
-                </a>
-
-                <span
-                    id="roleBadge"
-                    class="badge badge-gray"
-                >
+                <span id="roleBadge" class="badge badge-gray">
                     Кошелёк не подключён
                 </span>
 
@@ -60,27 +45,28 @@
                 >
                     Подключить MetaMask
                 </button>
-
             </nav>
 
         </div>
-
     </header>
+
 
     <main>
 
         <div class="page-header">
-            <h1>
-                Контроль выплат и аудит операций
-            </h1>
+            <h1>Контроль выплат и аудит операций</h1>
 
             <p>
-                Валидаторы проверяют отчёты о выполнении этапов
-                помощи животным и подтверждают целевое использование
-                средств. Для выполнения выплаты требуются два
-                подтверждения валидаторов.
+                Администратор проверяет поступившие заявки и принимает
+                решение об их публикации. Валидаторы проверяют отчёты
+                по этапам одобренных заявок и подтверждают выплаты.
+                Для выполнения выплаты необходимы два подтверждения
+                разных валидаторов.
             </p>
         </div>
+
+
+        <!-- ПОДКЛЮЧЕНИЕ К БЛОКЧЕЙНУ -->
 
         <section
             class="box"
@@ -88,6 +74,7 @@
             style="margin-bottom: 1.5rem;"
         >
             <div class="row-between">
+
                 <div>
                     <h3 style="margin-bottom: 0.35rem;">
                         Подключение к блокчейну
@@ -95,69 +82,287 @@
 
                     <p
                         id="connectionStatus"
-                        style="font-size: 0.9rem; color: var(--text-muted); margin: 0;"
+                        style="
+                            font-size: 0.9rem;
+                            color: var(--text-muted);
+                            margin: 0;
+                        "
                     >
                         Проверка подключения к локальной сети Geth...
                     </p>
                 </div>
 
-                <span
-                    id="networkBadge"
-                    class="badge badge-gray"
-                >
+                <span id="networkBadge" class="badge badge-gray">
                     Проверка сети
                 </span>
+
             </div>
         </section>
+
+
+        <!-- ПАНЕЛЬ АДМИНИСТРАТОРА -->
 
         <section
             id="adminPanel"
             class="box"
-            style="display: none;"
+            style="display: none; margin-bottom: 1.5rem;"
         >
-            <h2>
-                Панель администратора
-            </h2>
 
-            <p style="font-size: 0.9rem; color: var(--text-muted); margin-bottom: 1rem;">
-                Регистрация новых участников в децентрализованной
-                автономной организации RescueDAO.
-                Управление участниками выполняется через основной
-                контракт DAO.
+            <h2>Панель администратора</h2>
+
+            <p
+                style="
+                    font-size: 0.9rem;
+                    color: var(--text-muted);
+                    margin-bottom: 1rem;
+                "
+            >
+                Администратор управляет участниками DAO и проверяет
+                заявки перед их публикацией. После успешной модерации
+                заявка становится доступна участникам DAO для голосования.
             </p>
 
-            <div style="display: flex; gap: 0.75rem; flex-wrap: wrap;">
-                <input
-                    type="text"
-                    id="newMemberAddress"
-                    placeholder="0x... адрес кошелька участника DAO"
-                    autocomplete="off"
-                    style="flex: 1; min-width: 260px;"
+
+            <!-- РЕГИСТРАЦИЯ УЧАСТНИКА -->
+
+            <div
+                style="
+                    padding: 1rem;
+                    border: 1px solid var(--border);
+                    border-radius: 0.6rem;
+                    margin-bottom: 1.5rem;
+                "
+            >
+
+                <h3 style="margin-top: 0;">
+                    Регистрация участника DAO
+                </h3>
+
+                <p
+                    style="
+                        font-size: 0.85rem;
+                        color: var(--text-muted);
+                    "
                 >
+                    Укажите Ethereum-адрес пользователя, которому
+                    необходимо предоставить статус участника DAO.
+                </p>
+
+                <div
+                    style="
+                        display: flex;
+                        gap: 0.75rem;
+                        flex-wrap: wrap;
+                    "
+                >
+
+                    <input
+                        type="text"
+                        id="newMemberAddress"
+                        placeholder="0x... адрес кошелька участника DAO"
+                        autocomplete="off"
+                        style="flex: 1; min-width: 260px;"
+                    >
+
+                    <button
+                        type="button"
+                        class="btn btn-primary"
+                        onclick="registerMember()"
+                    >
+                        Зарегистрировать участника
+                    </button>
+
+                </div>
+
+            </div>
+
+
+            <!-- МОДЕРАЦИЯ ЗАЯВОК -->
+
+            <div
+                style="
+                    padding: 1rem;
+                    border: 1px solid var(--border);
+                    border-radius: 0.6rem;
+                "
+            >
+
+                <div class="row-between" style="flex-wrap: wrap;">
+
+                    <h3 style="margin: 0;">
+                        Модерация заявок
+                    </h3>
+
+                    <button
+                        type="button"
+                        class="btn btn-outline"
+                        onclick="loadAdminModerationQueue()"
+                    >
+                        Обновить очередь
+                    </button>
+
+                </div>
+
+                <p
+                    style="
+                        font-size: 0.9rem;
+                        color: var(--text-muted);
+                        margin: 0.75rem 0 1rem;
+                    "
+                >
+                    Здесь отображаются заявки, ожидающие проверки
+                    администратора. Необходимо изучить сведения о животном,
+                    подтверждающие материалы, запрашиваемую сумму
+                    и план этапов финансирования.
+                </p>
+
+
+                <!-- ПОРЯДОК МОДЕРАЦИИ -->
+
+                <div
+                    style="
+                        padding: 0.85rem;
+                        background: var(--bg);
+                        border: 1px solid var(--border);
+                        border-radius: 0.6rem;
+                        margin-bottom: 1rem;
+                    "
+                >
+
+                    <strong>Порядок модерации:</strong>
+
+                    <ol
+                        style="
+                            font-size: 0.85rem;
+                            color: var(--text-muted);
+                            padding-left: 1.25rem;
+                            margin-bottom: 0;
+                        "
+                    >
+                        <li>
+                            Администратор изучает заявку и приложенные
+                            подтверждающие материалы.
+                        </li>
+                        <li>
+                            Проверяет запрашиваемую сумму и план
+                            этапов финансирования.
+                        </li>
+                        <li>
+                            Если информация неполная или требует
+                            уточнения, возвращает заявку заявителю
+                            на доработку с указанием причины.
+                        </li>
+                        <li>
+                            После устранения замечаний заявитель
+                            повторно отправляет заявку на проверку.
+                        </li>
+                        <li>
+                            Если заявка соответствует требованиям,
+                            администратор публикует её и запускает
+                            голосование DAO.
+                        </li>
+                    </ol>
+
+                </div>
+
+
+                <!-- ПАРАМЕТРЫ ГОЛОСОВАНИЯ -->
+
+                <div
+                    style="
+                        display: flex;
+                        align-items: center;
+                        gap: 0.75rem;
+                        flex-wrap: wrap;
+                        margin-bottom: 1rem;
+                    "
+                >
+
+                    <label for="votingDurationDays">
+                        Продолжительность голосования:
+                    </label>
+
+                    <input
+                        type="number"
+                        id="votingDurationDays"
+                        min="1"
+                        max="30"
+                        step="1"
+                        value="7"
+                        style="width: 100px;"
+                    >
+
+                    <span
+                        style="
+                            font-size: 0.85rem;
+                            color: var(--text-muted);
+                        "
+                    >
+                        дней
+                    </span>
+
+                </div>
+
+                <p
+                    style="
+                        font-size: 0.82rem;
+                        color: var(--text-muted);
+                        margin-top: -0.5rem;
+                        margin-bottom: 1rem;
+                    "
+                >
+                    Указанная продолжительность используется при публикации
+                    заявки и запуске голосования. Допустимый диапазон:
+                    от 1 до 30 дней.
+                </p>
+
+
+                <!-- ОЧЕРЕДЬ ЗАЯВОК -->
+
+                <div
+                    id="adminModerationQueue"
+                    aria-live="polite"
+                    aria-busy="true"
+                >
+                    <p style="color: var(--text-muted);">
+                        Загрузка заявок на модерацию...
+                    </p>
+                </div>
+
+            </div>
+
+        </section>
+
+
+        <!-- ОЧЕРЕДЬ ЭТАПОВ ДЛЯ ВАЛИДАТОРОВ -->
+
+        <section class="box">
+
+            <div class="row-between">
+                <h2>Этапы финансирования на проверке</h2>
 
                 <button
                     type="button"
-                    class="btn btn-primary"
-                    onclick="registerMember()"
+                    class="btn btn-outline"
+                    onclick="loadValidatorQueue()"
                 >
-                    Зарегистрировать участника
+                    Обновить
                 </button>
             </div>
-        </section>
 
-        <section class="box">
-            <div class="row-between">
-                <h2>
-                    Этапы финансирования на проверке
-                </h2>
-            </div>
-
-            <p style="font-size: 0.9rem; color: var(--text-muted); margin-bottom: 1rem;">
-                В этом разделе отображаются этапы оказания помощи,
-                по которым приют предоставил отчёт.
-                Валидаторы могут проверить представленные материалы
-                и подтвердить выполнение этапа.
+            <p
+                style="
+                    font-size: 0.9rem;
+                    color: var(--text-muted);
+                    margin-bottom: 1rem;
+                "
+            >
+                Здесь отображаются этапы одобренных заявок,
+                по которым заявитель представил отчёт о выполнении.
+                Валидаторы могут ознакомиться с материалами и принять
+                решение о подтверждении выплаты.
             </p>
+
 
             <div
                 style="
@@ -169,83 +374,235 @@
                 "
             >
                 <strong>Механизм подтверждения:</strong>
-                <span>для выполнения выплаты необходимы два подтверждения валидаторов (2/2).</span>
+
+                <span>
+                    для выполнения выплаты необходимы два подтверждения
+                    разных валидаторов (2/2).
+                </span>
             </div>
 
-            <div id="milestonesQueue">
+
+            <div
+                style="
+                    padding: 0.85rem;
+                    background: var(--bg-secondary, #f8fafc);
+                    border-radius: 0.6rem;
+                    margin-bottom: 1rem;
+                "
+            >
+
+                <strong style="font-size: 0.9rem;">
+                    Порядок проверки
+                </strong>
+
+                <ol
+                    style="
+                        font-size: 0.85rem;
+                        color: var(--text-muted);
+                        padding-left: 1.25rem;
+                        margin-top: 0.6rem;
+                        margin-bottom: 0;
+                    "
+                >
+                    <li>
+                        Заявитель представляет отчёт и подтверждающие
+                        материалы по выполненному этапу.
+                    </li>
+                    <li>
+                        Валидаторы изучают материалы и независимо
+                        принимают решение.
+                    </li>
+                    <li>
+                        После двух подтверждений контракт автоматически
+                        выполняет выплату получателю этапа.
+                    </li>
+                    <li>
+                        Информация о подтверждении и выплате сохраняется
+                        в блокчейне.
+                    </li>
+                </ol>
+
+            </div>
+
+
+            <div
+                id="milestonesQueue"
+                aria-live="polite"
+            >
                 <p>Загрузка этапов из блокчейна...</p>
             </div>
+
         </section>
 
-        <section class="box">
-            <h2>
-                Прозрачная история операций RescueDAO
-            </h2>
 
-            <p style="font-size: 0.9rem; color: var(--text-muted); margin-bottom: 1rem;">
+        <!-- ИСТОРИЯ ОПЕРАЦИЙ -->
+
+        <section class="box">
+
+            <div class="row-between" style="flex-wrap: wrap;">
+
+                <h2>Прозрачная история операций RescueDAO</h2>
+
+                <button
+                    type="button"
+                    class="btn btn-outline"
+                    onclick="loadAuditHistory()"
+                >
+                    Обновить историю
+                </button>
+
+            </div>
+
+            <p
+                style="
+                    font-size: 0.9rem;
+                    color: var(--text-muted);
+                    margin-bottom: 1rem;
+                "
+            >
                 Журнал содержит события, зарегистрированные
-                в блокчейне: пополнения общего фонда,
-                создание заявок, голосования участников,
-                результаты рассмотрения заявок и выплаты
-                по этапам финансирования.
+                в блокчейне: пополнения фонда, создание заявок,
+                результаты модерации, публикацию заявок, голосования,
+                подтверждения этапов и выплаты.
             </p>
 
-            <div id="auditTimeline">
+
+            <div
+                style="
+                    padding: 0.85rem;
+                    background: var(--bg-secondary, #f8fafc);
+                    border-radius: 0.6rem;
+                    margin-bottom: 1rem;
+                "
+            >
+                <p
+                    style="
+                        font-size: 0.85rem;
+                        color: var(--text-muted);
+                        margin: 0;
+                    "
+                >
+                    Данные журнала формируются на основе событий
+                    смарт-контрактов. Это позволяет проследить
+                    последовательность действий и проверить
+                    результаты операций непосредственно в блокчейне.
+                </p>
+            </div>
+
+
+            <div
+                id="auditTimeline"
+                aria-live="polite"
+            >
                 <p>Загрузка событий из блокчейна...</p>
             </div>
+
         </section>
 
     </main>
 
+
+    <!-- FOOTER -->
+
     <footer>
+
         <p>
             RescueDAO — децентрализованная платформа
             прозрачной благотворительности на базе Ethereum.
         </p>
 
-        <p style="font-size: 0.8rem; color: var(--text-muted); margin-top: 0.5rem;">
+        <p
+            style="
+                font-size: 0.8rem;
+                color: var(--text-muted);
+                margin-top: 0.5rem;
+            "
+        >
             Локальная тестовая сеть Geth · Chain ID 1337
         </p>
+
     </footer>
 
+
+    <!-- СКРИПТЫ -->
+
     <script src="https://cdnjs.cloudflare.com/ajax/libs/ethers/6.13.1/ethers.umd.min.js"></script>
+
     <script src="js/config.js"></script>
     <script src="js/wallet.js"></script>
     <script src="js/validator.js"></script>
 
+
+    <!-- ИНФОРМАЦИЯ О ПОДКЛЮЧЕНИИ -->
+
     <script>
         window.addEventListener("DOMContentLoaded", () => {
-            const connectionStatus = document.getElementById("connectionStatus");
-            const networkBadge = document.getElementById("networkBadge");
+
+            const connectionStatus =
+                document.getElementById("connectionStatus");
+
+            const networkBadge =
+                document.getElementById("networkBadge");
+
 
             window.updateConnectionInfo = function (connected) {
+
                 if (!connectionStatus || !networkBadge) return;
 
                 if (connected) {
-                    connectionStatus.textContent =
-                        typeof userAddress !== "undefined" && userAddress
-                            ? "Кошелёк подключён. Доступны операции валидатора и администратора."
-                            : "Сеть Geth доступна. Для выполнения транзакций подключите MetaMask.";
+
+                    const hasWallet =
+                        typeof userAddress !== "undefined" &&
+                        Boolean(userAddress);
+
+                    connectionStatus.textContent = hasWallet
+                        ? "Кошелёк подключён. Доступны операции согласно роли пользователя."
+                        : "Сеть Geth доступна. Для выполнения транзакций подключите MetaMask.";
+
                     networkBadge.textContent = "Geth · 1337";
                     networkBadge.className = "badge badge-green";
+
                 } else {
+
                     connectionStatus.textContent =
-                        "Нет подключения к локальной сети Geth. Проверьте работу узла и настройки MetaMask.";
+                        "Нет подключения к локальной сети Geth. Проверьте работу узла.";
+
                     networkBadge.textContent = "Нет подключения";
                     networkBadge.className = "badge badge-red";
+
                 }
             };
 
-            if (typeof provider !== "undefined" && provider) {
-                provider.getNetwork()
-                    .then(network => window.updateConnectionInfo(network.chainId === 1337n))
-                    .catch(error => {
-                        console.error("Ошибка проверки сети:", error);
+
+            window.checkValidatorPageConnection = async function () {
+
+                try {
+
+                    if (
+                        typeof provider === "undefined" ||
+                        !provider
+                    ) {
                         window.updateConnectionInfo(false);
-                    });
-            } else {
-                window.updateConnectionInfo(false);
-            }
+                        return;
+                    }
+
+                    const network = await provider.getNetwork();
+
+                    window.updateConnectionInfo(
+                        network.chainId === 1337n
+                    );
+
+                } catch (error) {
+
+                    console.error("Ошибка проверки сети:", error);
+                    window.updateConnectionInfo(false);
+
+                }
+            };
+
+
+            window.checkValidatorPageConnection();
+
         });
     </script>
 

@@ -55,16 +55,16 @@ contract RescueDAO {
 
     bool private entered;
 
-    // Уведомления о завершении заявок, которые
-    // не удалось передать в RescueBadges.
     mapping(uint256 => bool) public pendingBadgeCompletion;
 
     enum RequestStatus {
-        Voting,
-        Approved,
-        Rejected,
-        Completed,
-        Cancelled
+        UnderReview,       // 0 — отправлена на проверку
+        ChangesRequested,  // 1 — возвращена на доработку
+        Voting,            // 2 — голосование
+        Approved,          // 3 — одобрена
+        Rejected,          // 4 — отклонена
+        Completed,         // 5 — завершена
+        Cancelled          // 6 — отменена
     }
 
     struct AidRequest {
@@ -134,7 +134,27 @@ contract RescueDAO {
         address indexed requester,
         string animalName,
         uint256 requestedAmount,
-        uint256 votingEndsAt
+        uint256 submittedAt
+    );
+
+    event AidRequestUpdated(
+        uint256 indexed requestId,
+        uint256 requestedAmount
+    );
+
+    event AidRequestChangesRequested(
+        uint256 indexed requestId,
+        string reason
+    );
+
+    event AidRequestResubmitted(
+        uint256 indexed requestId
+    );
+
+    event AidRequestPublished(
+        uint256 indexed requestId,
+        uint256 votingEndsAt,
+        uint256 votingDuration
     );
 
     event VoteCast(
@@ -195,7 +215,10 @@ contract RescueDAO {
     }
 
     modifier onlyMember() {
-        require(isMember[msg.sender], "Only registered members");
+        require(
+            isMember[msg.sender],
+            "Only registered members"
+        );
         _;
     }
 
@@ -327,12 +350,6 @@ contract RescueDAO {
         emit MilestonesUpdated(milestones);
     }
 
-    /**
-     * @dev Подключение контракта достижений.
-     *
-     * RescueBadges должен быть развернут с адресом
-     * данного RescueDAO в конструкторе.
-     */
     function setBadgesContract(address badges)
         external
         onlyAdmin
@@ -374,78 +391,193 @@ contract RescueDAO {
     }
 
     // =====================================================
-    // УЧЁТ ДОСТИЖЕНИЙ
+    // СОЗДАНИЕ ЗАЯВКИ
     // =====================================================
 
     /**
-     * @dev Передача информации о пожертвовании
-     * в RescueBadges.
+     * @notice Создаёт заявку и отправляет её на модерацию.
      *
-     * requestId = 0 означает пожертвование
-     * в общий фонд.
-     *
-     * requestId > 0 означает целевое пожертвование.
-     *
-     * Если контракт бейджей не подключён,
-     * обычная работа DAO продолжается.
+     * Голосование не начинается автоматически.
+     * Этапы можно добавлять после создания заявки.
      */
-    function _recordBadgeDonation(
-        address donor,
+    function createAidRequest(
+        string calldata animalName,
+        string calldata description,
+        string calldata evidenceURI,
+        bytes32 evidenceHash,
+        uint256 requestedAmount
+    )
+        external
+        onlyMember
+        returns (uint256)
+    {
+        require(
+            bytes(animalName).length > 0,
+            "Empty animal name"
+        );
+
+        require(
+            bytes(description).length > 0,
+            "Empty description"
+        );
+
+        require(
+            bytes(evidenceURI).length > 0,
+            "Empty evidence URI"
+        );
+
+        require(
+            evidenceHash != bytes32(0),
+            "Invalid evidence hash"
+        );
+
+        require(
+            requestedAmount > 0,
+            "Invalid amount"
+        );
+
+        uint256 id = ++requestCount;
+
+        AidRequest storage r = aidRequests[id];
+
+        r.animalName = animalName;
+        r.description = description;
+        r.evidenceURI = evidenceURI;
+        r.evidenceHash = evidenceHash;
+
+        r.requester = msg.sender;
+        r.requestedAmount = requestedAmount;
+
+        r.votingEndsAt = 0;
+
+        r.status = RequestStatus.UnderReview;
+        r.exists = true;
+
+        emit AidRequestCreated(
+            id,
+            msg.sender,
+            animalName,
+            requestedAmount,
+            block.timestamp
+        );
+
+        return id;
+    }
+
+    // =====================================================
+    // ИЗМЕНЕНИЕ ДАННЫХ ЗАЯВКИ
+    // =====================================================
+
+    /**
+     * @notice Инициатор может изменить данные заявки
+     * до её публикации.
+     */
+    function updateRequestDetails(
         uint256 requestId,
-        uint256 amount
-    ) internal {
-        if (badgesContract == address(0)) {
-            return;
-        }
+        string calldata animalName,
+        string calldata description,
+        string calldata evidenceURI,
+        bytes32 evidenceHash,
+        uint256 requestedAmount
+    ) external {
+        AidRequest storage r = aidRequests[requestId];
 
-        IRescueBadges(badgesContract).recordDonation(
-            donor,
-            requestId,
-            amount
+        require(
+            r.exists,
+            "Request does not exist"
         );
 
-        emit BadgeDonationRecorded(
-            donor,
+        require(
+            msg.sender == r.requester,
+            "Only requester"
+        );
+
+        require(
+            r.status == RequestStatus.UnderReview ||
+            r.status == RequestStatus.ChangesRequested,
+            "Request cannot be edited"
+        );
+
+        require(
+            bytes(animalName).length > 0,
+            "Empty animal name"
+        );
+
+        require(
+            bytes(description).length > 0,
+            "Empty description"
+        );
+
+        require(
+            bytes(evidenceURI).length > 0,
+            "Empty evidence URI"
+        );
+
+        require(
+            evidenceHash != bytes32(0),
+            "Invalid evidence hash"
+        );
+
+        require(
+            requestedAmount > 0,
+            "Invalid amount"
+        );
+
+        require(
+            requestedAmount >= r.milestoneTotal,
+            "Amount below milestone total"
+        );
+
+        r.animalName = animalName;
+        r.description = description;
+        r.evidenceURI = evidenceURI;
+        r.evidenceHash = evidenceHash;
+        r.requestedAmount = requestedAmount;
+
+        emit AidRequestUpdated(
             requestId,
-            amount
+            requestedAmount
         );
     }
 
-    /**
-     * @dev Уведомление RescueBadges о завершении заявки.
-     *
-     * Если вызов не удался, заявка всё равно считается
-     * завершённой. Уведомление можно повторить отдельно.
-     */
-    function _notifyBadgeCompletion(
-        uint256 requestId
-    ) internal {
-        if (badgesContract == address(0)) {
-            pendingBadgeCompletion[requestId] = true;
+    // =====================================================
+    // ВОЗВРАТ НА ДОРАБОТКУ
+    // =====================================================
 
-            emit BadgeCompletionQueued(requestId);
-            return;
-        }
+    function requestChanges(
+        uint256 requestId,
+        string calldata reason
+    ) external onlyAdmin {
+        AidRequest storage r = aidRequests[requestId];
 
-        try IRescueBadges(badgesContract).onRequestCompleted(
-            requestId
-        ) {
-            pendingBadgeCompletion[requestId] = false;
+        require(
+            r.exists,
+            "Request does not exist"
+        );
 
-            emit BadgeCompletionNotified(requestId);
-        } catch {
-            pendingBadgeCompletion[requestId] = true;
+        require(
+            r.status == RequestStatus.UnderReview,
+            "Request is not under review"
+        );
 
-            emit BadgeCompletionQueued(requestId);
-        }
+        require(
+            bytes(reason).length > 0,
+            "Empty reason"
+        );
+
+        r.status = RequestStatus.ChangesRequested;
+
+        emit AidRequestChangesRequested(
+            requestId,
+            reason
+        );
     }
 
-    /**
-     * @dev Повторная отправка уведомления о завершении заявки.
-     *
-     * Может вызвать любой пользователь.
-     */
-    function retryBadgeCompletion(
+    // =====================================================
+    // ПОВТОРНАЯ ОТПРАВКА НА ПРОВЕРКУ
+    // =====================================================
+
+    function resubmitForReview(
         uint256 requestId
     ) external {
         AidRequest storage r = aidRequests[requestId];
@@ -456,44 +588,149 @@ contract RescueDAO {
         );
 
         require(
-            r.status == RequestStatus.Completed,
-            "Request not completed"
+            msg.sender == r.requester,
+            "Only requester"
         );
 
         require(
-            pendingBadgeCompletion[requestId],
-            "No pending notification"
+            r.status == RequestStatus.ChangesRequested,
+            "Changes not requested"
+        );
+
+        r.status = RequestStatus.UnderReview;
+
+        emit AidRequestResubmitted(requestId);
+    }
+
+    // =====================================================
+    // ОКОНЧАТЕЛЬНОЕ ОТКЛОНЕНИЕ ЗАЯВКИ
+    // =====================================================
+
+    function rejectRequest(
+        uint256 requestId,
+        string calldata reason
+    ) external onlyAdmin {
+        AidRequest storage r = aidRequests[requestId];
+
+        require(
+            r.exists,
+            "Request does not exist"
         );
 
         require(
-            badgesContract != address(0),
-            "Badges not configured"
+            r.status == RequestStatus.UnderReview ||
+            r.status == RequestStatus.ChangesRequested,
+            "Cannot reject at this stage"
         );
 
-        // Если вызов завершится ошибкой, транзакция откатится,
-        // а pendingBadgeCompletion останется true.
-        IRescueBadges(badgesContract).onRequestCompleted(
-            requestId
+        require(
+            bytes(reason).length > 0,
+            "Empty reason"
         );
 
-        pendingBadgeCompletion[requestId] = false;
+        r.status = RequestStatus.Rejected;
 
-        emit BadgeCompletionRetried(requestId);
+        emit AidRequestFinalized(
+            requestId,
+            RequestStatus.Rejected,
+            0
+        );
+    }
+
+    // =====================================================
+    // ПУБЛИКАЦИЯ ЗАЯВКИ И ЗАПУСК ГОЛОСОВАНИЯ
+    // =====================================================
+
+    /**
+     * @notice Администратор публикует проверенную заявку.
+     *
+     * Перед публикацией проверяется:
+     * - наличие этапов;
+     * - соответствие суммы этапов сумме заявки.
+     *
+     * После публикации этапы нельзя редактировать.
+     */
+    function publishRequest(
+        uint256 requestId,
+        uint256 votingDuration
+    )
+        external
+        onlyAdmin
+    {
+        require(
+            milestonesContract != address(0),
+            "Milestones not configured"
+        );
+
+        AidRequest storage r = aidRequests[requestId];
+
+        require(
+            r.exists,
+            "Request does not exist"
+        );
+
+        require(
+            r.status == RequestStatus.UnderReview,
+            "Request is not under review"
+        );
+
+        require(
+            votingDuration >= MIN_VOTING_PERIOD &&
+            votingDuration <= MAX_VOTING_PERIOD,
+            "Invalid voting duration"
+        );
+
+        (
+            uint256 milestoneTotal,
+            uint256 milestoneCount
+        ) = IRescueMilestoneSummary(milestonesContract)
+            .getMilestoneSummary(requestId);
+
+        require(
+            milestoneCount > 0,
+            "No milestones"
+        );
+
+        require(
+            milestoneTotal == r.requestedAmount,
+            "Milestones must equal request amount"
+        );
+
+        r.milestoneTotal = milestoneTotal;
+        r.milestoneCount = milestoneCount;
+
+        r.yesVotes = 0;
+        r.noVotes = 0;
+        r.votingEndsAt = block.timestamp + votingDuration;
+
+        r.status = RequestStatus.Voting;
+
+        if (rescueNftContract != address(0)) {
+            try IRescueNFT(rescueNftContract).mintPassport(
+                r.requester,
+                requestId
+            ) returns (uint256 tokenId) {
+                emit PassportMinted(
+                    requestId,
+                    tokenId,
+                    r.requester
+                );
+            } catch {
+                // Ошибка NFT не отменяет публикацию.
+            }
+        }
+
+        emit AidRequestPublished(
+            requestId,
+            r.votingEndsAt,
+            votingDuration
+        );
     }
 
     // =====================================================
     // ПОЖЕРТВОВАНИЯ
     // =====================================================
 
-    /**
-     * @dev Обычное пожертвование в общий фонд.
-     *
-     * Учитывается для достижений:
-     * - Первое доброе дело;
-     * - Постоянная поддержка.
-     *
-     * Не учитывается как поддержка отдельной заявки.
-     */
     function donate()
         external
         payable
@@ -521,12 +758,6 @@ contract RescueDAO {
         );
     }
 
-    /**
-     * @dev Целевое пожертвование на конкретную заявку.
-     *
-     * Учитывается для всех достижений, условия которых
-     * связаны с пожертвованиями и поддержанными заявками.
-     */
     function donateToRequest(uint256 requestId)
         external
         payable
@@ -542,7 +773,7 @@ contract RescueDAO {
 
         require(
             r.status == RequestStatus.Voting,
-            "Not voting"
+            "Request is not in voting"
         );
 
         require(
@@ -582,96 +813,6 @@ contract RescueDAO {
     }
 
     // =====================================================
-    // СОЗДАНИЕ ЗАЯВКИ
-    // =====================================================
-
-    function createAidRequest(
-        string calldata animalName,
-        string calldata description,
-        string calldata evidenceURI,
-        bytes32 evidenceHash,
-        uint256 requestedAmount,
-        uint256 votingDuration
-    )
-        external
-        onlyMember
-        returns (uint256)
-    {
-        require(
-            bytes(animalName).length > 0,
-            "Empty animal name"
-        );
-
-        require(
-            bytes(description).length > 0,
-            "Empty description"
-        );
-
-        require(
-            bytes(evidenceURI).length > 0,
-            "Empty evidence URI"
-        );
-
-        require(
-            evidenceHash != bytes32(0),
-            "Invalid evidence hash"
-        );
-
-        require(
-            requestedAmount > 0,
-            "Invalid amount"
-        );
-
-        require(
-            votingDuration >= MIN_VOTING_PERIOD &&
-            votingDuration <= MAX_VOTING_PERIOD,
-            "Invalid voting duration"
-        );
-
-        uint256 id = ++requestCount;
-
-        AidRequest storage r = aidRequests[id];
-
-        r.animalName = animalName;
-        r.description = description;
-        r.evidenceURI = evidenceURI;
-        r.evidenceHash = evidenceHash;
-
-        r.requester = msg.sender;
-        r.requestedAmount = requestedAmount;
-        r.votingEndsAt = block.timestamp + votingDuration;
-
-        r.status = RequestStatus.Voting;
-        r.exists = true;
-
-        // Выпуск NFT-паспорта животного.
-        if (rescueNftContract != address(0)) {
-            try IRescueNFT(rescueNftContract).mintPassport(
-                msg.sender,
-                id
-            ) returns (uint256 tokenId) {
-                emit PassportMinted(
-                    id,
-                    tokenId,
-                    msg.sender
-                );
-            } catch {
-                // Ошибка выпуска NFT не отменяет создание заявки.
-            }
-        }
-
-        emit AidRequestCreated(
-            id,
-            msg.sender,
-            animalName,
-            requestedAmount,
-            r.votingEndsAt
-        );
-
-        return id;
-    }
-
-    // =====================================================
     // ГОЛОСОВАНИЕ
     // =====================================================
 
@@ -691,7 +832,7 @@ contract RescueDAO {
 
         require(
             r.status == RequestStatus.Voting,
-            "Not voting"
+            "Not in voting"
         );
 
         require(
@@ -743,23 +884,13 @@ contract RescueDAO {
 
         require(
             r.status == RequestStatus.Voting,
-            "Already finalized"
+            "Not in voting"
         );
 
         require(
             block.timestamp >= r.votingEndsAt,
             "Voting not ended"
         );
-
-        (
-            uint256 milestoneTotal,
-            uint256 milestoneCount
-        ) = IRescueMilestoneSummary(milestonesContract)
-            .getMilestoneSummary(requestId);
-
-        bool milestonesValid =
-            milestoneCount > 0 &&
-            milestoneTotal == r.requestedAmount;
 
         bool votingApproved =
             r.yesVotes > r.noVotes &&
@@ -783,11 +914,7 @@ contract RescueDAO {
         bool fundsAvailable =
             t.getAvailableBalance() >= generalRequired;
 
-        if (
-            milestonesValid &&
-            votingApproved &&
-            fundsAvailable
-        ) {
+        if (votingApproved && fundsAvailable) {
             t.reserveFunds(
                 requestId,
                 targetToReserve,
@@ -841,6 +968,11 @@ contract RescueDAO {
     // ВЫЗОВЫ ИЗ RESCUEMILESTONES
     // =====================================================
 
+    /**
+     * @notice Вызывается при добавлении нового этапа.
+     *
+     * Этапы разрешено добавлять до публикации заявки.
+     */
     function onMilestoneAdded(
         uint256 requestId,
         uint256 amount
@@ -856,8 +988,14 @@ contract RescueDAO {
         );
 
         require(
-            r.status == RequestStatus.Voting,
-            "Not voting"
+            r.status == RequestStatus.UnderReview ||
+            r.status == RequestStatus.ChangesRequested,
+            "Milestones can only be edited before publication"
+        );
+
+        require(
+            amount > 0,
+            "Invalid milestone amount"
         );
 
         require(
@@ -867,6 +1005,53 @@ contract RescueDAO {
 
         r.milestoneTotal += amount;
         r.milestoneCount++;
+    }
+
+    /**
+     * @notice Вызывается RescueMilestones при изменении суммы этапа.
+     *
+     * Синхронизирует общую сумму этапов в DAO с RescueMilestones.
+     */
+    function onMilestoneUpdated(
+        uint256 requestId,
+        uint256 oldAmount,
+        uint256 newAmount
+    )
+        external
+        onlyMilestones
+    {
+        AidRequest storage r = aidRequests[requestId];
+
+        require(
+            r.exists,
+            "Request does not exist"
+        );
+
+        require(
+            r.status == RequestStatus.UnderReview ||
+            r.status == RequestStatus.ChangesRequested,
+            "Milestones can only be edited before publication"
+        );
+
+        require(
+            oldAmount > 0 && newAmount > 0,
+            "Invalid amount"
+        );
+
+        require(
+            r.milestoneTotal >= oldAmount,
+            "Invalid old amount"
+        );
+
+        uint256 updatedTotal =
+            r.milestoneTotal - oldAmount + newAmount;
+
+        require(
+            updatedTotal <= r.requestedAmount,
+            "Milestone total exceeds request"
+        );
+
+        r.milestoneTotal = updatedTotal;
     }
 
     function onValidatorApproved(address validator)
@@ -883,11 +1068,7 @@ contract RescueDAO {
     }
 
     /**
-     * @dev Вызывается RescueMilestones после выпуска средств
-     * по очередному этапу восстановления.
-     *
-     * При завершении всех этапов заявка получает статус
-     * Completed, после чего DAO уведомляет RescueBadges.
+     * @notice Вызывается после выплаты средств по этапу.
      */
     function onMilestoneReleased(
         uint256 requestId,
@@ -929,6 +1110,11 @@ contract RescueDAO {
         if (
             r.completedMilestones == r.milestoneCount
         ) {
+            require(
+                r.releasedAmount == r.requestedAmount,
+                "Released amount does not match request"
+            );
+
             r.status = RequestStatus.Completed;
 
             _notifyBadgeCompletion(requestId);
@@ -957,6 +1143,8 @@ contract RescueDAO {
         );
 
         require(
+            r.status == RequestStatus.UnderReview ||
+            r.status == RequestStatus.ChangesRequested ||
             r.status == RequestStatus.Voting ||
             r.status == RequestStatus.Approved,
             "Cannot cancel"
@@ -982,7 +1170,90 @@ contract RescueDAO {
     }
 
     // =====================================================
-    // ГЕТТЕРЫ ДЛЯ ВЗАИМОДЕЙСТВИЯ КОНТРАКТОВ
+    // УЧЁТ ДОСТИЖЕНИЙ
+    // =====================================================
+
+    function _recordBadgeDonation(
+        address donor,
+        uint256 requestId,
+        uint256 amount
+    ) internal {
+        if (badgesContract == address(0)) {
+            return;
+        }
+
+        IRescueBadges(badgesContract).recordDonation(
+            donor,
+            requestId,
+            amount
+        );
+
+        emit BadgeDonationRecorded(
+            donor,
+            requestId,
+            amount
+        );
+    }
+
+    function _notifyBadgeCompletion(
+        uint256 requestId
+    ) internal {
+        if (badgesContract == address(0)) {
+            pendingBadgeCompletion[requestId] = true;
+
+            emit BadgeCompletionQueued(requestId);
+            return;
+        }
+
+        try IRescueBadges(badgesContract).onRequestCompleted(
+            requestId
+        ) {
+            pendingBadgeCompletion[requestId] = false;
+
+            emit BadgeCompletionNotified(requestId);
+        } catch {
+            pendingBadgeCompletion[requestId] = true;
+
+            emit BadgeCompletionQueued(requestId);
+        }
+    }
+
+    function retryBadgeCompletion(
+        uint256 requestId
+    ) external {
+        AidRequest storage r = aidRequests[requestId];
+
+        require(
+            r.exists,
+            "Request does not exist"
+        );
+
+        require(
+            r.status == RequestStatus.Completed,
+            "Request not completed"
+        );
+
+        require(
+            pendingBadgeCompletion[requestId],
+            "No pending notification"
+        );
+
+        require(
+            badgesContract != address(0),
+            "Badges not configured"
+        );
+
+        IRescueBadges(badgesContract).onRequestCompleted(
+            requestId
+        );
+
+        pendingBadgeCompletion[requestId] = false;
+
+        emit BadgeCompletionRetried(requestId);
+    }
+
+    // =====================================================
+    // ГЕТТЕРЫ
     // =====================================================
 
     function getRequestCore(uint256 requestId)

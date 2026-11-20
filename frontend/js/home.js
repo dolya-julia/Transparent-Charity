@@ -1,4 +1,3 @@
-
 window.addEventListener("DOMContentLoaded", async () => {
     try {
         const ready = await initWeb3();
@@ -13,7 +12,10 @@ window.addEventListener("DOMContentLoaded", async () => {
         await loadAllRequests();
 
     } catch (err) {
-        console.error("Ошибка запуска главной страницы:", err);
+        console.error(
+            "Ошибка запуска главной страницы:",
+            err
+        );
     }
 });
 
@@ -31,6 +33,7 @@ function requireContract(instance, name) {
     }
 }
 
+
 /**
  * Проверка наличия метода в контракте.
  */
@@ -43,6 +46,7 @@ function requireMethod(instance, methodName, contractName) {
         );
     }
 }
+
 
 /**
  * Экранирование текста перед вставкой в HTML.
@@ -61,27 +65,103 @@ function escapeHtml(value) {
     });
 }
 
+
+/**
+ * Проверка URL перед использованием в HTML.
+ *
+ * Разрешаются:
+ * - HTTP;
+ * - HTTPS;
+ * - относительные пути к файлам backend.
+ *
+ * Запрещаются javascript: и другие потенциально опасные схемы.
+ */
+function safeMediaUrl(value) {
+    if (!value) return "";
+
+    const url = String(value).trim();
+
+    if (!url) return "";
+
+    if (/^https?:\/\//i.test(url)) {
+        return url;
+    }
+
+    if (
+        url.startsWith("/") &&
+        !url.startsWith("//")
+    ) {
+        return url;
+    }
+
+    return "";
+}
+
+
 /**
  * Получение статуса заявки.
+ *
+ * Актуальные значения RescueDAO:
+ *
+ * 0 — UnderReview
+ * 1 — ChangesRequested
+ * 2 — Voting
+ * 3 — Approved
+ * 4 — Rejected
+ * 5 — Completed
+ * 6 — Cancelled
+ *
+ * Старое соответствие статусов больше не используется.
  */
 function getRequestStatus(status) {
     const statusNum = Number(status);
 
-    if (
-        typeof STATUS_LABELS !== "undefined" &&
-        STATUS_LABELS[statusNum]
-    ) {
-        return STATUS_LABELS[statusNum];
-    }
+    const statuses = {
+        0: {
+            text: "На проверке",
+            cls: "badge-warning"
+        },
 
-    return {
+        1: {
+            text: "Требуются изменения",
+            cls: "badge-warning"
+        },
+
+        2: {
+            text: "Голосование",
+            cls: "badge-info"
+        },
+
+        3: {
+            text: "Одобрена",
+            cls: "badge-success"
+        },
+
+        4: {
+            text: "Отклонена",
+            cls: "badge-danger"
+        },
+
+        5: {
+            text: "Завершена",
+            cls: "badge-success"
+        },
+
+        6: {
+            text: "Отменена",
+            cls: "badge-gray"
+        }
+    };
+
+    return statuses[statusNum] || {
         text: "Неизвестный статус",
         cls: "badge-gray"
     };
 }
 
+
 /**
- * Проверка наличия HTML-элемента.
+ * Получение HTML-элемента.
  */
 function getElement(id) {
     const element = document.getElementById(id);
@@ -93,12 +173,14 @@ function getElement(id) {
     return element;
 }
 
+
 /**
  * Форматирование ETH.
  */
 function formatEth(value) {
     return ethers.formatEther(value);
 }
+
 
 /**
  * Проверка подключения кошелька.
@@ -109,6 +191,57 @@ function isWalletConnected() {
         signer &&
         typeof userAddress !== "undefined" &&
         userAddress
+    );
+}
+
+
+/**
+ * Проверка успешного выполнения транзакции.
+ */
+function checkTransactionReceipt(receipt, errorMessage) {
+    if (!receipt || Number(receipt.status) !== 1) {
+        throw new Error(errorMessage);
+    }
+}
+
+
+/**
+ * Вычисление хэша файла или текстового значения.
+ *
+ * Если пользователь прикрепил документ:
+ * хэшируется содержимое файла.
+ *
+ * Если файл не прикреплён:
+ * хэшируется переданная строка.
+ */
+async function calculateRequestHash(file, fallbackText) {
+    if (file) {
+        const buffer = await file.arrayBuffer();
+
+        return ethers.keccak256(
+            new Uint8Array(buffer)
+        );
+    }
+
+    return ethers.keccak256(
+        ethers.toUtf8Bytes(String(fallbackText))
+    );
+}
+
+
+/**
+ * Проверка корректности положительной суммы.
+ */
+function isValidPositiveAmount(value) {
+    if (!value || !String(value).trim()) {
+        return false;
+    }
+
+    const number = Number(value);
+
+    return (
+        Number.isFinite(number) &&
+        number > 0
     );
 }
 
@@ -124,6 +257,30 @@ async function loadPoolStats() {
             "RescueTreasury"
         );
 
+        requireMethod(
+            treasuryContract,
+            "totalDonated",
+            "RescueTreasury"
+        );
+
+        requireMethod(
+            treasuryContract,
+            "totalReserved",
+            "RescueTreasury"
+        );
+
+        requireMethod(
+            treasuryContract,
+            "totalSpent",
+            "RescueTreasury"
+        );
+
+        requireMethod(
+            treasuryContract,
+            "getAvailableBalance",
+            "RescueTreasury"
+        );
+
         const [
             donated,
             reserved,
@@ -136,17 +293,41 @@ async function loadPoolStats() {
             treasuryContract.getAvailableBalance()
         ]);
 
-        getElement("statDonated").textContent =
-            `${formatEth(donated)} ETH`;
+        const donatedElement = document.getElementById(
+            "statDonated"
+        );
 
-        getElement("statAvailable").textContent =
-            `${formatEth(available)} ETH`;
+        const availableElement = document.getElementById(
+            "statAvailable"
+        );
 
-        getElement("statReserved").textContent =
-            `${formatEth(reserved)} ETH`;
+        const reservedElement = document.getElementById(
+            "statReserved"
+        );
 
-        getElement("statSpent").textContent =
-            `${formatEth(spent)} ETH`;
+        const spentElement = document.getElementById(
+            "statSpent"
+        );
+
+        if (donatedElement) {
+            donatedElement.textContent =
+                `${formatEth(donated)} ETH`;
+        }
+
+        if (availableElement) {
+            availableElement.textContent =
+                `${formatEth(available)} ETH`;
+        }
+
+        if (reservedElement) {
+            reservedElement.textContent =
+                `${formatEth(reserved)} ETH`;
+        }
+
+        if (spentElement) {
+            spentElement.textContent =
+                `${formatEth(spent)} ETH`;
+        }
 
     } catch (err) {
         console.error(
@@ -157,9 +338,10 @@ async function loadPoolStats() {
 }
 
 
-/**
- * Загрузка общей статистики целевых пожертвований.
- */
+// =========================================================
+// 2. СТАТИСТИКА ЦЕЛЕВЫХ ПОЖЕРТВОВАНИЙ
+// =========================================================
+
 async function loadTargetDonationStats() {
     const targetElement = document.getElementById(
         "statTargetDonated"
@@ -204,7 +386,7 @@ async function loadTargetDonationStats() {
 
 
 // =========================================================
-// 2. ПОЖЕРТВОВАНИЕ В ОБЩИЙ ФОНД
+// 3. ПОЖЕРТВОВАНИЕ В ОБЩИЙ ФОНД
 // =========================================================
 
 async function donateToPool() {
@@ -248,11 +430,7 @@ async function donateToPool() {
 
     const val = amountInput.value.trim();
 
-    if (
-        !val ||
-        !Number.isFinite(Number(val)) ||
-        Number(val) <= 0
-    ) {
+    if (!isValidPositiveAmount(val)) {
         alert("Введите корректную сумму больше 0 ETH.");
         return;
     }
@@ -260,8 +438,8 @@ async function donateToPool() {
     try {
         const amountWei = ethers.parseEther(val);
 
-        // Пожертвование отправляется в основной RescueDAO.
-        // RescueDAO должен перенаправить средства в RescueTreasury.
+        // Пожертвование отправляется в RescueDAO.
+        // Контракт перенаправляет средства в RescueTreasury.
 
         const tx = await contract.donate({
             value: amountWei
@@ -274,11 +452,10 @@ async function donateToPool() {
 
         const receipt = await tx.wait();
 
-        if (!receipt || Number(receipt.status) !== 1) {
-            throw new Error(
-                "Транзакция пожертвования не подтверждена."
-            );
-        }
+        checkTransactionReceipt(
+            receipt,
+            "Транзакция пожертвования не подтверждена."
+        );
 
         alert(
             "Спасибо! Средства зачислены в общий фонд RescueDAO."
@@ -286,7 +463,8 @@ async function donateToPool() {
 
         amountInput.value = "";
 
-        // Обновляем статистику после подтверждения транзакции.
+        // Обновляем статистику после подтверждения.
+
         await Promise.all([
             loadPoolStats(),
             loadTargetDonationStats()
@@ -307,7 +485,7 @@ async function donateToPool() {
 
 
 // =========================================================
-// 3. СОЗДАНИЕ ЗАЯВКИ
+// 4. СОЗДАНИЕ ЗАЯВКИ
 // =========================================================
 
 async function submitAidRequest() {
@@ -363,10 +541,6 @@ async function submitAidRequest() {
 
     const amountEth = getElement("reqAmount").value.trim();
 
-    const durationMin = Number(
-        getElement("reqDuration").value
-    );
-
     const uri = getElement("reqEvidenceUri").value.trim();
 
     const fileInput = document.getElementById(
@@ -400,25 +574,8 @@ async function submitAidRequest() {
         return;
     }
 
-    if (
-        !amountEth ||
-        !Number.isFinite(Number(amountEth)) ||
-        Number(amountEth) <= 0
-    ) {
+    if (!isValidPositiveAmount(amountEth)) {
         alert("Введите корректную сумму заявки.");
-        return;
-    }
-
-    if (
-        !Number.isInteger(durationMin) ||
-        durationMin < 1 ||
-        durationMin > 43200
-    ) {
-        alert(
-            "Срок голосования должен составлять " +
-            "от 1 до 43200 минут."
-        );
-
         return;
     }
 
@@ -428,8 +585,8 @@ async function submitAidRequest() {
         // ШАГ 1. Вычисление хэша документа
         // -------------------------------------------------
 
-        const docHash = await hashFileOrDefault(
-            fileInput,
+        const docHash = await calculateRequestHash(
+            evidenceFile,
             `${name}-${Date.now()}`
         );
 
@@ -443,22 +600,34 @@ async function submitAidRequest() {
         }
 
         // -------------------------------------------------
-        // ШАГ 2. Создание заявки в RescueDAO
+        // ШАГ 2. Подготовка суммы заявки
         // -------------------------------------------------
 
         const requestedAmount =
             ethers.parseEther(amountEth);
 
-        const votingDuration =
-            BigInt(durationMin) * 60n;
+        // -------------------------------------------------
+        // ШАГ 3. Создание заявки в RescueDAO
+        // -------------------------------------------------
+
+        /*
+         * ВАЖНО:
+         *
+         * Новая заявка получает статус UnderReview.
+         *
+         * Голосование не начинается в момент создания.
+         * Продолжительность голосования будет установлена
+         * администратором при вызове publishRequest().
+         *
+         * Поэтому votingDuration здесь больше не передаётся.
+         */
 
         const tx = await contract.createAidRequest(
             name,
             desc,
             uri,
             docHash,
-            requestedAmount,
-            votingDuration
+            requestedAmount
         );
 
         alert(
@@ -468,14 +637,13 @@ async function submitAidRequest() {
 
         const receipt = await tx.wait();
 
-        if (!receipt || Number(receipt.status) !== 1) {
-            throw new Error(
-                "Транзакция создания заявки не подтверждена."
-            );
-        }
+        checkTransactionReceipt(
+            receipt,
+            "Транзакция создания заявки не подтверждена."
+        );
 
         // -------------------------------------------------
-        // ШАГ 3. Получение ID через RescueDAOView
+        // ШАГ 4. Получение ID созданной заявки
         // -------------------------------------------------
 
         requireMethod(
@@ -498,8 +666,14 @@ async function submitAidRequest() {
         }
 
         // -------------------------------------------------
-        // ШАГ 4. Сохранение медиафайлов на backend
+        // ШАГ 5. Сохранение дополнительных данных на backend
         // -------------------------------------------------
+
+        /*
+         * В блокчейне хранятся основные данные заявки,
+         * а фотографии и дополнительные материалы
+         * сохраняются на backend.
+         */
 
         const formData = new FormData();
 
@@ -521,6 +695,8 @@ async function submitAidRequest() {
                 evidenceFile
             );
         }
+
+        let backendSaved = false;
 
         try {
             const response = await fetch(
@@ -548,6 +724,8 @@ async function submitAidRequest() {
                 );
             }
 
+            backendSaved = true;
+
             console.log(
                 "Медиафайлы заявки сохранены:",
                 result.data
@@ -556,25 +734,28 @@ async function submitAidRequest() {
         } catch (apiErr) {
             console.error(
                 "Заявка создана в блокчейне, " +
-                "но медиафайлы не сохранены:",
+                "но дополнительные данные не сохранены:",
                 apiErr
-            );
-
-            alert(
-                "Заявка создана в блокчейне, но не удалось " +
-                "сохранить фотографии или документы на сервере. " +
-                "Проверьте, запущен ли backend."
             );
         }
 
         // -------------------------------------------------
-        // ШАГ 5. Завершение
+        // ШАГ 6. Завершение
         // -------------------------------------------------
 
-        alert(
-            `Заявка #${newId} успешно опубликована! ` +
-            "Теперь можно добавить этапы финансирования."
-        );
+        if (backendSaved) {
+            alert(
+                `Заявка #${newId} успешно создана и отправлена на проверку!\n\n` +
+                "После проверки администратор сможет опубликовать её " +
+                "и запустить голосование DAO."
+            );
+        } else {
+            alert(
+                `Заявка #${newId} создана в блокчейне и отправлена на проверку.\n\n` +
+                "Однако дополнительные материалы не удалось сохранить на сервере. " +
+                "Проверьте работу backend."
+            );
+        }
 
         window.location.reload();
 
@@ -593,7 +774,7 @@ async function submitAidRequest() {
 
 
 // =========================================================
-// 4. ЗАГРУЗКА ВСЕХ ЗАЯВОК
+// 5. ЗАГРУЗКА ВСЕХ ЗАЯВОК
 // =========================================================
 
 async function loadAllRequests() {
@@ -706,14 +887,16 @@ async function loadAllRequests() {
 
             let imgTag = "";
 
-            if (meta.photoUrl) {
-                const photoUrl =
-                    escapeHtml(meta.photoUrl);
+            const safePhotoUrl = safeMediaUrl(
+                meta.photoUrl
+            );
 
+            if (safePhotoUrl) {
                 imgTag = `
                     <img
-                        src="${photoUrl}"
+                        src="${escapeHtml(safePhotoUrl)}"
                         alt="${escapeHtml(info.animalName)}"
+                        loading="lazy"
                         style="
                             width:100%;
                             height:180px;
@@ -732,6 +915,8 @@ async function loadAllRequests() {
             const statusObj = getRequestStatus(
                 stats.status
             );
+
+            const statusNum = Number(stats.status);
 
             // ---------------------------------------------
             // Форматирование числовых данных
@@ -758,11 +943,11 @@ async function loadAllRequests() {
                 stats.milestoneCount.toString();
 
             // ---------------------------------------------
-            // Получение адресных пожертвований
-            // из RescueTreasury
+            // Получение целевых пожертвований
             // ---------------------------------------------
 
             let targetDonatedWei = 0n;
+
             let targetFundingAvailable = false;
 
             try {
@@ -879,6 +1064,140 @@ async function loadAllRequests() {
                     `;
 
             // ---------------------------------------------
+            // Дополнительное пояснение статуса
+            // ---------------------------------------------
+
+            let statusDescription = "";
+
+            switch (statusNum) {
+
+                case 0:
+                    statusDescription = `
+                        <div
+                            style="
+                                margin-top:0.75rem;
+                                padding:0.65rem;
+                                border-radius:0.5rem;
+                                background:#fef3c7;
+                                color:#92400e;
+                                font-size:0.85rem;
+                            "
+                        >
+                            Заявка находится на проверке администрацией.
+                            Голосование ещё не началось.
+                        </div>
+                    `;
+                    break;
+
+                case 1:
+                    statusDescription = `
+                        <div
+                            style="
+                                margin-top:0.75rem;
+                                padding:0.65rem;
+                                border-radius:0.5rem;
+                                background:#fef3c7;
+                                color:#92400e;
+                                font-size:0.85rem;
+                            "
+                        >
+                            Для заявки требуются изменения.
+                            После исправления данных она может быть
+                            повторно отправлена на проверку.
+                        </div>
+                    `;
+                    break;
+
+                case 2:
+                    statusDescription = `
+                        <div
+                            style="
+                                margin-top:0.75rem;
+                                padding:0.65rem;
+                                border-radius:0.5rem;
+                                background:#dbeafe;
+                                color:#1e40af;
+                                font-size:0.85rem;
+                            "
+                        >
+                            Заявка опубликована.
+                            Сейчас проходит голосование участников DAO.
+                        </div>
+                    `;
+                    break;
+
+                case 3:
+                    statusDescription = `
+                        <div
+                            style="
+                                margin-top:0.75rem;
+                                padding:0.65rem;
+                                border-radius:0.5rem;
+                                background:#dcfce7;
+                                color:#166534;
+                                font-size:0.85rem;
+                            "
+                        >
+                            Заявка одобрена.
+                            Средства могут направляться на выполнение этапов.
+                        </div>
+                    `;
+                    break;
+
+                case 4:
+                    statusDescription = `
+                        <div
+                            style="
+                                margin-top:0.75rem;
+                                padding:0.65rem;
+                                border-radius:0.5rem;
+                                background:#fee2e2;
+                                color:#991b1b;
+                                font-size:0.85rem;
+                            "
+                        >
+                            Заявка отклонена по результатам проверки
+                            или голосования.
+                        </div>
+                    `;
+                    break;
+
+                case 5:
+                    statusDescription = `
+                        <div
+                            style="
+                                margin-top:0.75rem;
+                                padding:0.65rem;
+                                border-radius:0.5rem;
+                                background:#dcfce7;
+                                color:#166534;
+                                font-size:0.85rem;
+                            "
+                        >
+                            Все этапы заявки завершены.
+                        </div>
+                    `;
+                    break;
+
+                case 6:
+                    statusDescription = `
+                        <div
+                            style="
+                                margin-top:0.75rem;
+                                padding:0.65rem;
+                                border-radius:0.5rem;
+                                background:#f1f5f9;
+                                color:#475569;
+                                font-size:0.85rem;
+                            "
+                        >
+                            Заявка отменена.
+                        </div>
+                    `;
+                    break;
+            }
+
+            // ---------------------------------------------
             // Подготовка текста
             // ---------------------------------------------
 
@@ -980,6 +1299,8 @@ async function loadAllRequests() {
                         </div>
 
                     </div>
+
+                    ${statusDescription}
 
                 </div>
 

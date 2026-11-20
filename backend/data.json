@@ -1,33 +1,48 @@
 {
-  "1": {
-    "shelterName": "Приют-партнёр",
-    "fullStory": "Лечение к клинике",
-    "photoUrl": "http://localhost:3001/uploads/photo-1795175038983-674475.jpg",
-    "docUrl": "http://localhost:3001/uploads/doc-1795175039012-364955.jpg",
-    "milestones": {
-      "1": {
-        "docUrl": "http://localhost:3001/uploads/ms-1795117365308-705250.jpg",
-        "uploadedAt": "2026-11-19T19:42:45.316Z"
-      }
+  "drafts": {},
+  "requests": {
+    "1": {
+      "chainRequestId": "1",
+      "draftId": null,
+      "photoUrl": "http://localhost:3001/uploads/photo-1795184965587-231c1530004b1828.jpg",
+      "shelterName": "Приют-партнёр",
+      "animalName": "",
+      "fullStory": "Лечение в клинике",
+      "docUrl": "http://localhost:3001/uploads/doc-1795184965602-5e61c2b69b1b8d6b.jpg",
+      "milestones": {
+        "1": {
+          "docUrl": "http://localhost:3001/uploads/ms-1795117365308-705250.jpg",
+          "uploadedAt": "2026-11-19T19:42:45.316Z"
+        }
+      },
+      "updatedAt": "2026-11-20T14:29:25.639Z"
+    },
+    "2": {
+      "chainRequestId": "2",
+      "draftId": null,
+      "photoUrl": "http://localhost:3001/uploads/photo-1795175500950-8680.jpg",
+      "shelterName": "Приют-партнёр",
+      "animalName": "",
+      "fullStory": "Покупка  лекарств",
+      "docUrl": "http://localhost:3001/uploads/doc-1795175500951-991881.jpg",
+      "milestones": {
+        "1": {
+          "docUrl": "http://localhost:3001/uploads/ms-1795175953412-352615.jpg",
+          "uploadedAt": "2026-11-20T11:59:13.491Z"
+        }
+      },
+      "updatedAt": "2026-11-20T14:29:25.632Z"
+    },
+    "3": {
+      "chainRequestId": "3",
+      "draftId": null,
+      "photoUrl": "http://localhost:3001/uploads/photo-1795123343811-41869.jpg",
+      "shelterName": "Приют-партнёр",
+      "animalName": "",
+      "fullStory": "покупка лекарств",
+      "docUrl": "http://localhost:3001/uploads/doc-1795123343828-979937.jpg",
+      "milestones": {},
+      "updatedAt": "2026-11-20T14:29:25.632Z"
     }
-  },
-  "2": {
-    "shelterName": "Приют-партнёр",
-    "fullStory": "Покупка  лекарств",
-    "photoUrl": "http://localhost:3001/uploads/photo-1795175500950-8680.jpg",
-    "docUrl": "http://localhost:3001/uploads/doc-1795175500951-991881.jpg",
-    "milestones": {
-      "1": {
-        "docUrl": "http://localhost:3001/uploads/ms-1795175953412-352615.jpg",
-        "uploadedAt": "2026-11-20T11:59:13.491Z"
-      }
-    }
-  },
-  "3": {
-    "milestones": {},
-    "shelterName": "Приют-партнёр",
-    "fullStory": "покупка лекарств",
-    "photoUrl": "http://localhost:3001/uploads/photo-1795123343811-41869.jpg",
-    "docUrl": "http://localhost:3001/uploads/doc-1795123343828-979937.jpg"
   }
 }
