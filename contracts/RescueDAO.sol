@@ -1,7 +1,12 @@
+
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
 import "./IRescueContracts.sol";
+
+// =========================================================
+// ИНТЕРФЕЙС RESCUEMILESTONES
+// =========================================================
 
 interface IRescueMilestoneSummary {
     function getMilestoneSummary(
@@ -9,13 +14,35 @@ interface IRescueMilestoneSummary {
     ) external view returns (uint256 total, uint256 count);
 }
 
+// =========================================================
+// ИНТЕРФЕЙС RESCUEBADGES
+// =========================================================
+
+interface IRescueBadges {
+    function recordDonation(
+        address donor,
+        uint256 requestId,
+        uint256 amount
+    ) external;
+
+    function onRequestCompleted(
+        uint256 requestId
+    ) external;
+}
+
+// =========================================================
+// ОСНОВНОЙ КОНТРАКТ RESCUEDAO
+// =========================================================
+
 contract RescueDAO {
+
     address public admin;
     address[3] public validators;
 
     address public rescueNftContract;
     address public treasuryContract;
     address public milestonesContract;
+    address public badgesContract;
 
     mapping(address => bool) public isValidator;
     mapping(address => bool) public isMember;
@@ -27,6 +54,10 @@ contract RescueDAO {
     uint256 public constant MAX_VOTING_PERIOD = 30 days;
 
     bool private entered;
+
+    // Уведомления о завершении заявок, которые
+    // не удалось передать в RescueBadges.
+    mapping(uint256 => bool) public pendingBadgeCompletion;
 
     enum RequestStatus {
         Voting,
@@ -41,15 +72,19 @@ contract RescueDAO {
         string description;
         string evidenceURI;
         bytes32 evidenceHash;
+
         address requester;
+
         uint256 requestedAmount;
         uint256 yesVotes;
         uint256 noVotes;
         uint256 votingEndsAt;
+
         uint256 milestoneTotal;
         uint256 releasedAmount;
         uint256 milestoneCount;
         uint256 completedMilestones;
+
         RequestStatus status;
         bool exists;
     }
@@ -59,11 +94,14 @@ contract RescueDAO {
 
     uint256 public requestCount;
 
-    // -----------------------------------------------------
+    // =====================================================
     // СОБЫТИЯ
-    // -----------------------------------------------------
+    // =====================================================
 
-    event DonationReceived(address indexed donor, uint256 amount);
+    event DonationReceived(
+        address indexed donor,
+        uint256 amount
+    );
 
     event RequestDonationReceived(
         uint256 indexed requestId,
@@ -71,11 +109,25 @@ contract RescueDAO {
         uint256 amount
     );
 
-    event TargetFundsReserved(uint256 indexed requestId, uint256 amount);
-    event GeneralFundsReserved(uint256 indexed requestId, uint256 amount);
-    event TargetFundsReassigned(uint256 indexed requestId, uint256 amount);
+    event TargetFundsReserved(
+        uint256 indexed requestId,
+        uint256 amount
+    );
 
-    event MemberStatusChanged(address indexed member, bool registered);
+    event GeneralFundsReserved(
+        uint256 indexed requestId,
+        uint256 amount
+    );
+
+    event TargetFundsReassigned(
+        uint256 indexed requestId,
+        uint256 amount
+    );
+
+    event MemberStatusChanged(
+        address indexed member,
+        bool registered
+    );
 
     event AidRequestCreated(
         uint256 indexed requestId,
@@ -113,10 +165,29 @@ contract RescueDAO {
     event TreasuryUpdated(address indexed treasury);
     event NftContractUpdated(address indexed nftContract);
     event MilestonesUpdated(address indexed milestones);
+    event BadgesContractUpdated(address indexed badges);
 
-    // -----------------------------------------------------
+    event BadgeDonationRecorded(
+        address indexed donor,
+        uint256 indexed requestId,
+        uint256 amount
+    );
+
+    event BadgeCompletionNotified(
+        uint256 indexed requestId
+    );
+
+    event BadgeCompletionQueued(
+        uint256 indexed requestId
+    );
+
+    event BadgeCompletionRetried(
+        uint256 indexed requestId
+    );
+
+    // =====================================================
     // МОДИФИКАТОРЫ
-    // -----------------------------------------------------
+    // =====================================================
 
     modifier onlyAdmin() {
         require(msg.sender == admin, "Only admin");
@@ -129,32 +200,42 @@ contract RescueDAO {
     }
 
     modifier onlyTreasuryConfigured() {
-        require(treasuryContract != address(0), "Treasury not configured");
+        require(
+            treasuryContract != address(0),
+            "Treasury not configured"
+        );
         _;
     }
 
     modifier onlyMilestones() {
-        require(msg.sender == milestonesContract, "Only Milestones");
+        require(
+            msg.sender == milestonesContract,
+            "Only Milestones"
+        );
         _;
     }
 
     modifier nonReentrant() {
         require(!entered, "Reentrant call");
+
         entered = true;
         _;
         entered = false;
     }
 
-    // -----------------------------------------------------
+    // =====================================================
     // КОНСТРУКТОР
-    // -----------------------------------------------------
+    // =====================================================
 
     constructor(address[3] memory _validators) {
         admin = msg.sender;
         isMember[msg.sender] = true;
 
         for (uint256 i = 0; i < 3; i++) {
-            require(_validators[i] != address(0), "Invalid validator");
+            require(
+                _validators[i] != address(0),
+                "Invalid validator"
+            );
 
             for (uint256 j = i + 1; j < 3; j++) {
                 require(
@@ -165,19 +246,28 @@ contract RescueDAO {
 
             validators[i] = _validators[i];
             isValidator[_validators[i]] = true;
+
             validatorReputation[_validators[i]] = 50;
         }
     }
 
-    // -----------------------------------------------------
-    // НАСТРОЙКА КОНТРАКТОВ
-    // -----------------------------------------------------
+    // =====================================================
+    // НАСТРОЙКА ВНЕШНИХ КОНТРАКТОВ
+    // =====================================================
 
     function setTreasuryContract(address treasury)
         external
         onlyAdmin
     {
-        require(treasury != address(0), "Invalid Treasury");
+        require(
+            treasury != address(0),
+            "Invalid Treasury"
+        );
+
+        require(
+            treasury.code.length > 0,
+            "Treasury is not a contract"
+        );
 
         treasuryContract = treasury;
 
@@ -194,7 +284,15 @@ contract RescueDAO {
         external
         onlyAdmin
     {
-        require(nft != address(0), "Invalid NFT");
+        require(
+            nft != address(0),
+            "Invalid NFT"
+        );
+
+        require(
+            nft.code.length > 0,
+            "NFT is not a contract"
+        );
 
         rescueNftContract = nft;
 
@@ -205,8 +303,20 @@ contract RescueDAO {
         external
         onlyAdmin
     {
-        require(milestones != address(0), "Invalid Milestones");
-        require(treasuryContract != address(0), "Treasury not configured");
+        require(
+            milestones != address(0),
+            "Invalid Milestones"
+        );
+
+        require(
+            milestones.code.length > 0,
+            "Invalid contract"
+        );
+
+        require(
+            treasuryContract != address(0),
+            "Treasury not configured"
+        );
 
         milestonesContract = milestones;
 
@@ -217,14 +327,45 @@ contract RescueDAO {
         emit MilestonesUpdated(milestones);
     }
 
+    /**
+     * @dev Подключение контракта достижений.
+     *
+     * RescueBadges должен быть развернут с адресом
+     * данного RescueDAO в конструкторе.
+     */
+    function setBadgesContract(address badges)
+        external
+        onlyAdmin
+    {
+        require(
+            badges != address(0),
+            "Invalid Badges"
+        );
+
+        require(
+            badges.code.length > 0,
+            "Badges is not a contract"
+        );
+
+        badgesContract = badges;
+
+        emit BadgesContractUpdated(badges);
+    }
+
     function setMember(address member, bool registered)
         external
         onlyAdmin
     {
-        require(member != address(0), "Invalid member");
+        require(
+            member != address(0),
+            "Invalid member"
+        );
 
         if (member == admin) {
-            require(registered, "Admin must remain registered");
+            require(
+                registered,
+                "Admin must remain registered"
+            );
         }
 
         isMember[member] = registered;
@@ -232,25 +373,160 @@ contract RescueDAO {
         emit MemberStatusChanged(member, registered);
     }
 
-    // -----------------------------------------------------
-    // ПОЖЕРТВОВАНИЯ
-    // -----------------------------------------------------
+    // =====================================================
+    // УЧЁТ ДОСТИЖЕНИЙ
+    // =====================================================
 
+    /**
+     * @dev Передача информации о пожертвовании
+     * в RescueBadges.
+     *
+     * requestId = 0 означает пожертвование
+     * в общий фонд.
+     *
+     * requestId > 0 означает целевое пожертвование.
+     *
+     * Если контракт бейджей не подключён,
+     * обычная работа DAO продолжается.
+     */
+    function _recordBadgeDonation(
+        address donor,
+        uint256 requestId,
+        uint256 amount
+    ) internal {
+        if (badgesContract == address(0)) {
+            return;
+        }
+
+        IRescueBadges(badgesContract).recordDonation(
+            donor,
+            requestId,
+            amount
+        );
+
+        emit BadgeDonationRecorded(
+            donor,
+            requestId,
+            amount
+        );
+    }
+
+    /**
+     * @dev Уведомление RescueBadges о завершении заявки.
+     *
+     * Если вызов не удался, заявка всё равно считается
+     * завершённой. Уведомление можно повторить отдельно.
+     */
+    function _notifyBadgeCompletion(
+        uint256 requestId
+    ) internal {
+        if (badgesContract == address(0)) {
+            pendingBadgeCompletion[requestId] = true;
+
+            emit BadgeCompletionQueued(requestId);
+            return;
+        }
+
+        try IRescueBadges(badgesContract).onRequestCompleted(
+            requestId
+        ) {
+            pendingBadgeCompletion[requestId] = false;
+
+            emit BadgeCompletionNotified(requestId);
+        } catch {
+            pendingBadgeCompletion[requestId] = true;
+
+            emit BadgeCompletionQueued(requestId);
+        }
+    }
+
+    /**
+     * @dev Повторная отправка уведомления о завершении заявки.
+     *
+     * Может вызвать любой пользователь.
+     */
+    function retryBadgeCompletion(
+        uint256 requestId
+    ) external {
+        AidRequest storage r = aidRequests[requestId];
+
+        require(
+            r.exists,
+            "Request does not exist"
+        );
+
+        require(
+            r.status == RequestStatus.Completed,
+            "Request not completed"
+        );
+
+        require(
+            pendingBadgeCompletion[requestId],
+            "No pending notification"
+        );
+
+        require(
+            badgesContract != address(0),
+            "Badges not configured"
+        );
+
+        // Если вызов завершится ошибкой, транзакция откатится,
+        // а pendingBadgeCompletion останется true.
+        IRescueBadges(badgesContract).onRequestCompleted(
+            requestId
+        );
+
+        pendingBadgeCompletion[requestId] = false;
+
+        emit BadgeCompletionRetried(requestId);
+    }
+
+    // =====================================================
+    // ПОЖЕРТВОВАНИЯ
+    // =====================================================
+
+    /**
+     * @dev Обычное пожертвование в общий фонд.
+     *
+     * Учитывается для достижений:
+     * - Первое доброе дело;
+     * - Постоянная поддержка.
+     *
+     * Не учитывается как поддержка отдельной заявки.
+     */
     function donate()
         external
         payable
         onlyTreasuryConfigured
         nonReentrant
     {
-        require(msg.value > 0, "Zero donation");
+        require(
+            msg.value > 0,
+            "Zero donation"
+        );
 
         IRescueTreasury(treasuryContract).donate{
             value: msg.value
         }(msg.sender);
 
-        emit DonationReceived(msg.sender, msg.value);
+        _recordBadgeDonation(
+            msg.sender,
+            0,
+            msg.value
+        );
+
+        emit DonationReceived(
+            msg.sender,
+            msg.value
+        );
     }
 
+    /**
+     * @dev Целевое пожертвование на конкретную заявку.
+     *
+     * Учитывается для всех достижений, условия которых
+     * связаны с пожертвованиями и поддержанными заявками.
+     */
     function donateToRequest(uint256 requestId)
         external
         payable
@@ -259,13 +535,29 @@ contract RescueDAO {
     {
         AidRequest storage r = aidRequests[requestId];
 
-        require(r.exists, "Request does not exist");
-        require(r.status == RequestStatus.Voting, "Not voting");
-        require(block.timestamp < r.votingEndsAt, "Voting ended");
-        require(msg.value > 0, "Zero donation");
+        require(
+            r.exists,
+            "Request does not exist"
+        );
+
+        require(
+            r.status == RequestStatus.Voting,
+            "Not voting"
+        );
+
+        require(
+            block.timestamp < r.votingEndsAt,
+            "Voting ended"
+        );
+
+        require(
+            msg.value > 0,
+            "Zero donation"
+        );
 
         uint256 current =
-            IRescueTreasury(treasuryContract).requestDonations(requestId);
+            IRescueTreasury(treasuryContract)
+                .requestDonations(requestId);
 
         require(
             current + msg.value <= r.requestedAmount,
@@ -276,12 +568,22 @@ contract RescueDAO {
             value: msg.value
         }(requestId, msg.sender);
 
-        emit RequestDonationReceived(requestId, msg.sender, msg.value);
+        _recordBadgeDonation(
+            msg.sender,
+            requestId,
+            msg.value
+        );
+
+        emit RequestDonationReceived(
+            requestId,
+            msg.sender,
+            msg.value
+        );
     }
 
-    // -----------------------------------------------------
+    // =====================================================
     // СОЗДАНИЕ ЗАЯВКИ
-    // -----------------------------------------------------
+    // =====================================================
 
     function createAidRequest(
         string calldata animalName,
@@ -295,11 +597,30 @@ contract RescueDAO {
         onlyMember
         returns (uint256)
     {
-        require(bytes(animalName).length > 0, "Empty animal name");
-        require(bytes(description).length > 0, "Empty description");
-        require(bytes(evidenceURI).length > 0, "Empty evidence URI");
-        require(evidenceHash != bytes32(0), "Invalid evidence hash");
-        require(requestedAmount > 0, "Invalid amount");
+        require(
+            bytes(animalName).length > 0,
+            "Empty animal name"
+        );
+
+        require(
+            bytes(description).length > 0,
+            "Empty description"
+        );
+
+        require(
+            bytes(evidenceURI).length > 0,
+            "Empty evidence URI"
+        );
+
+        require(
+            evidenceHash != bytes32(0),
+            "Invalid evidence hash"
+        );
+
+        require(
+            requestedAmount > 0,
+            "Invalid amount"
+        );
 
         require(
             votingDuration >= MIN_VOTING_PERIOD &&
@@ -308,24 +629,32 @@ contract RescueDAO {
         );
 
         uint256 id = ++requestCount;
+
         AidRequest storage r = aidRequests[id];
 
         r.animalName = animalName;
         r.description = description;
         r.evidenceURI = evidenceURI;
         r.evidenceHash = evidenceHash;
+
         r.requester = msg.sender;
         r.requestedAmount = requestedAmount;
         r.votingEndsAt = block.timestamp + votingDuration;
+
         r.status = RequestStatus.Voting;
         r.exists = true;
 
+        // Выпуск NFT-паспорта животного.
         if (rescueNftContract != address(0)) {
             try IRescueNFT(rescueNftContract).mintPassport(
                 msg.sender,
                 id
             ) returns (uint256 tokenId) {
-                emit PassportMinted(id, tokenId, msg.sender);
+                emit PassportMinted(
+                    id,
+                    tokenId,
+                    msg.sender
+                );
             } catch {
                 // Ошибка выпуска NFT не отменяет создание заявки.
             }
@@ -342,20 +671,38 @@ contract RescueDAO {
         return id;
     }
 
-    // -----------------------------------------------------
+    // =====================================================
     // ГОЛОСОВАНИЕ
-    // -----------------------------------------------------
+    // =====================================================
 
-    function vote(uint256 requestId, bool support)
+    function vote(
+        uint256 requestId,
+        bool support
+    )
         external
         onlyMember
     {
         AidRequest storage r = aidRequests[requestId];
 
-        require(r.exists, "Request does not exist");
-        require(r.status == RequestStatus.Voting, "Not voting");
-        require(block.timestamp < r.votingEndsAt, "Voting ended");
-        require(!hasVoted[requestId][msg.sender], "Already voted");
+        require(
+            r.exists,
+            "Request does not exist"
+        );
+
+        require(
+            r.status == RequestStatus.Voting,
+            "Not voting"
+        );
+
+        require(
+            block.timestamp < r.votingEndsAt,
+            "Voting ended"
+        );
+
+        require(
+            !hasVoted[requestId][msg.sender],
+            "Already voted"
+        );
 
         hasVoted[requestId][msg.sender] = true;
 
@@ -374,21 +721,35 @@ contract RescueDAO {
         );
     }
 
-    // -----------------------------------------------------
+    // =====================================================
     // ЗАВЕРШЕНИЕ ГОЛОСОВАНИЯ
-    // -----------------------------------------------------
+    // =====================================================
 
     function finalizeRequest(uint256 requestId)
         external
         onlyTreasuryConfigured
     {
-        require(milestonesContract != address(0), "Milestones not configured");
+        require(
+            milestonesContract != address(0),
+            "Milestones not configured"
+        );
 
         AidRequest storage r = aidRequests[requestId];
 
-        require(r.exists, "Request does not exist");
-        require(r.status == RequestStatus.Voting, "Already finalized");
-        require(block.timestamp >= r.votingEndsAt, "Voting not ended");
+        require(
+            r.exists,
+            "Request does not exist"
+        );
+
+        require(
+            r.status == RequestStatus.Voting,
+            "Already finalized"
+        );
+
+        require(
+            block.timestamp >= r.votingEndsAt,
+            "Voting not ended"
+        );
 
         (
             uint256 milestoneTotal,
@@ -404,7 +765,8 @@ contract RescueDAO {
             r.yesVotes > r.noVotes &&
             r.yesVotes > 0;
 
-        IRescueTreasury t = IRescueTreasury(treasuryContract);
+        IRescueTreasury t =
+            IRescueTreasury(treasuryContract);
 
         uint256 targetAvailable =
             t.getAvailableRequestDonations(requestId);
@@ -421,7 +783,11 @@ contract RescueDAO {
         bool fundsAvailable =
             t.getAvailableBalance() >= generalRequired;
 
-        if (milestonesValid && votingApproved && fundsAvailable) {
+        if (
+            milestonesValid &&
+            votingApproved &&
+            fundsAvailable
+        ) {
             t.reserveFunds(
                 requestId,
                 targetToReserve,
@@ -431,11 +797,17 @@ contract RescueDAO {
             r.status = RequestStatus.Approved;
 
             if (targetToReserve > 0) {
-                emit TargetFundsReserved(requestId, targetToReserve);
+                emit TargetFundsReserved(
+                    requestId,
+                    targetToReserve
+                );
             }
 
             if (generalRequired > 0) {
-                emit GeneralFundsReserved(requestId, generalRequired);
+                emit GeneralFundsReserved(
+                    requestId,
+                    generalRequired
+                );
             }
 
             emit AidRequestFinalized(
@@ -443,6 +815,7 @@ contract RescueDAO {
                 RequestStatus.Approved,
                 r.requestedAmount
             );
+
         } else {
             r.status = RequestStatus.Rejected;
 
@@ -450,7 +823,10 @@ contract RescueDAO {
                 t.reassignAvailableTargetFunds(requestId);
 
             if (reassigned > 0) {
-                emit TargetFundsReassigned(requestId, reassigned);
+                emit TargetFundsReassigned(
+                    requestId,
+                    reassigned
+                );
             }
 
             emit AidRequestFinalized(
@@ -461,18 +837,28 @@ contract RescueDAO {
         }
     }
 
-    // -----------------------------------------------------
+    // =====================================================
     // ВЫЗОВЫ ИЗ RESCUEMILESTONES
-    // -----------------------------------------------------
+    // =====================================================
 
-    function onMilestoneAdded(uint256 requestId, uint256 amount)
+    function onMilestoneAdded(
+        uint256 requestId,
+        uint256 amount
+    )
         external
         onlyMilestones
     {
         AidRequest storage r = aidRequests[requestId];
 
-        require(r.exists, "Request does not exist");
-        require(r.status == RequestStatus.Voting, "Not voting");
+        require(
+            r.exists,
+            "Request does not exist"
+        );
+
+        require(
+            r.status == RequestStatus.Voting,
+            "Not voting"
+        );
 
         require(
             r.milestoneTotal + amount <= r.requestedAmount,
@@ -487,20 +873,45 @@ contract RescueDAO {
         external
         onlyMilestones
     {
-        require(isValidator[validator], "Invalid validator");
+        require(
+            isValidator[validator],
+            "Invalid validator"
+        );
 
         validatorReputation[validator] += 5;
         validatorApprovedTotal[validator]++;
     }
 
-    function onMilestoneReleased(uint256 requestId, uint256 amount)
+    /**
+     * @dev Вызывается RescueMilestones после выпуска средств
+     * по очередному этапу восстановления.
+     *
+     * При завершении всех этапов заявка получает статус
+     * Completed, после чего DAO уведомляет RescueBadges.
+     */
+    function onMilestoneReleased(
+        uint256 requestId,
+        uint256 amount
+    )
         external
         onlyMilestones
     {
         AidRequest storage r = aidRequests[requestId];
 
-        require(r.exists, "Request does not exist");
-        require(r.status == RequestStatus.Approved, "Not approved");
+        require(
+            r.exists,
+            "Request does not exist"
+        );
+
+        require(
+            r.status == RequestStatus.Approved,
+            "Not approved"
+        );
+
+        require(
+            amount > 0,
+            "Zero amount"
+        );
 
         r.completedMilestones++;
         r.releasedAmount += amount;
@@ -510,14 +921,23 @@ contract RescueDAO {
             "Too many completed milestones"
         );
 
-        if (r.completedMilestones == r.milestoneCount) {
+        require(
+            r.releasedAmount <= r.requestedAmount,
+            "Released amount exceeds goal"
+        );
+
+        if (
+            r.completedMilestones == r.milestoneCount
+        ) {
             r.status = RequestStatus.Completed;
+
+            _notifyBadgeCompletion(requestId);
         }
     }
 
-    // -----------------------------------------------------
+    // =====================================================
     // ОТМЕНА ЗАЯВКИ
-    // -----------------------------------------------------
+    // =====================================================
 
     function cancelRequest(uint256 requestId)
         external
@@ -525,10 +945,14 @@ contract RescueDAO {
     {
         AidRequest storage r = aidRequests[requestId];
 
-        require(r.exists, "Request does not exist");
+        require(
+            r.exists,
+            "Request does not exist"
+        );
 
         require(
-            msg.sender == r.requester || msg.sender == admin,
+            msg.sender == r.requester ||
+            msg.sender == admin,
             "Not authorized"
         );
 
@@ -540,20 +964,26 @@ contract RescueDAO {
 
         r.status = RequestStatus.Cancelled;
 
-        IRescueTreasury t = IRescueTreasury(treasuryContract);
+        IRescueTreasury t =
+            IRescueTreasury(treasuryContract);
 
-        uint256 returnedAmount = t.releaseReservation(requestId);
+        uint256 returnedAmount =
+            t.releaseReservation(requestId);
+
         uint256 reassignedAmount =
             t.reassignAvailableTargetFunds(requestId);
 
         returnedAmount += reassignedAmount;
 
-        emit AidRequestCancelled(requestId, returnedAmount);
+        emit AidRequestCancelled(
+            requestId,
+            returnedAmount
+        );
     }
 
-    // -----------------------------------------------------
-    // МИНИМАЛЬНЫЕ ГЕТТЕРЫ ДЛЯ ВЗАИМОДЕЙСТВИЯ КОНТРАКТОВ
-    // -----------------------------------------------------
+    // =====================================================
+    // ГЕТТЕРЫ ДЛЯ ВЗАИМОДЕЙСТВИЯ КОНТРАКТОВ
+    // =====================================================
 
     function getRequestCore(uint256 requestId)
         external
@@ -634,17 +1064,27 @@ contract RescueDAO {
     function getMilestoneSummary(uint256 requestId)
         external
         view
-        returns (uint256 total, uint256 count)
+        returns (
+            uint256 total,
+            uint256 count
+        )
     {
         AidRequest storage r = aidRequests[requestId];
-        require(r.exists, "Request does not exist");
 
-        return (r.milestoneTotal, r.milestoneCount);
+        require(
+            r.exists,
+            "Request does not exist"
+        );
+
+        return (
+            r.milestoneTotal,
+            r.milestoneCount
+        );
     }
 
-    // -----------------------------------------------------
+    // =====================================================
     // ЗАЩИТА ОТ ПРЯМОГО ПОЛУЧЕНИЯ ETH
-    // -----------------------------------------------------
+    // =====================================================
 
     receive() external payable {
         revert("Use donation functions");
