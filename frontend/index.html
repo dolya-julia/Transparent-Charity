@@ -1,4 +1,3 @@
-
 <!DOCTYPE html>
 <html lang="ru">
 
@@ -17,10 +16,6 @@
 </head>
 
 <body>
-
-    <!-- =================================================
-         ШАПКА САЙТА
-    ================================================== -->
 
     <header>
         <div class="header-inner">
@@ -41,6 +36,10 @@
 
                 <a href="validator.html">
                     Валидаторы и история
+                </a>
+
+                <a href="badges.html">
+                    Мои достижения
                 </a>
 
                 <span
@@ -64,16 +63,7 @@
         </div>
     </header>
 
-
-    <!-- =================================================
-         ОСНОВНОЕ СОДЕРЖИМОЕ
-    ================================================== -->
-
     <main>
-
-        <!-- =================================================
-             ЗАГОЛОВОК СТРАНИЦЫ
-        ================================================== -->
 
         <div class="page-header">
 
@@ -89,11 +79,6 @@
             </p>
 
         </div>
-
-
-        <!-- =================================================
-             СТАТУС ПОДКЛЮЧЕНИЯ
-        ================================================== -->
 
         <section
             class="box"
@@ -133,11 +118,6 @@
 
         </section>
 
-
-        <!-- =================================================
-             СТАТИСТИКА ОБЩЕГО ФОНДА
-        ================================================== -->
-
         <section class="stats-grid">
 
             <div class="stat-card">
@@ -155,7 +135,6 @@
 
             </div>
 
-
             <div class="stat-card">
 
                 <div class="stat-label">
@@ -172,7 +151,6 @@
 
             </div>
 
-
             <div class="stat-card">
 
                 <div class="stat-label">
@@ -187,7 +165,6 @@
                 </div>
 
             </div>
-
 
             <div class="stat-card">
 
@@ -205,11 +182,6 @@
             </div>
 
         </section>
-
-
-        <!-- =================================================
-             СТАТИСТИКА ЦЕЛЕВЫХ ПОЖЕРТВОВАНИЙ
-        ================================================== -->
 
         <section
             class="box"
@@ -257,21 +229,11 @@
                 "
             >
                 Подробный прогресс сбора отображается в карточках заявок.
-                История личных взносов будет доступна в профиле подключённого кошелька.
+                История достижений и бейджей доступна в разделе «Мои достижения».
             </p>
         </section>
 
-
-        <!-- =================================================
-             ПОЖЕРТВОВАНИЕ И СОЗДАНИЕ ЗАЯВКИ
-        ================================================== -->
-
         <section class="two-col">
-
-
-            <!-- =============================================
-                 ПОЖЕРТВОВАНИЕ
-            ============================================== -->
 
             <div class="box">
 
@@ -292,7 +254,6 @@
                     последующего подтверждения этапов помощи.
                 </p>
 
-
                 <div class="form-group">
 
                     <label for="donateAmount">
@@ -309,7 +270,6 @@
 
                 </div>
 
-
                 <button
                     type="button"
                     class="btn btn-primary"
@@ -318,7 +278,6 @@
                 >
                     Пожертвовать в общий пул
                 </button>
-
 
                 <p
                     style="
@@ -333,11 +292,6 @@
                 </p>
 
             </div>
-
-
-            <!-- =============================================
-                 СОЗДАНИЕ ЗАЯВКИ
-            ============================================== -->
 
             <div class="box">
 
@@ -356,9 +310,6 @@
                     участникам DAO.
                 </p>
 
-
-                <!-- Имя животного -->
-
                 <div class="form-group">
 
                     <label for="reqAnimalName">
@@ -374,9 +325,6 @@
 
                 </div>
 
-
-                <!-- Описание заявки -->
-
                 <div class="form-group">
 
                     <label for="reqDescription">
@@ -391,9 +339,6 @@
                     ></textarea>
 
                 </div>
-
-
-                <!-- Сумма и срок голосования -->
 
                 <div
                     class="two-col"
@@ -419,7 +364,6 @@
 
                     </div>
 
-
                     <div class="form-group">
 
                         <label for="reqDuration">
@@ -437,9 +381,6 @@
                     </div>
 
                 </div>
-
-
-                <!-- Ссылка на документы -->
 
                 <div class="form-group">
 
@@ -466,9 +407,6 @@
 
                 </div>
 
-
-                <!-- Файл документа -->
-
                 <div class="form-group">
 
                     <label for="reqEvidenceFile">
@@ -493,9 +431,6 @@
                     </small>
 
                 </div>
-
-
-                <!-- Фотография животного -->
 
                 <div class="form-group">
 
@@ -523,9 +458,6 @@
 
                 </div>
 
-
-                <!-- Публикация заявки -->
-
                 <button
                     type="button"
                     class="btn btn-dark"
@@ -534,7 +466,6 @@
                 >
                     Опубликовать заявку в DAO
                 </button>
-
 
                 <p
                     style="
@@ -552,11 +483,6 @@
 
         </section>
 
-
-        <!-- =================================================
-             СПИСОК ЗАЯВОК
-        ================================================== -->
-
         <section>
 
             <div
@@ -569,7 +495,6 @@
                 </h2>
 
             </div>
-
 
             <div
                 id="requestsGrid"
@@ -584,13 +509,7 @@
 
         </section>
 
-
     </main>
-
-
-    <!-- =================================================
-         ПОДВАЛ
-    ================================================== -->
 
     <footer>
 
@@ -611,119 +530,59 @@
 
     </footer>
 
-
-    <!-- =================================================
-         JAVASCRIPT
-    ================================================== -->
-
-    <!-- Ethers.js v6 -->
-
     <script src="https://cdnjs.cloudflare.com/ajax/libs/ethers/6.13.1/ethers.umd.min.js"></script>
-
-
-    <!-- Конфигурация адресов и ABI пяти контрактов -->
-
     <script src="js/config.js"></script>
-
-
-    <!-- Подключение MetaMask и инициализация контрактов -->
-
     <script src="js/wallet.js"></script>
-
-
-    <!-- Логика главной страницы -->
-
     <script src="js/home.js"></script>
 
-
-    <!-- =================================================
-         ОБНОВЛЕНИЕ ИНДИКАТОРА СЕТИ
-    ================================================== -->
-
     <script>
+        async function updateConnectionInfo() {
+            const connectionStatus = document.getElementById("connectionStatus");
+            const networkBadge = document.getElementById("networkBadge");
+            if (!connectionStatus || !networkBadge) return;
 
-        window.addEventListener("DOMContentLoaded", () => {
-
-            const originalInitWeb3 = window.initWeb3;
-
-            if (typeof originalInitWeb3 !== "function") {
-                return;
-            }
-
-            const connectionStatus =
-                document.getElementById("connectionStatus");
-
-            const networkBadge =
-                document.getElementById("networkBadge");
-
-
-            if (!connectionStatus || !networkBadge) {
-                return;
-            }
-
-
-            // Обновление информации о подключении.
-            function updateConnectionInfo(connected) {
-
-                if (connected) {
-
-                    connectionStatus.textContent =
-                        userAddress
-                            ? "Кошелёк подключён. Доступны операции с блокчейном."
-                            : "Сеть Geth доступна. Для транзакций подключите MetaMask.";
-
-                    networkBadge.textContent =
-                        "Geth · 1337";
-
-                    networkBadge.className =
-                        "badge badge-green";
-
-                } else {
-
-                    connectionStatus.textContent =
-                        "Не удалось подключиться к локальной сети Geth.";
-
-                    networkBadge.textContent =
-                        "Нет подключения";
-
-                    networkBadge.className =
-                        "badge badge-red";
+            try {
+                if (typeof provider === "undefined" || !provider) {
+                    connectionStatus.textContent = "Проверка подключения к локальной сети Geth...";
+                    networkBadge.textContent = "Нет подключения";
+                    networkBadge.className = "badge badge-gray";
+                    return;
                 }
+
+                const network = await provider.getNetwork();
+                if (network.chainId !== 1337n) {
+                    connectionStatus.textContent = "Подключена другая сеть. Выбери локальную сеть Geth с Chain ID 1337.";
+                    networkBadge.textContent = "Неверная сеть";
+                    networkBadge.className = "badge badge-red";
+                    return;
+                }
+
+                const hasWallet = typeof userAddress !== "undefined" && Boolean(userAddress);
+                connectionStatus.textContent = hasWallet
+                    ? "Кошелёк подключён. Доступны операции с блокчейном."
+                    : "Сеть Geth доступна. Для транзакций подключи MetaMask.";
+                networkBadge.textContent = "Geth · 1337";
+                networkBadge.className = "badge badge-green";
+            } catch (error) {
+                console.error("Ошибка проверки подключения:", error);
+                connectionStatus.textContent = "Не удалось подключиться к локальной сети Geth.";
+                networkBadge.textContent = "Нет подключения";
+                networkBadge.className = "badge badge-red";
             }
+        }
 
+        window.addEventListener("DOMContentLoaded", async () => {
+            await updateConnectionInfo();
+            setTimeout(updateConnectionInfo, 500);
+            setTimeout(updateConnectionInfo, 1500);
 
-            // Сохраняем исходную функцию инициализации.
-            window.initWeb3 = async function () {
-
-                const result = await originalInitWeb3();
-
-                updateConnectionInfo(result);
-
-                return result;
-            };
-
-
-            // Обновляем индикатор после инициализации.
-            if (typeof provider !== "undefined" && provider) {
-
-                provider.getNetwork()
-                    .then(network => {
-
-                        updateConnectionInfo(
-                            network.chainId === 1337n
-                        );
-
-                    })
-                    .catch(() => {
-
-                        updateConnectionInfo(false);
-
-                    });
+            if (window.ethereum) {
+                window.ethereum.on("chainChanged", () => setTimeout(updateConnectionInfo, 300));
+                window.ethereum.on("accountsChanged", () => setTimeout(updateConnectionInfo, 300));
             }
-
         });
-
     </script>
 
 </body>
+
 </html>

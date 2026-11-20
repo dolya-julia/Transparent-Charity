@@ -1,14 +1,9 @@
-
 <!DOCTYPE html>
 <html lang="ru">
 
 <head>
     <meta charset="UTF-8">
-
-    <meta
-        name="viewport"
-        content="width=device-width, initial-scale=1.0"
-    >
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
     <meta
         name="description"
@@ -21,10 +16,6 @@
 </head>
 
 <body>
-
-    <!-- =================================================
-         ШАПКА САЙТА
-    ================================================== -->
 
     <header>
 
@@ -46,6 +37,10 @@
 
                 <a href="validator.html">
                     Валидаторы и история
+                </a>
+
+                <a href="badges.html">
+                    Мои достижения
                 </a>
 
                 <span
@@ -70,35 +65,15 @@
 
     </header>
 
-
-    <!-- =================================================
-         ОСНОВНОЕ СОДЕРЖИМОЕ
-    ================================================== -->
-
     <main>
 
-        <!-- =================================================
-             НАВИГАЦИЯ НАЗАД
-        ================================================== -->
-
         <div style="margin-bottom: 1.25rem;">
-
-            <a
-                href="index.html"
-                class="tx-link"
-            >
+            <a href="index.html" class="tx-link">
                 &larr; Назад к фонду и списку заявок
             </a>
-
         </div>
 
-
-        <!-- =================================================
-             ЗАГОЛОВОК СТРАНИЦЫ
-        ================================================== -->
-
         <div class="page-header">
-
             <h1>
                 Информация о заявке
             </h1>
@@ -108,39 +83,25 @@
                 её статусе, этапах финансирования,
                 подтверждающих документах и NFT-паспорте животного.
             </p>
-
         </div>
-
-
-        <!-- =================================================
-             СОСТОЯНИЕ ПОДКЛЮЧЕНИЯ К БЛОКЧЕЙНУ
-        ================================================== -->
 
         <section
             class="box"
             id="connectionInfo"
             style="margin-bottom: 1.5rem;"
         >
-
             <div class="row-between">
-
                 <div>
-
                     <h3 style="margin-bottom: 0.35rem;">
                         Подключение к блокчейну
                     </h3>
 
                     <p
                         id="connectionStatus"
-                        style="
-                            font-size: 0.9rem;
-                            color: var(--text-muted);
-                            margin: 0;
-                        "
+                        style="font-size: 0.9rem; color: var(--text-muted); margin: 0;"
                     >
                         Проверка подключения к локальной сети Geth...
                     </p>
-
                 </div>
 
                 <span
@@ -149,192 +110,75 @@
                 >
                     Проверка сети
                 </span>
-
             </div>
-
         </section>
 
-
-        <!-- =================================================
-             КОНТЕЙНЕР ДЕТАЛЕЙ ЗАЯВКИ
-        ================================================== -->
-
         <section>
-
             <div
                 id="requestDetailsContainer"
                 class="request-details-container"
             >
-
                 <div class="box">
-
-                    <p>
-                        Загрузка данных заявки из блокчейна...
-                    </p>
-
-                    <p
-                        style="
-                            font-size: 0.85rem;
-                            color: var(--text-muted);
-                            margin-top: 0.5rem;
-                        "
-                    >
+                    <p>Загрузка данных заявки из блокчейна...</p>
+                    <p style="font-size: 0.85rem; color: var(--text-muted); margin-top: 0.5rem;">
                         Пожалуйста, подождите.
                     </p>
-
                 </div>
-
             </div>
-
         </section>
-
 
     </main>
 
-
-    <!-- =================================================
-         ПОДВАЛ
-    ================================================== -->
-
     <footer>
-
         <p>
             RescueDAO — децентрализованная платформа
             прозрачной благотворительности на базе Ethereum.
         </p>
 
-        <p
-            style="
-                font-size: 0.8rem;
-                color: var(--text-muted);
-                margin-top: 0.5rem;
-            "
-        >
+        <p style="font-size: 0.8rem; color: var(--text-muted); margin-top: 0.5rem;">
             Локальная тестовая сеть Geth · Chain ID 1337
         </p>
-
     </footer>
 
-
-    <!-- =================================================
-         JAVASCRIPT
-    ================================================== -->
-
-    <!-- Ethers.js v6 -->
-
     <script src="https://cdnjs.cloudflare.com/ajax/libs/ethers/6.13.1/ethers.umd.min.js"></script>
-
-
-    <!-- Адреса и ABI контрактов:
-         RescueDAO
-         RescueDAOView
-         RescueTreasury
-         RescueMilestones
-         RescueNFT
-    -->
-
     <script src="js/config.js"></script>
-
-
-    <!-- Подключение MetaMask и инициализация контрактов -->
-
     <script src="js/wallet.js"></script>
-
-
-    <!-- Логика страницы конкретной заявки -->
-
     <script src="js/request.js"></script>
 
-
-    <!-- =================================================
-         ИНДИКАТОР ПОДКЛЮЧЕНИЯ
-    ================================================== -->
-
     <script>
-
         window.addEventListener("DOMContentLoaded", () => {
+            const connectionStatus = document.getElementById("connectionStatus");
+            const networkBadge = document.getElementById("networkBadge");
 
-            const connectionStatus =
-                document.getElementById("connectionStatus");
-
-            const networkBadge =
-                document.getElementById("networkBadge");
-
-
-            /**
-             * Обновление информации о подключении.
-             */
             window.updateConnectionInfo = function (connected) {
-
-                if (!connectionStatus || !networkBadge) {
-                    return;
-                }
+                if (!connectionStatus || !networkBadge) return;
 
                 if (connected) {
-
                     connectionStatus.textContent =
                         typeof userAddress !== "undefined" && userAddress
                             ? "Кошелёк подключён. Доступны операции с блокчейном."
                             : "Сеть Geth доступна. Для выполнения транзакций подключите MetaMask.";
-
-                    networkBadge.textContent =
-                        "Geth · 1337";
-
-                    networkBadge.className =
-                        "badge badge-green";
-
+                    networkBadge.textContent = "Geth · 1337";
+                    networkBadge.className = "badge badge-green";
                 } else {
-
                     connectionStatus.textContent =
                         "Нет подключения к локальной сети Geth. Проверьте работу узла и настройки MetaMask.";
-
-                    networkBadge.textContent =
-                        "Нет подключения";
-
-                    networkBadge.className =
-                        "badge badge-red";
+                    networkBadge.textContent = "Нет подключения";
+                    networkBadge.className = "badge badge-red";
                 }
-
             };
 
-
-            /**
-             * Проверка доступности провайдера.
-             */
-            if (
-                typeof provider !== "undefined" &&
-                provider
-            ) {
-
+            if (typeof provider !== "undefined" && provider) {
                 provider.getNetwork()
-
-                    .then(network => {
-
-                        window.updateConnectionInfo(
-                            network.chainId === 1337n
-                        );
-
-                    })
-
+                    .then(network => window.updateConnectionInfo(network.chainId === 1337n))
                     .catch(error => {
-
-                        console.error(
-                            "Ошибка проверки сети:",
-                            error
-                        );
-
+                        console.error("Ошибка проверки сети:", error);
                         window.updateConnectionInfo(false);
-
                     });
-
             } else {
-
                 window.updateConnectionInfo(false);
-
             }
-
         });
-
     </script>
 
 </body>
