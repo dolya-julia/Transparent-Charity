@@ -4,34 +4,38 @@
     "1": {
       "chainRequestId": "1",
       "draftId": null,
-      "photoUrl": "http://localhost:3001/uploads/photo-1795268266524-e64619bfd32b535c.jpg",
+      "photoUrl": "http://localhost:3001/uploads/photo-1795286944690-9ecf87ab697d02e0.jpg",
       "shelterName": "Приют-партнёр",
       "animalName": "",
       "fullStory": "Лечение в клинике",
-      "docUrl": "http://localhost:3001/uploads/doc-1795268266530-7779b9ebe07febae.jpg",
+      "docUrl": "http://localhost:3001/uploads/doc-1795286944699-78d6fdc4f33ac113.jpg",
       "milestones": {
         "1": {
-          "docUrl": "http://localhost:3001/uploads/ms-1795117365308-705250.jpg",
-          "uploadedAt": "2026-11-19T19:42:45.316Z"
+          "docUrl": "http://localhost:3001/uploads/ms-1795287473579-2a3625c66a9c0577.jpg",
+          "uploadedAt": "2026-11-21T18:57:53.588Z"
+        },
+        "2": {
+          "docUrl": "http://localhost:3001/uploads/ms-1795287666057-0eb73fc52c1c0be6.jpg",
+          "uploadedAt": "2026-11-21T19:01:06.064Z"
         }
       },
-      "updatedAt": "2026-11-21T13:37:46.543Z"
+      "updatedAt": "2026-11-21T19:01:06.064Z"
     },
     "2": {
       "chainRequestId": "2",
       "draftId": null,
-      "photoUrl": "http://localhost:3001/uploads/photo-1795268321021-908fea982682a24d.jpg",
+      "photoUrl": "http://localhost:3001/uploads/photo-1795287214970-20a42da452cc08b9.jpg",
       "shelterName": "Приют-партнёр",
       "animalName": "",
-      "fullStory": "Покупка лекарств",
-      "docUrl": "http://localhost:3001/uploads/doc-1795268321022-6ef93518e948922a.jpg",
+      "fullStory": "Проведение операции",
+      "docUrl": "http://localhost:3001/uploads/doc-1795287214971-87f8b89a2a02a7f6.jpg",
       "milestones": {
         "1": {
           "docUrl": "http://localhost:3001/uploads/ms-1795175953412-352615.jpg",
           "uploadedAt": "2026-11-20T11:59:13.491Z"
         }
       },
-      "updatedAt": "2026-11-21T13:38:41.028Z"
+      "updatedAt": "2026-11-21T18:53:34.981Z"
     },
     "3": {
       "chainRequestId": "3",

@@ -11,12 +11,12 @@ let currentEvidenceHash = "";
 const REQUEST_STATUS = {
     UNDER_REVIEW: 0,
     CHANGES_REQUESTED: 1,
-    VOTING: 2,
-    APPROVED: 3,
-    REJECTED: 4,
-    COMPLETED: 5,
-    CANCELLED: 6
+    APPROVED: 2,
+    REJECTED: 3,
+    COMPLETED: 4,
+    CANCELLED: 5
 };
+
 
 function escapeHtml(value) {
     return String(value ?? "").replace(/[&<>"']/g, char => ({
@@ -28,6 +28,7 @@ function escapeHtml(value) {
     })[char]);
 }
 
+
 function formatEth(value) {
     try {
         return ethers.formatEther(value ?? 0n);
@@ -37,10 +38,12 @@ function formatEth(value) {
     }
 }
 
+
 function formatAddress(value) {
     if (!value) return "Не указан";
     return shortAddr(value);
 }
+
 
 function safeHttpUrl(value) {
     if (!value) return "";
@@ -61,6 +64,7 @@ function safeHttpUrl(value) {
     }
 }
 
+
 function isCurrentUserRequester(requester) {
     return Boolean(
         userAddress &&
@@ -68,6 +72,7 @@ function isCurrentUserRequester(requester) {
         requester.toLowerCase() === userAddress.toLowerCase()
     );
 }
+
 
 function requireContractMethod(instance, methodName, contractName) {
     if (!instance) {
@@ -81,15 +86,42 @@ function requireContractMethod(instance, methodName, contractName) {
     }
 }
 
+
+// =========================================================
+// 2. СТАТУСЫ ЗАЯВОК
+// =========================================================
+
 function getRequestStatusInfo(status) {
     const labels = {
-        0: { text: "На проверке", cls: "badge-yellow" },
-        1: { text: "Требуются изменения", cls: "badge-yellow" },
-        2: { text: "Голосование", cls: "badge-blue" },
-        3: { text: "Одобрена · финансирование этапов", cls: "badge-green" },
-        4: { text: "Отклонена", cls: "badge-red" },
-        5: { text: "Завершена", cls: "badge-green" },
-        6: { text: "Отменена", cls: "badge-gray" }
+        0: {
+            text: "На проверке",
+            cls: "badge-yellow"
+        },
+
+        1: {
+            text: "Требуются изменения",
+            cls: "badge-orange"
+        },
+
+        2: {
+            text: "Одобрена · финансирование этапов",
+            cls: "badge-green"
+        },
+
+        3: {
+            text: "Отклонена",
+            cls: "badge-red"
+        },
+
+        4: {
+            text: "Завершена",
+            cls: "badge-green"
+        },
+
+        5: {
+            text: "Отменена",
+            cls: "badge-gray"
+        }
     };
 
     return labels[Number(status)] || {
@@ -98,32 +130,31 @@ function getRequestStatusInfo(status) {
     };
 }
 
+
 function getStatusDescription(status, isRequester) {
     switch (Number(status)) {
+
         case REQUEST_STATUS.UNDER_REVIEW:
             return isRequester
                 ? "Заявка отправлена на проверку администратору. Пока она не опубликована, вы можете добавлять и редактировать этапы финансирования."
-                : "Заявка находится на проверке администратора. Голосование ещё не началось.";
+                : "Заявка находится на проверке администратора. После проверки администратор сможет одобрить и опубликовать её.";
 
         case REQUEST_STATUS.CHANGES_REQUESTED:
             return isRequester
                 ? "Администратор запросил изменения. Вы можете скорректировать описание и этапы финансирования, после чего повторно отправить заявку на проверку."
                 : "Заявка возвращена инициатору на доработку.";
 
-        case REQUEST_STATUS.VOTING:
-            return "Заявка опубликована. Участники DAO могут голосовать, а пользователи — направлять пожертвования.";
-
         case REQUEST_STATUS.APPROVED:
-            return "Заявка одобрена DAO. Целевые пожертвования могут продолжать поступать. Каждый этап финансируется отдельно. После резервирования средств инициатор сможет отправить отчёт о его выполнении.";
+            return "Заявка проверена и одобрена администратором. Пользователи могут направлять адресные пожертвования. Каждый этап финансируется отдельно: сначала используются целевые пожертвования, затем при необходимости средства общего фонда. После резервирования средств инициатор сможет отправить отчёт о выполнении этапа.";
 
         case REQUEST_STATUS.REJECTED:
-            return "По результатам голосования заявка не получила одобрения DAO.";
+            return "Заявка отклонена администратором. Адресное финансирование для неё недоступно.";
 
         case REQUEST_STATUS.COMPLETED:
-            return "Все этапы заявки профинансированы, выполнены, проверены и оплачены.";
+            return "Все этапы заявки профинансированы, выполнены, проверены необходимым количеством валидаторов и оплачены.";
 
         case REQUEST_STATUS.CANCELLED:
-            return "Заявка отменена.";
+            return "Заявка отменена. Неиспользованные адресные пожертвования переводятся в общий фонд согласно правилам контракта.";
 
         default:
             return "";
@@ -131,12 +162,43 @@ function getStatusDescription(status, isRequester) {
 }
 
 
-// Проверка, является ли текущий пользователь администратором DAO.
+// =========================================================
+// 3. ПОЛУЧЕНИЕ ФИНАНСОВОЙ ИНФОРМАЦИИ
+// =========================================================
+
+async function getRequestFinancialStats(requestId) {
+    requireContractMethod(
+        contract,
+        "getRequestFinancialStats",
+        "RescueDAO"
+    );
+
+    const result = await contract.getRequestFinancialStats(requestId);
+
+    return {
+        requestedAmount: result.requestedAmount ?? result[0],
+        milestoneTotal: result.milestoneTotal ?? result[1],
+        releasedAmount: result.releasedAmount ?? result[2],
+        milestoneCount: result.milestoneCount ?? result[3],
+        completedMilestones: result.completedMilestones ?? result[4],
+        status: result.status ?? result[5]
+    };
+}
+
+
+// =========================================================
+// 4. ПРОВЕРКА АДМИНИСТРАТОРА
+// =========================================================
+
 async function isCurrentUserAdmin() {
     if (!userAddress || !contract) return false;
 
     try {
-        requireContractMethod(contract, "admin", "RescueDAO");
+        requireContractMethod(
+            contract,
+            "admin",
+            "RescueDAO"
+        );
 
         const adminAddress = await contract.admin();
 
@@ -144,14 +206,22 @@ async function isCurrentUserAdmin() {
             adminAddress &&
             adminAddress.toLowerCase() === userAddress.toLowerCase()
         );
+
     } catch (err) {
-        console.warn("Не удалось проверить администратора DAO:", err);
+        console.warn(
+            "Не удалось проверить администратора DAO:",
+            err
+        );
+
         return false;
     }
 }
 
 
-// Получение информации о финансировании этапа.
+// =========================================================
+// 5. ИНФОРМАЦИЯ О ФИНАНСИРОВАНИИ ЭТАПА
+// =========================================================
+
 async function getMilestoneFunding(requestId, milestoneId) {
     requireContractMethod(
         milestonesContract,
@@ -166,16 +236,16 @@ async function getMilestoneFunding(requestId, milestoneId) {
         );
 
     return {
-        funded: Boolean(result.funded),
-        targetReserved: result.targetReserved,
-        generalReserved: result.generalReserved,
-        released: Boolean(result.released)
+        funded: Boolean(result.funded ?? result[0]),
+        targetReserved: result.targetReserved ?? result[1],
+        generalReserved: result.generalReserved ?? result[2],
+        released: Boolean(result.released ?? result[3])
     };
 }
 
 
 // =========================================================
-// 2. ИНИЦИАЛИЗАЦИЯ
+// 6. ИНИЦИАЛИЗАЦИЯ СТРАНИЦЫ
 // =========================================================
 
 window.addEventListener("DOMContentLoaded", async () => {
@@ -227,7 +297,10 @@ window.addEventListener("DOMContentLoaded", async () => {
         await loadRequestDetails();
 
     } catch (err) {
-        console.error("Ошибка инициализации страницы заявки:", err);
+        console.error(
+            "Ошибка инициализации страницы заявки:",
+            err
+        );
 
         container.innerHTML = `
             <p style="color:var(--danger);">
@@ -240,18 +313,27 @@ window.addEventListener("DOMContentLoaded", async () => {
 
 
 // =========================================================
-// 3. ЗАГРУЗКА ИНФОРМАЦИИ О ЗАЯВКЕ
+// 7. ЗАГРУЗКА ИНФОРМАЦИИ О ЗАЯВКЕ
 // =========================================================
 
 async function loadRequestDetails() {
     const container = document.getElementById("campaignContent");
 
     try {
-        requireContractMethod(daoViewContract, "requestExists", "RescueDAOView");
-        requireContractMethod(daoViewContract, "getAidRequestInfo", "RescueDAOView");
-        requireContractMethod(daoViewContract, "getAidRequestStats", "RescueDAOView");
+        requireContractMethod(
+            daoViewContract,
+            "requestExists",
+            "RescueDAOView"
+        );
 
-        const exists = await daoViewContract.requestExists(requestId);
+        requireContractMethod(
+            daoViewContract,
+            "getAidRequestInfo",
+            "RescueDAOView"
+        );
+
+        const exists =
+            await daoViewContract.requestExists(requestId);
 
         if (!exists) {
             container.innerHTML = `
@@ -262,14 +344,21 @@ async function loadRequestDetails() {
             return;
         }
 
+        // Получаем текстовые данные через DAOView,
+        // финансовые данные — из обновлённого RescueDAO.
+
         const [info, stats] = await Promise.all([
             daoViewContract.getAidRequestInfo(requestId),
-            daoViewContract.getAidRequestStats(requestId)
+            getRequestFinancialStats(requestId)
         ]);
 
         const statusNum = Number(stats.status);
-        const isRequester = isCurrentUserRequester(info.requester);
-        const isAdmin = await isCurrentUserAdmin();
+
+        const isRequester =
+            isCurrentUserRequester(info.requester);
+
+        const isAdmin =
+            await isCurrentUserAdmin();
 
         let meta = {
             photoUrl: "",
@@ -293,47 +382,26 @@ async function loadRequestDetails() {
                     response.status
                 );
             }
+
         } catch (err) {
-            console.warn("Не удалось загрузить дополнительные данные:", err);
-        }
-
-        currentEvidenceHash = String(info.evidenceHash || "");
-
-        const statusObj = getRequestStatusInfo(statusNum);
-
-        const endsTimestamp = Number(stats.votingEndsAt || 0);
-
-        const endsDate = endsTimestamp > 0
-            ? new Date(endsTimestamp * 1000).toLocaleString("ru-RU")
-            : "Голосование ещё не началось";
-
-        const votingEnded =
-            endsTimestamp > 0 &&
-            Math.floor(Date.now() / 1000) >= endsTimestamp;
-
-        let voted = false;
-
-        if (
-            statusNum === REQUEST_STATUS.VOTING &&
-            userAddress
-        ) {
-            requireContractMethod(
-                daoViewContract,
-                "hasParticipantVoted",
-                "RescueDAOView"
-            );
-
-            voted = await daoViewContract.hasParticipantVoted(
-                requestId,
-                userAddress
+            console.warn(
+                "Не удалось загрузить дополнительные данные:",
+                err
             );
         }
+
+        currentEvidenceHash =
+            String(info.evidenceHash || "");
+
+        const statusObj =
+            getRequestStatusInfo(statusNum);
 
         // -------------------------------------------------
         // ФОТО ЖИВОТНОГО
         // -------------------------------------------------
 
-        const photoUrl = safeHttpUrl(meta.photoUrl);
+        const photoUrl =
+            safeHttpUrl(meta.photoUrl);
 
         const photoBlock = photoUrl
             ? `
@@ -369,7 +437,8 @@ async function loadRequestDetails() {
         // ДОКУМЕНТ ЗАЯВКИ
         // -------------------------------------------------
 
-        const docUrl = safeHttpUrl(meta.docUrl);
+        const docUrl =
+            safeHttpUrl(meta.docUrl);
 
         const downloadDocLink = docUrl
             ? `
@@ -390,84 +459,26 @@ async function loadRequestDetails() {
         // ПОЯСНЕНИЕ ПО СТАТУСУ
         // -------------------------------------------------
 
-        const statusDescription = getStatusDescription(
-            statusNum,
-            isRequester
-        );
+        const statusDescription =
+            getStatusDescription(statusNum, isRequester);
 
-        const statusDescriptionBlock = statusDescription
-            ? `
-                <div
-                    style="
-                        margin-top:0.75rem;
-                        padding:0.75rem;
-                        border-radius:0.5rem;
-                        background:#f1f5f9;
-                        color:#334155;
-                        font-size:0.88rem;
-                    "
-                >
-                    ${escapeHtml(statusDescription)}
-                </div>
-            `
-            : "";
-
-        // -------------------------------------------------
-        // БЛОК ГОЛОСОВАНИЯ
-        // -------------------------------------------------
-
-        let votingControls = "";
-
-        if (statusNum === REQUEST_STATUS.VOTING) {
-            if (votingEnded) {
-                votingControls = `
-                    <p class="badge badge-yellow">
-                        Время голосования завершено.
-                        Ожидается подведение итогов.
-                    </p>
-
-                    <button
-                        class="btn btn-dark"
-                        style="width:100%; margin-top:1rem;"
-                        onclick="finalizeReq()"
+        const statusDescriptionBlock =
+            statusDescription
+                ? `
+                    <div
+                        style="
+                            margin-top:0.75rem;
+                            padding:0.75rem;
+                            border-radius:0.5rem;
+                            background:#f1f5f9;
+                            color:#334155;
+                            font-size:0.88rem;
+                        "
                     >
-                        Подвести итоги голосования
-                    </button>
-                `;
-            } else if (voted) {
-                votingControls = `
-                    <p class="badge badge-blue" style="margin-top:0.75rem;">
-                        Вы уже проголосовали по этой заявке.
-                    </p>
-                `;
-            } else if (!userRoles?.isMember) {
-                votingControls = `
-                    <p class="badge badge-gray" style="margin-top:0.75rem;">
-                        Голосование доступно участникам DAO.
-                    </p>
-                `;
-            } else {
-                votingControls = `
-                    <div style="display:flex; gap:0.75rem; margin-top:1rem;">
-                        <button
-                            class="btn btn-primary"
-                            style="flex:1;"
-                            onclick="castVote(true)"
-                        >
-                            👍 Голосовать ЗА
-                        </button>
-
-                        <button
-                            class="btn btn-danger"
-                            style="flex:1;"
-                            onclick="castVote(false)"
-                        >
-                            👎 Голосовать ПРОТИВ
-                        </button>
+                        ${escapeHtml(statusDescription)}
                     </div>
-                `;
-            }
-        }
+                `
+                : "";
 
         // -------------------------------------------------
         // ФОРМА ДОБАВЛЕНИЯ ЭТАПА
@@ -480,69 +491,102 @@ async function loadRequestDetails() {
             ) &&
             isRequester;
 
-        const addMilestoneBlock = canManageMilestones
-            ? `
-                <div class="box" style="margin-top:1rem;">
-                    <h3>Добавить этап финансирования</h3>
+        const addMilestoneBlock =
+            canManageMilestones
+                ? `
+                    <div class="box" style="margin-top:1rem;">
+                        <h3>Добавить этап финансирования</h3>
 
-                    <p style="font-size:0.85rem; color:var(--text-muted); margin-bottom:0.75rem;">
-                        Распределено по этапам:
-                        <strong>
-                            ${escapeHtml(formatEth(stats.milestoneTotal))}
-                            /
-                            ${escapeHtml(formatEth(stats.requestedAmount))}
-                            ETH
-                        </strong>.
-                        Для публикации заявки сумма всех этапов должна совпадать
-                        с запрашиваемой суммой.
-                    </p>
-
-                    <div class="form-group" style="margin-bottom:0.75rem;">
-                        <label>Название этапа</label>
-                        <input
-                            type="text"
-                            id="msDesc"
-                            class="input-field"
-                            maxlength="300"
-                            placeholder="Например: Операция в ветклинике"
-                            style="width:100%; padding:0.5rem; margin-top:0.25rem;"
+                        <p
+                            style="
+                                font-size:0.85rem;
+                                color:var(--text-muted);
+                                margin-bottom:0.75rem;
+                            "
                         >
-                    </div>
+                            Распределено по этапам:
+                            <strong>
+                                ${escapeHtml(formatEth(stats.milestoneTotal))}
+                                /
+                                ${escapeHtml(formatEth(stats.requestedAmount))}
+                                ETH
+                            </strong>.
+                            Для публикации заявки сумма всех этапов должна
+                            совпадать с запрашиваемой суммой.
+                        </p>
 
-                    <div class="form-group" style="margin-bottom:0.75rem;">
-                        <label>Адрес получателя (клиника / аптека)</label>
-                        <input
-                            type="text"
-                            id="msRecipient"
-                            class="input-field"
-                            placeholder="0x..."
-                            style="width:100%; padding:0.5rem; margin-top:0.25rem;"
+                        <div
+                            class="form-group"
+                            style="margin-bottom:0.75rem;"
                         >
-                    </div>
+                            <label>Название этапа</label>
 
-                    <div class="form-group" style="margin-bottom:0.75rem;">
-                        <label>Сумма этапа (ETH)</label>
-                        <input
-                            type="number"
-                            id="msAmount"
-                            class="input-field"
-                            step="0.000001"
-                            min="0"
-                            placeholder="0.003"
-                            style="width:100%; padding:0.5rem; margin-top:0.25rem;"
+                            <input
+                                type="text"
+                                id="msDesc"
+                                class="input-field"
+                                maxlength="300"
+                                placeholder="Например: Операция в ветклинике"
+                                style="
+                                    width:100%;
+                                    padding:0.5rem;
+                                    margin-top:0.25rem;
+                                "
+                            >
+                        </div>
+
+                        <div
+                            class="form-group"
+                            style="margin-bottom:0.75rem;"
                         >
-                    </div>
+                            <label>
+                                Адрес получателя (клиника / аптека)
+                            </label>
 
-                    <button
-                        class="btn btn-primary"
-                        style="width:100%;"
-                        onclick="createNewMilestone()"
-                    >
-                        Добавить этап
-                    </button>
-                </div>
-            `
-            : "";
+                            <input
+                                type="text"
+                                id="msRecipient"
+                                class="input-field"
+                                placeholder="0x..."
+                                style="
+                                    width:100%;
+                                    padding:0.5rem;
+                                    margin-top:0.25rem;
+                                "
+                            >
+                        </div>
+
+                        <div
+                            class="form-group"
+                            style="margin-bottom:0.75rem;"
+                        >
+                            <label>Сумма этапа (ETH)</label>
+
+                            <input
+                                type="number"
+                                id="msAmount"
+                                class="input-field"
+                                step="0.000001"
+                                min="0"
+                                placeholder="0.003"
+                                style="
+                                    width:100%;
+                                    padding:0.5rem;
+                                    margin-top:0.25rem;
+                                "
+                            >
+                        </div>
+
+                        <button
+                            class="btn btn-primary"
+                            style="width:100%;"
+                            onclick="createNewMilestone()"
+                        >
+                            Добавить этап
+                        </button>
+                    </div>
+                `
+                : "";
 
         // -------------------------------------------------
         // ОСНОВНАЯ РАЗМЕТКА
@@ -573,7 +617,10 @@ async function loadRequestDetails() {
 
                             <span
                                 class="badge ${escapeHtml(statusObj.cls)}"
-                                style="padding:0.3rem 0.6rem; border-radius:4px;"
+                                style="
+                                    padding:0.3rem 0.6rem;
+                                    border-radius:4px;
+                                "
                             >
                                 ${escapeHtml(statusObj.text)}
                             </span>
@@ -594,7 +641,10 @@ async function loadRequestDetails() {
                             ${escapeHtml(meta.fullStory || info.description)}
                         </p>
 
-                        <div id="nftPassportSection" style="margin-top:1.25rem;"></div>
+                        <div
+                            id="nftPassportSection"
+                            style="margin-top:1.25rem;"
+                        ></div>
 
                         <div
                             style="
@@ -612,7 +662,10 @@ async function loadRequestDetails() {
 
                             <div
                                 class="mono"
-                                style="margin-top:0.25rem; word-break:break-all;"
+                                style="
+                                    margin-top:0.25rem;
+                                    word-break:break-all;
+                                "
                             >
                                 <strong>Хэш в блокчейне:</strong>
                                 ${escapeHtml(currentEvidenceHash || "Не указан")}
@@ -658,7 +711,13 @@ async function loadRequestDetails() {
                                         </div>
                                     `
                                     : `
-                                        <p style="margin-top:0.5rem; color:var(--text-muted); font-size:0.82rem;">
+                                        <p
+                                            style="
+                                                margin-top:0.5rem;
+                                                color:var(--text-muted);
+                                                font-size:0.82rem;
+                                            "
+                                        >
                                             Хэш документа заявки пока не записан.
                                         </p>
                                     `
@@ -682,7 +741,7 @@ async function loadRequestDetails() {
 
                 <div class="box" style="position:sticky; top:90px;">
 
-                    <h3>Статус и голосование DAO</h3>
+                    <h3>Статус заявки</h3>
 
                     ${statusDescriptionBlock}
 
@@ -690,49 +749,111 @@ async function loadRequestDetails() {
                         style="
                             display:flex;
                             flex-direction:column;
-                            gap:0.5rem;
+                            gap:0.65rem;
                             font-size:0.92rem;
                             margin:1rem 0;
                         "
                     >
 
-                        <div style="display:flex; justify-content:space-between; gap:1rem;">
+                        <div
+                            style="
+                                display:flex;
+                                justify-content:space-between;
+                                gap:1rem;
+                            "
+                        >
                             <span>Запрошено:</span>
-                            <strong>${escapeHtml(formatEth(stats.requestedAmount))} ETH</strong>
-                        </div>
 
-                        <div style="display:flex; justify-content:space-between; gap:1rem;">
-                            <span>Запланировано этапов:</span>
-                            <strong>${escapeHtml(formatEth(stats.milestoneTotal))} ETH</strong>
-                        </div>
-
-                        <div style="display:flex; justify-content:space-between; gap:1rem;">
-                            <span>Выплачено:</span>
-                            <strong style="color:var(--primary);">
-                                ${escapeHtml(formatEth(stats.releasedAmount))} ETH
+                            <strong>
+                                ${escapeHtml(formatEth(stats.requestedAmount))}
+                                ETH
                             </strong>
                         </div>
 
-                        <div style="display:flex; justify-content:space-between; gap:1rem;">
-                            <span>Окончание голосования:</span>
-                            <strong style="text-align:right;">${escapeHtml(endsDate)}</strong>
+                        <div
+                            style="
+                                display:flex;
+                                justify-content:space-between;
+                                gap:1rem;
+                            "
+                        >
+                            <span>Запланировано по этапам:</span>
+
+                            <strong>
+                                ${escapeHtml(formatEth(stats.milestoneTotal))}
+                                ETH
+                            </strong>
                         </div>
 
-                        <div style="display:flex; justify-content:space-between; gap:1rem;">
-                            <span>Голоса ЗА:</span>
-                            <strong style="color:var(--primary);">${escapeHtml(stats.yesVotes)}</strong>
+                        <div
+                            style="
+                                display:flex;
+                                justify-content:space-between;
+                                gap:1rem;
+                            "
+                        >
+                            <span>Количество этапов:</span>
+
+                            <strong>
+                                ${escapeHtml(stats.milestoneCount)}
+                            </strong>
                         </div>
 
-                        <div style="display:flex; justify-content:space-between; gap:1rem;">
-                            <span>Голоса ПРОТИВ:</span>
-                            <strong style="color:var(--danger);">${escapeHtml(stats.noVotes)}</strong>
+                        <div
+                            style="
+                                display:flex;
+                                justify-content:space-between;
+                                gap:1rem;
+                            "
+                        >
+                            <span>Завершено этапов:</span>
+
+                            <strong>
+                                ${escapeHtml(stats.completedMilestones)}
+                                /
+                                ${escapeHtml(stats.milestoneCount)}
+                            </strong>
+                        </div>
+
+                        <div
+                            style="
+                                display:flex;
+                                justify-content:space-between;
+                                gap:1rem;
+                            "
+                        >
+                            <span>Выплачено:</span>
+
+                            <strong style="color:var(--primary);">
+                                ${escapeHtml(formatEth(stats.releasedAmount))}
+                                ETH
+                            </strong>
                         </div>
 
                     </div>
 
-                    ${votingControls}
+                    ${
+                        statusNum === REQUEST_STATUS.APPROVED
+                            ? `
+                                <div
+                                    style="
+                                        margin-top:0.75rem;
+                                        padding:0.75rem;
+                                        background:#f1f5f9;
+                                        border-radius:0.5rem;
+                                        font-size:0.85rem;
+                                    "
+                                >
+                                    💚 Поддержать заявку можно адресным
+                                    пожертвованием. Средства будут учитываться
+                                    при финансировании её этапов.
+                                </div>
+                            `
+                            : ""
+                    }
 
                 </div>
+
             </div>
         `;
 
@@ -759,23 +880,35 @@ async function loadRequestDetails() {
 
 
 // =========================================================
-// 4. ЗАГРУЗКА NFT-ПАСПОРТА
+// 8. ЗАГРУЗКА NFT-ПАСПОРТА
 // =========================================================
 
 async function loadNftPassport(requestId) {
-    const nftContainer = document.getElementById("nftPassportSection");
+    const nftContainer =
+        document.getElementById("nftPassportSection");
 
     if (!nftContainer) return;
 
     try {
-        requireContractMethod(contract, "rescueNftContract", "RescueDAO");
-        requireContractMethod(nftContract, "getTokenIdForRequest", "RescueNFT");
+        requireContractMethod(
+            contract,
+            "rescueNftContract",
+            "RescueDAO"
+        );
 
-        const nftAddress = await contract.rescueNftContract();
+        requireContractMethod(
+            nftContract,
+            "getTokenIdForRequest",
+            "RescueNFT"
+        );
+
+        const nftAddress =
+            await contract.rescueNftContract();
 
         if (
             !nftAddress ||
-            nftAddress.toLowerCase() === ethers.ZeroAddress.toLowerCase()
+            nftAddress.toLowerCase() ===
+                ethers.ZeroAddress.toLowerCase()
         ) {
             nftContainer.innerHTML = `
                 <p style="color:var(--text-muted);">
@@ -788,7 +921,8 @@ async function loadNftPassport(requestId) {
         if (
             typeof NFT_ADDRESS !== "undefined" &&
             NFT_ADDRESS &&
-            ethers.getAddress(nftAddress) !== ethers.getAddress(NFT_ADDRESS)
+            ethers.getAddress(nftAddress) !==
+                ethers.getAddress(NFT_ADDRESS)
         ) {
             nftContainer.innerHTML = `
                 <p style="color:var(--danger);">
@@ -798,7 +932,8 @@ async function loadNftPassport(requestId) {
             return;
         }
 
-        const tokenId = await nftContract.getTokenIdForRequest(requestId);
+        const tokenId =
+            await nftContract.getTokenIdForRequest(requestId);
 
         if (tokenId === 0n) {
             nftContainer.innerHTML = `
@@ -809,25 +944,39 @@ async function loadNftPassport(requestId) {
             return;
         }
 
-        requireContractMethod(nftContract, "ownerOf", "RescueNFT");
-        requireContractMethod(nftContract, "tokenURI", "RescueNFT");
+        requireContractMethod(
+            nftContract,
+            "ownerOf",
+            "RescueNFT"
+        );
+
+        requireContractMethod(
+            nftContract,
+            "tokenURI",
+            "RescueNFT"
+        );
 
         const [owner, uri] = await Promise.all([
             nftContract.ownerOf(tokenId),
             nftContract.tokenURI(tokenId)
         ]);
 
-        if (!uri.startsWith("data:application/json;base64,")) {
+        if (
+            !uri.startsWith("data:application/json;base64,")
+        ) {
             nftContainer.innerHTML = `
                 <p class="mono">
-                    NFT #${tokenId} выпущен. URI: ${escapeHtml(uri)}
+                    NFT #${tokenId} выпущен.
+                    URI: ${escapeHtml(uri)}
                 </p>
             `;
             return;
         }
 
         const base64Json = uri.split(",")[1];
-        const binaryString = window.atob(base64Json);
+
+        const binaryString =
+            window.atob(base64Json);
 
         const bytes = Uint8Array.from(
             binaryString,
@@ -838,17 +987,22 @@ async function loadNftPassport(requestId) {
             new TextDecoder().decode(bytes)
         );
 
-        const attributesHtml = (metadata.attributes || [])
-            .map(attr => `
-                <span
-                    class="badge badge-blue"
-                    style="margin-right:0.4rem; margin-bottom:0.3rem; display:inline-block;"
-                >
-                    ${escapeHtml(attr.trait_type)}:
-                    ${escapeHtml(attr.value)}
-                </span>
-            `)
-            .join("");
+        const attributesHtml =
+            (metadata.attributes || [])
+                .map(attr => `
+                    <span
+                        class="badge badge-blue"
+                        style="
+                            margin-right:0.4rem;
+                            margin-bottom:0.3rem;
+                            display:inline-block;
+                        "
+                    >
+                        ${escapeHtml(attr.trait_type)}:
+                        ${escapeHtml(attr.value)}
+                    </span>
+                `)
+                .join("");
 
         nftContainer.innerHTML = `
             <div
@@ -873,7 +1027,9 @@ async function loadNftPassport(requestId) {
                         🐾 Цифровой NFT-паспорт #${tokenId}
                     </h4>
 
-                    <span class="badge badge-green">On-Chain SVG</span>
+                    <span class="badge badge-green">
+                        On-Chain SVG
+                    </span>
                 </div>
 
                 <div
@@ -896,25 +1052,47 @@ async function loadNftPassport(requestId) {
                     >
 
                     <div style="flex:1; min-width:200px;">
-                        <div style="font-weight:600; font-size:1.05rem; margin-bottom:0.35rem;">
+
+                        <div
+                            style="
+                                font-weight:600;
+                                font-size:1.05rem;
+                                margin-bottom:0.35rem;
+                            "
+                        >
                             ${escapeHtml(metadata.name || "NFT-паспорт животного")}
                         </div>
 
-                        <p style="font-size:0.88rem; color:#475569; margin-bottom:0.6rem;">
+                        <p
+                            style="
+                                font-size:0.88rem;
+                                color:#475569;
+                                margin-bottom:0.6rem;
+                            "
+                        >
                             ${escapeHtml(metadata.description || "")}
                         </p>
 
-                        <div class="mono" style="font-size:0.78rem; margin-bottom:0.6rem; word-break:break-all;">
+                        <div
+                            class="mono"
+                            style="
+                                font-size:0.78rem;
+                                margin-bottom:0.6rem;
+                                word-break:break-all;
+                            "
+                        >
                             Владелец: ${escapeHtml(owner)}
                         </div>
 
                         <div>${attributesHtml}</div>
+
                     </div>
                 </div>
             </div>
         `;
 
-        const imageElement = document.getElementById("nftPassportImage");
+        const imageElement =
+            document.getElementById("nftPassportImage");
 
         if (
             imageElement &&
@@ -922,8 +1100,11 @@ async function loadNftPassport(requestId) {
             metadata.image.startsWith("data:image/svg+xml;base64,")
         ) {
             imageElement.src = metadata.image;
+
         } else if (imageElement) {
-            imageElement.alt = "Изображение NFT недоступно";
+            imageElement.alt =
+                "Изображение NFT недоступно";
+
             imageElement.style.display = "none";
         }
 
@@ -934,7 +1115,13 @@ async function loadNftPassport(requestId) {
         );
 
         nftContainer.innerHTML = `
-            <div style="font-size:0.85rem; color:var(--text-muted); padding:0.5rem 0;">
+            <div
+                style="
+                    font-size:0.85rem;
+                    color:var(--text-muted);
+                    padding:0.5rem 0;
+                "
+            >
                 Не удалось загрузить NFT-паспорт.
                 Проверьте привязку NFT-контракта и наличие токена.
             </div>
@@ -944,178 +1131,81 @@ async function loadNftPassport(requestId) {
 
 
 // =========================================================
-// 5. ПРОВЕРКА ХЭША ДОКУМЕНТА
+// 9. ПРОВЕРКА ХЭША ДОКУМЕНТА
 // =========================================================
 
 async function verifyDocumentHash() {
-    const input = document.getElementById("verifyFileInput");
-    const resSpan = document.getElementById("verifyResult");
+    const input =
+        document.getElementById("verifyFileInput");
+
+    const resSpan =
+        document.getElementById("verifyResult");
 
     if (!input?.files?.length) return;
 
     if (!currentEvidenceHash) {
-        resSpan.textContent = "В блокчейне нет хэша для сравнения.";
+        resSpan.textContent =
+            "В блокчейне нет хэша для сравнения.";
+
         resSpan.style.color = "var(--danger)";
         return;
     }
 
     try {
-        const buffer = await input.files[0].arrayBuffer();
+        const buffer =
+            await input.files[0].arrayBuffer();
 
-        const calculatedHash = ethers.keccak256(
-            new Uint8Array(buffer)
-        );
+        const calculatedHash =
+            ethers.keccak256(new Uint8Array(buffer));
 
         if (
             calculatedHash.toLowerCase() ===
             currentEvidenceHash.toLowerCase()
         ) {
-            resSpan.textContent = "✅ Документ подлинный (хэш совпал)";
+            resSpan.textContent =
+                "✅ Документ подлинный (хэш совпал)";
+
             resSpan.style.color = "var(--primary)";
+
         } else {
-            resSpan.textContent = "❌ Внимание: хэш не совпадает!";
+            resSpan.textContent =
+                "❌ Внимание: хэш не совпадает!";
+
             resSpan.style.color = "var(--danger)";
         }
 
     } catch (err) {
-        console.error("Ошибка проверки документа:", err);
-        resSpan.textContent = "Не удалось проверить файл.";
+        console.error(
+            "Ошибка проверки документа:",
+            err
+        );
+
+        resSpan.textContent =
+            "Не удалось проверить файл.";
+
         resSpan.style.color = "var(--danger)";
     }
 }
 
 
 // =========================================================
-// 6. ГОЛОСОВАНИЕ
-// =========================================================
-
-async function castVote(support) {
-    try {
-        if (!userAddress || !signer) {
-            throw new Error("Сначала подключите кошелёк.");
-        }
-
-        requireContractMethod(contract, "vote", "RescueDAO");
-
-        const stats = await daoViewContract.getAidRequestStats(requestId);
-
-        if (Number(stats.status) !== REQUEST_STATUS.VOTING) {
-            throw new Error("Голосование по этой заявке сейчас недоступно.");
-        }
-
-        const votingEndsAt = Number(stats.votingEndsAt);
-
-        if (
-            !votingEndsAt ||
-            Math.floor(Date.now() / 1000) >= votingEndsAt
-        ) {
-            throw new Error("Время голосования уже завершилось.");
-        }
-
-        if (!userRoles?.isMember) {
-            throw new Error("Голосовать могут только участники DAO.");
-        }
-
-        const alreadyVoted =
-            await daoViewContract.hasParticipantVoted(
-                requestId,
-                userAddress
-            );
-
-        if (alreadyVoted) {
-            throw new Error("Вы уже проголосовали по этой заявке.");
-        }
-
-        const action = support ? "ЗА" : "ПРОТИВ";
-
-        if (!confirm(
-            `Вы действительно хотите проголосовать ${action} по заявке #${requestId}?`
-        )) {
-            return;
-        }
-
-        const tx = await contract.vote(requestId, support);
-
-        alert("Голос отправлен! Ожидаем подтверждения...");
-
-        const receipt = await tx.wait();
-
-        if (!receipt || Number(receipt.status) !== 1) {
-            throw new Error("Транзакция голосования не выполнена.");
-        }
-
-        alert("Ваш голос успешно записан.");
-        window.location.reload();
-
-    } catch (err) {
-        console.error("Ошибка голосования:", err);
-        alert("Ошибка голосования: " + getErrorMessage(err));
-    }
-}
-
-
-// =========================================================
-// 7. ЗАВЕРШЕНИЕ ГОЛОСОВАНИЯ
-// =========================================================
-
-async function finalizeReq() {
-    try {
-        if (!userAddress || !signer) {
-            throw new Error("Сначала подключите кошелёк.");
-        }
-
-        requireContractMethod(contract, "finalizeRequest", "RescueDAO");
-
-        const stats = await daoViewContract.getAidRequestStats(requestId);
-
-        if (Number(stats.status) !== REQUEST_STATUS.VOTING) {
-            throw new Error("Эта заявка не находится на голосовании.");
-        }
-
-        const votingEndsAt = Number(stats.votingEndsAt);
-
-        if (
-            !votingEndsAt ||
-            Math.floor(Date.now() / 1000) < votingEndsAt
-        ) {
-            throw new Error("Время голосования ещё не завершилось.");
-        }
-
-        if (!confirm(`Подвести итоги голосования по заявке #${requestId}?`)) {
-            return;
-        }
-
-        const tx = await contract.finalizeRequest(requestId);
-
-        alert("Подводим итоги голосования...");
-
-        const receipt = await tx.wait();
-
-        if (!receipt || Number(receipt.status) !== 1) {
-            throw new Error("Транзакция финализации не выполнена.");
-        }
-
-        alert("Итоги голосования успешно зафиксированы.");
-        window.location.reload();
-
-    } catch (err) {
-        console.error("Ошибка финализации:", err);
-        alert("Ошибка финализации: " + getErrorMessage(err));
-    }
-}
-
-
-// =========================================================
-// 8. ДОБАВЛЕНИЕ ЭТАПА ФИНАНСИРОВАНИЯ
+// 10. ДОБАВЛЕНИЕ ЭТАПА ФИНАНСИРОВАНИЯ
 // =========================================================
 
 async function createNewMilestone() {
-    const desc = document.getElementById("msDesc")?.value.trim();
-    const recipient = document.getElementById("msRecipient")?.value.trim();
-    const amount = document.getElementById("msAmount")?.value.trim();
+    const desc =
+        document.getElementById("msDesc")?.value.trim();
+
+    const recipient =
+        document.getElementById("msRecipient")?.value.trim();
+
+    const amount =
+        document.getElementById("msAmount")?.value.trim();
 
     if (!desc || desc.length > 300) {
-        alert("Введите название этапа длиной не более 300 символов.");
+        alert(
+            "Введите название этапа длиной не более 300 символов."
+        );
         return;
     }
 
@@ -1124,7 +1214,9 @@ async function createNewMilestone() {
         !ethers.isAddress(recipient) ||
         recipient === ethers.ZeroAddress
     ) {
-        alert("Введите корректный Ethereum-адрес получателя.");
+        alert(
+            "Введите корректный Ethereum-адрес получателя."
+        );
         return;
     }
 
@@ -1150,7 +1242,7 @@ async function createNewMilestone() {
 
         const [info, stats] = await Promise.all([
             daoViewContract.getAidRequestInfo(requestId),
-            daoViewContract.getAidRequestStats(requestId)
+            getRequestFinancialStats(requestId)
         ]);
 
         const status = Number(stats.status);
@@ -1165,42 +1257,58 @@ async function createNewMilestone() {
         }
 
         if (!isCurrentUserRequester(info.requester)) {
-            throw new Error("Добавлять этапы может только инициатор заявки.");
+            throw new Error(
+                "Добавлять этапы может только инициатор заявки."
+            );
         }
 
-        const amountWei = ethers.parseEther(amount);
+        const amountWei =
+            ethers.parseEther(amount);
 
         if (amountWei <= 0n) {
-            throw new Error("Сумма этапа должна быть больше нуля.");
+            throw new Error(
+                "Сумма этапа должна быть больше нуля."
+            );
         }
 
-        const tx = await milestonesContract.addMilestone(
-            requestId,
-            desc,
-            recipient,
-            amountWei
-        );
+        const tx =
+            await milestonesContract.addMilestone(
+                requestId,
+                desc,
+                recipient,
+                amountWei
+            );
 
         alert("Этап добавляется в блокчейн...");
 
         const receipt = await tx.wait();
 
         if (!receipt || Number(receipt.status) !== 1) {
-            throw new Error("Транзакция добавления этапа не выполнена.");
+            throw new Error(
+                "Транзакция добавления этапа не выполнена."
+            );
         }
 
         alert("Этап успешно добавлен.");
+
         window.location.reload();
 
     } catch (err) {
-        console.error("Ошибка добавления этапа:", err);
-        alert("Ошибка добавления этапа: " + getErrorMessage(err));
+        console.error(
+            "Ошибка добавления этапа:",
+            err
+        );
+
+        alert(
+            "Ошибка добавления этапа: " +
+            getErrorMessage(err)
+        );
     }
 }
 
 
 // =========================================================
-// 9. ФИНАНСИРОВАНИЕ ОТДЕЛЬНОГО ЭТАПА
+// 11. ФИНАНСИРОВАНИЕ ОТДЕЛЬНОГО ЭТАПА
 // =========================================================
 
 async function fundMilestone(milestoneId) {
@@ -1215,41 +1323,64 @@ async function fundMilestone(milestoneId) {
             "RescueMilestones"
         );
 
-        const [info, stats, milestone, funding] = await Promise.all([
-            daoViewContract.getAidRequestInfo(requestId),
-            daoViewContract.getAidRequestStats(requestId),
-            milestonesContract.getMilestone(requestId, milestoneId),
-            getMilestoneFunding(requestId, milestoneId)
-        ]);
+        const [info, stats, milestone, funding] =
+            await Promise.all([
+                daoViewContract.getAidRequestInfo(requestId),
+                getRequestFinancialStats(requestId),
+                milestonesContract.getMilestone(
+                    requestId,
+                    milestoneId
+                ),
+                getMilestoneFunding(
+                    requestId,
+                    milestoneId
+                )
+            ]);
 
-        if (Number(stats.status) !== REQUEST_STATUS.APPROVED) {
+        if (
+            Number(stats.status) !==
+            REQUEST_STATUS.APPROVED
+        ) {
             throw new Error(
                 "Финансировать этапы можно только после одобрения заявки."
             );
         }
 
-        if (!isCurrentUserAdmin()) {
+        // ВАЖНО: здесь используется await.
+        const isAdmin =
+            await isCurrentUserAdmin();
+
+        if (!isAdmin) {
             throw new Error(
                 "Финансирование этапов доступно только администратору DAO."
             );
         }
 
         if (funding.funded) {
-            throw new Error("Этот этап уже профинансирован.");
+            throw new Error(
+                "Этот этап уже профинансирован."
+            );
         }
 
         if (funding.released || milestone.released) {
-            throw new Error("Этот этап уже выплачен.");
+            throw new Error(
+                "Этот этап уже выплачен."
+            );
         }
 
-        const amount = BigInt(milestone.amount);
+        const amount =
+            BigInt(milestone.amount);
 
         if (amount <= 0n) {
-            throw new Error("У этапа некорректная сумма.");
+            throw new Error(
+                "У этапа некорректная сумма."
+            );
         }
 
         const targetAvailable = BigInt(
-            await treasuryContract.getAvailableRequestDonations(requestId)
+            await treasuryContract.getAvailableRequestDonations(
+                requestId
+            )
         );
 
         const generalAvailable = BigInt(
@@ -1261,13 +1392,14 @@ async function fundMilestone(milestoneId) {
                 ? amount
                 : targetAvailable;
 
-        const generalPart = amount - targetPart;
+        const generalPart =
+            amount - targetPart;
 
         if (generalAvailable < generalPart) {
             throw new Error(
-                "Недостаточно средств для финансирования этапа. " +
-                `Стоимость этапа: ${formatEth(amount)} ETH. ` +
-                `Доступные целевые пожертвования: ${formatEth(targetAvailable)} ETH. ` +
+                "Недостаточно средств для финансирования этапа.\n\n" +
+                `Стоимость этапа: ${formatEth(amount)} ETH.\n` +
+                `Доступные целевые пожертвования: ${formatEth(targetAvailable)} ETH.\n` +
                 `Доступный общий баланс: ${formatEth(generalAvailable)} ETH.`
             );
         }
@@ -1283,17 +1415,22 @@ async function fundMilestone(milestoneId) {
             return;
         }
 
-        const tx = await milestonesContract.fundMilestone(
-            requestId,
-            milestoneId
-        );
+        const tx =
+            await milestonesContract.fundMilestone(
+                requestId,
+                milestoneId
+            );
 
-        alert("Транзакция финансирования отправлена...");
+        alert(
+            "Транзакция финансирования отправлена..."
+        );
 
         const receipt = await tx.wait();
 
         if (!receipt || Number(receipt.status) !== 1) {
-            throw new Error("Транзакция финансирования не выполнена.");
+            throw new Error(
+                "Транзакция финансирования не выполнена."
+            );
         }
 
         alert(
@@ -1304,14 +1441,21 @@ async function fundMilestone(milestoneId) {
         await loadRequestDetails();
 
     } catch (err) {
-        console.error("Ошибка финансирования этапа:", err);
-        alert("Не удалось профинансировать этап:\n" + getErrorMessage(err));
+        console.error(
+            "Ошибка финансирования этапа:",
+            err
+        );
+
+        alert(
+            "Не удалось профинансировать этап:\n" +
+            getErrorMessage(err)
+        );
     }
 }
 
 
 // =========================================================
-// 10. ЗАГРУЗКА СПИСКА ЭТАПОВ
+// 12. ЗАГРУЗКА СПИСКА ЭТАПОВ
 // =========================================================
 
 async function loadMilestonesList(
@@ -1320,7 +1464,8 @@ async function loadMilestonesList(
     isRequester,
     isAdmin
 ) {
-    const box = document.getElementById("milestonesContainer");
+    const box =
+        document.getElementById("milestonesContainer");
 
     if (!box) return;
 
@@ -1359,16 +1504,31 @@ async function loadMilestonesList(
 
         // Этапы нумеруются с 1.
         for (let m = 1; m <= mCount; m++) {
-            const [ms, funding] = await Promise.all([
-                milestonesContract.getMilestone(requestId, m),
-                getMilestoneFunding(requestId, m)
-            ]);
+            const [ms, funding] =
+                await Promise.all([
+                    milestonesContract.getMilestone(
+                        requestId,
+                        m
+                    ),
 
-            const approvalCount = Number(ms.approvalCount);
+                    getMilestoneFunding(
+                        requestId,
+                        m
+                    )
+                ]);
 
-            const funded = funding.funded;
-            const released = funding.released || Boolean(ms.released);
-            const evidenceSubmitted = Boolean(ms.evidenceSubmitted);
+            const approvalCount =
+                Number(ms.approvalCount);
+
+            const funded =
+                funding.funded;
+
+            const released =
+                funding.released ||
+                Boolean(ms.released);
+
+            const evidenceSubmitted =
+                Boolean(ms.evidenceSubmitted);
 
             // -------------------------------------------------
             // СТАТУС ЭТАПА
@@ -1382,24 +1542,30 @@ async function loadMilestonesList(
                         Выплачено · ${approvalCount}/2 подтверждений
                     </span>
                 `;
-            } else if (reqStatus !== REQUEST_STATUS.APPROVED) {
+
+            } else if (
+                reqStatus !== REQUEST_STATUS.APPROVED
+            ) {
                 statusBadge = `
                     <span class="badge badge-gray">
                         Ожидает одобрения заявки
                     </span>
                 `;
+
             } else if (!funded) {
                 statusBadge = `
                     <span class="badge badge-yellow">
                         Ожидает финансирования
                     </span>
                 `;
+
             } else if (evidenceSubmitted) {
                 statusBadge = `
                     <span class="badge badge-blue">
                         Отчёт на проверке · ${approvalCount}/2 подтверждений
                     </span>
                 `;
+
             } else {
                 statusBadge = `
                     <span class="badge badge-green">
@@ -1425,16 +1591,40 @@ async function loadMilestonesList(
                             font-size:0.84rem;
                         "
                     >
-                        <strong>Финансирование этапа:</strong>
+                        <strong>
+                            Финансирование этапа:
+                        </strong>
 
-                        <div style="display:flex; justify-content:space-between; gap:0.5rem; margin-top:0.35rem;">
+                        <div
+                            style="
+                                display:flex;
+                                justify-content:space-between;
+                                gap:0.5rem;
+                                margin-top:0.35rem;
+                            "
+                        >
                             <span>Целевые пожертвования:</span>
-                            <strong>${escapeHtml(formatEth(funding.targetReserved))} ETH</strong>
+
+                            <strong>
+                                ${escapeHtml(formatEth(funding.targetReserved))}
+                                ETH
+                            </strong>
                         </div>
 
-                        <div style="display:flex; justify-content:space-between; gap:0.5rem; margin-top:0.25rem;">
+                        <div
+                            style="
+                                display:flex;
+                                justify-content:space-between;
+                                gap:0.5rem;
+                                margin-top:0.25rem;
+                            "
+                        >
                             <span>Общий пул:</span>
-                            <strong>${escapeHtml(formatEth(funding.generalReserved))} ETH</strong>
+
+                            <strong>
+                                ${escapeHtml(formatEth(funding.generalReserved))}
+                                ETH
+                            </strong>
                         </div>
                     </div>
                 `;
@@ -1468,6 +1658,7 @@ async function loadMilestonesList(
                         >
                             Для этапа необходимо зарезервировать
                             ${escapeHtml(formatEth(ms.amount))} ETH.
+
                             Сначала будут использованы целевые пожертвования,
                             затем при необходимости — средства общего пула.
                         </p>
@@ -1487,75 +1678,106 @@ async function loadMilestonesList(
             // РЕДАКТИРОВАНИЕ ДО ПУБЛИКАЦИИ
             // -------------------------------------------------
 
-            const editForm = canManageMilestones
-                ? `
-                    <details
-                        style="
-                            width:100%;
-                            margin-top:0.75rem;
-                            padding-top:0.65rem;
-                            border-top:1px dashed var(--border);
-                        "
-                    >
-                        <summary
+            const editForm =
+                canManageMilestones
+                    ? `
+                        <details
                             style="
-                                cursor:pointer;
-                                font-weight:600;
-                                font-size:0.88rem;
+                                width:100%;
+                                margin-top:0.75rem;
+                                padding-top:0.65rem;
+                                border-top:1px dashed var(--border);
                             "
                         >
-                            Редактировать этап
-                        </summary>
-
-                        <div style="margin-top:0.75rem;">
-                            <div class="form-group">
-                                <label>Описание этапа</label>
-                                <input
-                                    type="text"
-                                    id="editMsDesc_${m}"
-                                    maxlength="300"
-                                    value="${escapeHtml(ms.description)}"
-                                    style="width:100%; padding:0.5rem; margin-top:0.25rem;"
-                                >
-                            </div>
-
-                            <div class="form-group" style="margin-top:0.6rem;">
-                                <label>Адрес получателя</label>
-                                <input
-                                    type="text"
-                                    id="editMsRecipient_${m}"
-                                    value="${escapeHtml(ms.recipient)}"
-                                    style="width:100%; padding:0.5rem; margin-top:0.25rem;"
-                                >
-                            </div>
-
-                            <div class="form-group" style="margin-top:0.6rem;">
-                                <label>Сумма этапа (ETH)</label>
-                                <input
-                                    type="number"
-                                    id="editMsAmount_${m}"
-                                    step="0.000001"
-                                    min="0"
-                                    value="${escapeHtml(formatEth(ms.amount))}"
-                                    style="width:100%; padding:0.5rem; margin-top:0.25rem;"
-                                >
-                            </div>
-
-                            <p style="font-size:0.8rem; color:var(--text-muted); margin-top:0.5rem;">
-                                Изменение этапа возможно только до публикации заявки.
-                            </p>
-
-                            <button
-                                class="btn btn-outline"
-                                style="width:100%; margin-top:0.5rem;"
-                                onclick="updateExistingMilestone(${m})"
+                            <summary
+                                style="
+                                    cursor:pointer;
+                                    font-weight:600;
+                                    font-size:0.88rem;
+                                "
                             >
-                                Сохранить изменения
-                            </button>
-                        </div>
-                    </details>
-                `
-                : "";
+                                Редактировать этап
+                            </summary>
+
+                            <div style="margin-top:0.75rem;">
+
+                                <div class="form-group">
+                                    <label>Описание этапа</label>
+
+                                    <input
+                                        type="text"
+                                        id="editMsDesc_${m}"
+                                        maxlength="300"
+                                        value="${escapeHtml(ms.description)}"
+                                        style="
+                                            width:100%;
+                                            padding:0.5rem;
+                                            margin-top:0.25rem;
+                                        "
+                                    >
+                                </div>
+
+                                <div
+                                    class="form-group"
+                                    style="margin-top:0.6rem;"
+                                >
+                                    <label>Адрес получателя</label>
+
+                                    <input
+                                        type="text"
+                                        id="editMsRecipient_${m}"
+                                        value="${escapeHtml(ms.recipient)}"
+                                        style="
+                                            width:100%;
+                                            padding:0.5rem;
+                                            margin-top:0.25rem;
+                                        "
+                                    >
+                                </div>
+
+                                <div
+                                    class="form-group"
+                                    style="margin-top:0.6rem;"
+                                >
+                                    <label>Сумма этапа (ETH)</label>
+
+                                    <input
+                                        type="number"
+                                        id="editMsAmount_${m}"
+                                        step="0.000001"
+                                        min="0"
+                                        value="${escapeHtml(formatEth(ms.amount))}"
+                                        style="
+                                            width:100%;
+                                            padding:0.5rem;
+                                            margin-top:0.25rem;
+                                        "
+                                    >
+                                </div>
+
+                                <p
+                                    style="
+                                        font-size:0.8rem;
+                                        color:var(--text-muted);
+                                        margin-top:0.5rem;
+                                    "
+                                >
+                                    Изменение этапа возможно только
+                                    до публикации заявки.
+                                </p>
+
+                                <button
+                                    class="btn btn-outline"
+                                    style="width:100%; margin-top:0.5rem;"
+                                    onclick="updateExistingMilestone(${m})"
+                                >
+                                    Сохранить изменения
+                                </button>
+
+                            </div>
+                        </details>
+                    `
+                    : "";
 
             // -------------------------------------------------
             // ФОРМА ОТПРАВКИ ОТЧЁТА
@@ -1585,7 +1807,11 @@ async function loadMilestonesList(
                             type="text"
                             id="evUri_${m}"
                             placeholder="Ссылка на чек/акт (например, https://...)"
-                            style="flex:1; min-width:200px; padding:0.4rem;"
+                            style="
+                                flex:1;
+                                min-width:200px;
+                                padding:0.4rem;
+                            "
                         >
 
                         <input
@@ -1601,6 +1827,7 @@ async function loadMilestonesList(
                         </button>
                     </div>
                 `;
+
             } else if (
                 canSubmitEvidence &&
                 !funded &&
@@ -1614,12 +1841,16 @@ async function loadMilestonesList(
                         Отправка отчёта станет доступна после финансирования этапа.
                     </p>
                 `;
+
             } else if (
                 canSubmitEvidence &&
                 evidenceSubmitted
             ) {
                 evidenceForm = `
-                    <p class="badge badge-blue" style="margin-top:0.75rem;">
+                    <p
+                        class="badge badge-blue"
+                        style="margin-top:0.75rem;"
+                    >
                         Отчёт уже отправлен. Ожидается проверка валидаторов.
                     </p>
                 `;
@@ -1629,22 +1860,23 @@ async function loadMilestonesList(
             // ИНФОРМАЦИЯ О ДОКАЗАТЕЛЬСТВЕ
             // -------------------------------------------------
 
-            const evidenceInfo = evidenceSubmitted
-                ? `
-                    <div
-                        class="mono"
-                        style="
-                            margin-top:0.35rem;
-                            font-size:0.8rem;
-                            word-break:break-all;
-                        "
-                    >
-                        Отчёт: ${escapeHtml(ms.evidenceURI)}
-                        <br>
-                        Hash: ${escapeHtml(ms.evidenceHash)}
-                    </div>
-                `
-                : "";
+            const evidenceInfo =
+                evidenceSubmitted
+                    ? `
+                        <div
+                            class="mono"
+                            style="
+                                margin-top:0.35rem;
+                                font-size:0.8rem;
+                                word-break:break-all;
+                            "
+                        >
+                            Отчёт: ${escapeHtml(ms.evidenceURI)}
+                            <br>
+                            Hash: ${escapeHtml(ms.evidenceHash)}
+                        </div>
+                    `
+                    : "";
 
             // -------------------------------------------------
             // КАРТОЧКА ЭТАПА
@@ -1671,17 +1903,29 @@ async function loadMilestonesList(
                             "
                         >
                             <strong>
-                                Этап #${m}: ${escapeHtml(ms.description)}
+                                Этап #${m}:
+                                ${escapeHtml(ms.description)}
                             </strong>
 
                             ${statusBadge}
                         </div>
 
-                        <div style="font-size:0.88rem; margin-top:0.35rem;">
+                        <div
+                            style="
+                                font-size:0.88rem;
+                                margin-top:0.35rem;
+                            "
+                        >
                             Сумма:
-                            <strong>${escapeHtml(formatEth(ms.amount))} ETH</strong>
+                            <strong>
+                                ${escapeHtml(formatEth(ms.amount))} ETH
+                            </strong>
+
                             · Получатель:
-                            <span class="mono">${escapeHtml(ms.recipient)}</span>
+
+                            <span class="mono">
+                                ${escapeHtml(ms.recipient)}
+                            </span>
                         </div>
 
                         ${fundingInfo}
@@ -1706,7 +1950,10 @@ async function loadMilestonesList(
         `;
 
     } catch (err) {
-        console.error("Ошибка загрузки этапов:", err);
+        console.error(
+            "Ошибка загрузки этапов:",
+            err
+        );
 
         box.innerHTML = `
             <p style="color:var(--danger);">
@@ -1719,24 +1966,29 @@ async function loadMilestonesList(
 
 
 // =========================================================
-// 11. РЕДАКТИРОВАНИЕ СУЩЕСТВУЮЩЕГО ЭТАПА
+// 13. РЕДАКТИРОВАНИЕ СУЩЕСТВУЮЩЕГО ЭТАПА
 // =========================================================
 
 async function updateExistingMilestone(milestoneId) {
-    const desc = document.getElementById(
-        `editMsDesc_${milestoneId}`
-    )?.value.trim();
+    const desc =
+        document.getElementById(
+            `editMsDesc_${milestoneId}`
+        )?.value.trim();
 
-    const recipient = document.getElementById(
-        `editMsRecipient_${milestoneId}`
-    )?.value.trim();
+    const recipient =
+        document.getElementById(
+            `editMsRecipient_${milestoneId}`
+        )?.value.trim();
 
-    const amount = document.getElementById(
-        `editMsAmount_${milestoneId}`
-    )?.value.trim();
+    const amount =
+        document.getElementById(
+            `editMsAmount_${milestoneId}`
+        )?.value.trim();
 
     if (!desc || desc.length > 300) {
-        alert("Введите описание этапа длиной не более 300 символов.");
+        alert(
+            "Введите описание этапа длиной не более 300 символов."
+        );
         return;
     }
 
@@ -1745,7 +1997,9 @@ async function updateExistingMilestone(milestoneId) {
         !ethers.isAddress(recipient) ||
         recipient === ethers.ZeroAddress
     ) {
-        alert("Введите корректный Ethereum-адрес получателя.");
+        alert(
+            "Введите корректный Ethereum-адрес получателя."
+        );
         return;
     }
 
@@ -1769,13 +2023,20 @@ async function updateExistingMilestone(milestoneId) {
             "RescueMilestones"
         );
 
-        const [info, stats, milestone] = await Promise.all([
-            daoViewContract.getAidRequestInfo(requestId),
-            daoViewContract.getAidRequestStats(requestId),
-            milestonesContract.getMilestone(requestId, milestoneId)
-        ]);
+        const [info, stats, milestone] =
+            await Promise.all([
+                daoViewContract.getAidRequestInfo(requestId),
 
-        const status = Number(stats.status);
+                getRequestFinancialStats(requestId),
+
+                milestonesContract.getMilestone(
+                    requestId,
+                    milestoneId
+                )
+            ]);
+
+        const status =
+            Number(stats.status);
 
         if (
             status !== REQUEST_STATUS.UNDER_REVIEW &&
@@ -1787,29 +2048,40 @@ async function updateExistingMilestone(milestoneId) {
         }
 
         if (!isCurrentUserRequester(info.requester)) {
-            throw new Error("Изменять этапы может только инициатор заявки.");
+            throw new Error(
+                "Изменять этапы может только инициатор заявки."
+            );
         }
 
-        const funding = await getMilestoneFunding(
-            requestId,
-            milestoneId
-        );
+        const funding =
+            await getMilestoneFunding(
+                requestId,
+                milestoneId
+            );
 
-        if (funding.funded || funding.released || milestone.released) {
+        if (
+            funding.funded ||
+            funding.released ||
+            milestone.released
+        ) {
             throw new Error(
                 "Нельзя редактировать уже профинансированный или выплаченный этап."
             );
         }
 
-        const amountWei = ethers.parseEther(amount);
+        const amountWei =
+            ethers.parseEther(amount);
 
         if (amountWei <= 0n) {
-            throw new Error("Сумма этапа должна быть больше нуля.");
+            throw new Error(
+                "Сумма этапа должна быть больше нуля."
+            );
         }
 
-        const warning = milestone.evidenceSubmitted
-            ? "\n\nУ этапа уже есть отчёт. После изменения этапа контракт должен сбросить этот отчёт и связанные подтверждения."
-            : "";
+        const warning =
+            milestone.evidenceSubmitted
+                ? "\n\nУ этапа уже есть отчёт. После изменения этапа контракт должен сбросить этот отчёт и связанные подтверждения."
+                : "";
 
         if (!confirm(
             `Сохранить изменения этапа #${milestoneId}?${warning}`
@@ -1817,54 +2089,74 @@ async function updateExistingMilestone(milestoneId) {
             return;
         }
 
-        const tx = await milestonesContract.updateMilestone(
-            requestId,
-            milestoneId,
-            desc,
-            recipient,
-            amountWei
-        );
+        const tx =
+            await milestonesContract.updateMilestone(
+                requestId,
+                milestoneId,
+                desc,
+                recipient,
+                amountWei
+            );
 
-        alert("Изменение этапа отправлено в блокчейн...");
+        alert(
+            "Изменение этапа отправлено в блокчейн..."
+        );
 
         const receipt = await tx.wait();
 
         if (!receipt || Number(receipt.status) !== 1) {
-            throw new Error("Транзакция изменения этапа не выполнена.");
+            throw new Error(
+                "Транзакция изменения этапа не выполнена."
+            );
         }
 
         alert("Этап успешно обновлён.");
+
         window.location.reload();
 
     } catch (err) {
-        console.error("Ошибка редактирования этапа:", err);
-        alert("Ошибка редактирования этапа: " + getErrorMessage(err));
+        console.error(
+            "Ошибка редактирования этапа:",
+            err
+        );
+
+        alert(
+            "Ошибка редактирования этапа: " +
+            getErrorMessage(err)
+        );
     }
 }
 
 
 // =========================================================
-// 12. ОТПРАВКА ДОКАЗАТЕЛЬСТВА ВЫПОЛНЕНИЯ ЭТАПА
+// 14. ОТПРАВКА ДОКАЗАТЕЛЬСТВА ВЫПОЛНЕНИЯ ЭТАПА
 // =========================================================
 
 async function submitEvidence(milestoneId) {
-    const uriInput = document.getElementById(
-        `evUri_${milestoneId}`
-    )?.value.trim();
+    const uriInput =
+        document.getElementById(
+            `evUri_${milestoneId}`
+        )?.value.trim();
 
-    const fileInput = document.getElementById(
-        `evFile_${milestoneId}`
-    );
+    const fileInput =
+        document.getElementById(
+            `evFile_${milestoneId}`
+        );
 
-    const file = fileInput?.files?.[0];
+    const file =
+        fileInput?.files?.[0];
 
     try {
         if (!file && !uriInput) {
-            throw new Error("Выберите файл отчёта или укажите URI.");
+            throw new Error(
+                "Выберите файл отчёта или укажите URI."
+            );
         }
 
         if (!userAddress || !signer) {
-            throw new Error("Необходимо подключить кошелёк.");
+            throw new Error(
+                "Необходимо подключить кошелёк."
+            );
         }
 
         requireContractMethod(
@@ -1873,14 +2165,27 @@ async function submitEvidence(milestoneId) {
             "RescueMilestones"
         );
 
-        const [info, stats, milestone, funding] = await Promise.all([
-            daoViewContract.getAidRequestInfo(requestId),
-            daoViewContract.getAidRequestStats(requestId),
-            milestonesContract.getMilestone(requestId, milestoneId),
-            getMilestoneFunding(requestId, milestoneId)
-        ]);
+        const [info, stats, milestone, funding] =
+            await Promise.all([
+                daoViewContract.getAidRequestInfo(requestId),
 
-        if (Number(stats.status) !== REQUEST_STATUS.APPROVED) {
+                getRequestFinancialStats(requestId),
+
+                milestonesContract.getMilestone(
+                    requestId,
+                    milestoneId
+                ),
+
+                getMilestoneFunding(
+                    requestId,
+                    milestoneId
+                )
+            ]);
+
+        if (
+            Number(stats.status) !==
+            REQUEST_STATUS.APPROVED
+        ) {
             throw new Error(
                 "Отправлять отчёты можно только по одобренной заявке."
             );
@@ -1899,11 +2204,15 @@ async function submitEvidence(milestoneId) {
         }
 
         if (funding.released || milestone.released) {
-            throw new Error("Этот этап уже оплачен.");
+            throw new Error(
+                "Этот этап уже оплачен."
+            );
         }
 
         if (milestone.evidenceSubmitted) {
-            throw new Error("Отчёт по этому этапу уже отправлен.");
+            throw new Error(
+                "Отчёт по этому этапу уже отправлен."
+            );
         }
 
         // -------------------------------------------------
@@ -1915,7 +2224,10 @@ async function submitEvidence(milestoneId) {
         if (file) {
             const formData = new FormData();
 
-            formData.append("milestoneDoc", file);
+            formData.append(
+                "milestoneDoc",
+                file
+            );
 
             const response = await fetch(
                 `${API_URL}/requests/${requestId}/milestones/${milestoneId}`,
@@ -1926,16 +2238,19 @@ async function submitEvidence(milestoneId) {
             );
 
             if (!response.ok) {
-                const errorText = await response.text();
+                const errorText =
+                    await response.text();
 
                 throw new Error(
                     `Ошибка сервера (${response.status}): ${errorText}`
                 );
             }
 
-            const saved = await response.json();
+            const saved =
+                await response.json();
 
-            finalUri = uriInput || saved.docUrl;
+            finalUri =
+                uriInput || saved.docUrl;
         }
 
         if (!finalUri) {
@@ -1951,11 +2266,13 @@ async function submitEvidence(milestoneId) {
         let hash;
 
         if (file) {
-            const buffer = await file.arrayBuffer();
+            const buffer =
+                await file.arrayBuffer();
 
             hash = ethers.keccak256(
                 new Uint8Array(buffer)
             );
+
         } else {
             hash = ethers.keccak256(
                 ethers.toUtf8Bytes(finalUri)
@@ -1978,7 +2295,8 @@ async function submitEvidence(milestoneId) {
             "Транзакция отправлена. Ожидаем подтверждения в блокчейне..."
         );
 
-        const receipt = await tx.wait();
+        const receipt =
+            await tx.wait();
 
         if (!receipt || Number(receipt.status) !== 1) {
             throw new Error(
@@ -1993,7 +2311,10 @@ async function submitEvidence(milestoneId) {
         window.location.reload();
 
     } catch (err) {
-        console.error("Ошибка отправки отчёта:", err);
+        console.error(
+            "Ошибка отправки отчёта:",
+            err
+        );
 
         alert(
             "Не удалось отправить отчёт:\n" +

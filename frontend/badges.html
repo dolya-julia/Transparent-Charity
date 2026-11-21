@@ -277,15 +277,17 @@
                     margin-bottom: 1rem;
                 "
             >
-                Заявка считается завершённой после финансирования
-                и выплаты всех предусмотренных этапов. Статус
-                «Одобрена» сам по себе не является основанием
-                для получения этого бейджа.
+                Заявка считается завершённой после выполнения
+                и подтверждения всех предусмотренных этапов,
+                а также осуществления соответствующих выплат.
+                Статус «Одобрена» означает только разрешение
+                на сбор целевых пожертвований и не является
+                основанием для получения этого бейджа.
             </p>
 
             <div
                 class="row-between"
-                style="gap: 0.75rem;"
+                style="gap: 0.75rem; flex-wrap: wrap;"
             >
 
                 <input
@@ -453,7 +455,6 @@
         let badgesReadContract = null;
         let currentUser = null;
 
-        let badgesPageInitialized = false;
         let badgesLoading = false;
 
 
@@ -552,18 +553,22 @@
                 !tokenURI ||
                 !tokenURI.startsWith("data:")
             ) {
+
                 throw new Error(
                     "Неизвестный формат NFT metadata."
                 );
+
             }
 
             const commaIndex =
                 tokenURI.indexOf(",");
 
             if (commaIndex === -1) {
+
                 throw new Error(
                     "Некорректный tokenURI."
                 );
+
             }
 
             const metadataPart =
@@ -586,6 +591,10 @@
 
         }
 
+
+        // =================================================
+        // ПРОГРЕСС ПОЛУЧЕНИЯ БЕЙДЖЕЙ
+        // =================================================
 
         function getBadgeProgress(
             badge,
@@ -672,6 +681,10 @@
         }
 
 
+        // =================================================
+        // УПРАВЛЕНИЕ КНОПКАМИ
+        // =================================================
+
         function setWalletButtonsEnabled(enabled) {
 
             const refreshBtn =
@@ -691,6 +704,10 @@
         }
 
 
+        // =================================================
+        // СБРОС СОСТОЯНИЯ СТРАНИЦЫ
+        // =================================================
+
         function resetBadgesPage() {
 
             currentUser = null;
@@ -698,7 +715,7 @@
             badgesContract = null;
             badgesReadContract = null;
 
-            badgesPageInitialized = false;
+            badgesLoading = false;
 
             setWalletButtonsEnabled(false);
 
@@ -722,6 +739,9 @@
 
             document.getElementById("totalIssued").textContent =
                 "—";
+
+            document.getElementById("infoConnection").textContent =
+                "Не проверена";
 
             document.getElementById("badgesGrid").innerHTML = `
                 <div class="empty-box" style="grid-column: 1 / -1;">
@@ -919,7 +939,7 @@
                 currentUser =
                     ethers.getAddress(accounts[0]);
 
-                // Контракт для чтения
+                // Контракт для чтения.
 
                 badgesReadContract = new ethers.Contract(
                     BADGES_ADDRESS,
@@ -927,7 +947,7 @@
                     provider
                 );
 
-                // Контракт для транзакций
+                // Контракт для отправки транзакций.
 
                 if (
                     typeof signer === "undefined" ||
@@ -963,9 +983,7 @@
 
                 await loadBadgesData();
 
-                badgesPageInitialized = true;
-
-                // Обновляем информацию о роли, если функция доступна.
+                // Обновляем информацию о роли пользователя.
 
                 if (typeof updateRoleBadge === "function") {
                     await updateRoleBadge();
@@ -1154,8 +1172,11 @@
 
                 badgesLoading = false;
 
-                refreshBtn.disabled = !badgesContract;
-                refreshBtn.textContent = "Обновить";
+                refreshBtn.disabled =
+                    !badgesContract || !currentUser;
+
+                refreshBtn.textContent =
+                    "Обновить";
 
             }
 
@@ -1231,7 +1252,7 @@
                         progress.value
                     );
 
-                // Карточка
+                // Карточка.
 
                 const card =
                     document.createElement("div");
@@ -1239,7 +1260,7 @@
                 card.className =
                     "badge-item-card";
 
-                // Верхняя часть карточки
+                // Верхняя часть карточки.
 
                 const topPart =
                     document.createElement("div");
@@ -1304,7 +1325,7 @@
                 topPart.appendChild(title);
                 topPart.appendChild(description);
 
-                // Нижняя часть карточки
+                // Нижняя часть карточки.
 
                 const bottomPart =
                     document.createElement("div");
@@ -1448,10 +1469,16 @@
 
             try {
 
-                // Проверяем, что заявка завершена.
-                // В новой логике это должно означать,
-                // что все этапы заявки профинансированы
-                // и выплаты по ним произведены.
+                /*
+                 * Проверяем завершение заявки.
+                 *
+                 * В новой архитектуре заявка получает статус
+                 * Completed (4) только после завершения всех
+                 * предусмотренных этапов и соответствующих выплат.
+                 *
+                 * Контракт RescueBadges должен получать информацию
+                 * о завершении заявки от RescueDAO.
+                 */
 
                 const completed =
                     await badgesReadContract.completedRequests(
@@ -1461,12 +1488,12 @@
                 if (!completed) {
 
                     throw new Error(
-                        "Заявка ещё не завершена. Бейдж можно получить только после выплаты средств по всем её этапам."
+                        "Заявка ещё не завершена. Бейдж можно получить только после выполнения всех этапов и осуществления выплат."
                     );
 
                 }
 
-                // Проверяем пожертвование пользователя.
+                // Проверяем наличие пожертвования пользователя.
 
                 const supported =
                     await badgesReadContract.donatedToRequest(
@@ -1583,6 +1610,47 @@
 
 
         // =================================================
+        // ОБРАБОТКА СМЕНЫ АККАУНТА
+        // =================================================
+
+        async function handleBadgesAccountChange() {
+
+            resetBadgesPage();
+
+            clearNotice("claimNotice");
+
+            try {
+
+                const ready =
+                    await initWeb3();
+
+                if (ready) {
+
+                    await initializeBadgesPage();
+
+                } else {
+
+                    await updatePageConnectionInfo();
+
+                }
+
+            } catch (error) {
+
+                console.error(
+                    "Ошибка обновления страницы после смены аккаунта:",
+                    error
+                );
+
+                resetBadgesPage();
+
+                await updatePageConnectionInfo();
+
+            }
+
+        }
+
+
+        // =================================================
         // ЗАПУСК СТРАНИЦЫ
         // =================================================
 
@@ -1643,6 +1711,55 @@
 
             }
         );
+
+
+        // =================================================
+        // СОБЫТИЯ METAMASK
+        // =================================================
+
+        if (window.ethereum) {
+
+            window.ethereum.on(
+                "accountsChanged",
+                async () => {
+
+                    await handleBadgesAccountChange();
+
+                }
+            );
+
+            window.ethereum.on(
+                "chainChanged",
+                async () => {
+
+                    resetBadgesPage();
+
+                    await updatePageConnectionInfo();
+
+                    try {
+
+                        const ready =
+                            await initWeb3();
+
+                        if (ready) {
+
+                            await initializeBadgesPage();
+
+                        }
+
+                    } catch (error) {
+
+                        console.error(
+                            "Ошибка обработки смены сети:",
+                            error
+                        );
+
+                    }
+
+                }
+            );
+
+        }
 
     </script>
 

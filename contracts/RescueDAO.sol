@@ -78,6 +78,10 @@ contract RescueDAO {
         Cancelled          // 5 — Отменена
     }
 
+    // =====================================================
+    // СТРУКТУРА ЗАЯВКИ
+    // =====================================================
+
     struct AidRequest {
         string animalName;
         string description;
@@ -98,6 +102,9 @@ contract RescueDAO {
         uint256 releasedAmount;
         uint256 milestoneCount;
         uint256 completedMilestones;
+
+        // Последнее замечание администратора.
+        string changeRequestReason;
 
         RequestStatus status;
         bool exists;
@@ -159,6 +166,7 @@ contract RescueDAO {
         uint256 requestedAmount
     );
 
+    // Событие содержит текст замечания администратора.
     event AidRequestChangesRequested(
         uint256 indexed requestId,
         string reason
@@ -493,6 +501,8 @@ contract RescueDAO {
         r.noVotes = 0;
         r.votingEndsAt = 0;
 
+        r.changeRequestReason = "";
+
         r.status = RequestStatus.UnderReview;
         r.exists = true;
 
@@ -580,7 +590,7 @@ contract RescueDAO {
     }
 
     // =====================================================
-    // ВОЗВРАТ НА ДОРАБОТКУ
+    // ВОЗВРАТ ЗАЯВКИ НА ДОРАБОТКУ
     // =====================================================
 
     function requestChanges(
@@ -604,12 +614,47 @@ contract RescueDAO {
             "Empty reason"
         );
 
+        // Сохраняем замечание непосредственно в заявке.
+        r.changeRequestReason = reason;
+
+        // Меняем статус заявки.
         r.status = RequestStatus.ChangesRequested;
 
+        // Событие также содержит полный текст замечания.
         emit AidRequestChangesRequested(
             requestId,
             reason
         );
+    }
+
+    // =====================================================
+    // ПОЛУЧЕНИЕ ЗАМЕЧАНИЯ АДМИНИСТРАТОРА
+    // =====================================================
+
+    /**
+     * Возвращает последнее замечание администратора.
+     *
+     * Этот метод должен вызываться на странице заявителя,
+     * чтобы показать причину возврата заявки на доработку.
+     *
+     * Если замечаний нет, возвращается пустая строка.
+     */
+
+    function getRequestChangeReason(
+        uint256 requestId
+    )
+        external
+        view
+        returns (string memory)
+    {
+        AidRequest storage r = aidRequests[requestId];
+
+        require(
+            r.exists,
+            "Request does not exist"
+        );
+
+        return r.changeRequestReason;
     }
 
     // =====================================================
@@ -635,6 +680,10 @@ contract RescueDAO {
             r.status == RequestStatus.ChangesRequested,
             "Changes not requested"
         );
+
+        // Убираем старое замечание:
+        // после повторной отправки оно больше не актуально.
+        r.changeRequestReason = "";
 
         r.status = RequestStatus.UnderReview;
 
@@ -1074,9 +1123,6 @@ contract RescueDAO {
         uint256 reassignedAmount =
             treasury.reassignAvailableTargetFunds(requestId);
 
-        // Не прибавляем targetReserved отдельно:
-        // эта сумма учитывается в reassignedAmount,
-        // если Treasury реализует описанную выше логику.
         uint256 returnedAmount =
             generalReleased + reassignedAmount;
 
@@ -1182,11 +1228,6 @@ contract RescueDAO {
 
     /**
      * Возвращает ровно четыре значения.
-     *
-     * Порядок и типы должны совпадать
-     * с IRescueDAOView, IRescueDAORead,
-     * IRescueDAO и другими интерфейсами,
-     * которые обращаются к этой функции.
      */
 
     function getRequestCore(
@@ -1245,11 +1286,6 @@ contract RescueDAO {
     // ГЕТТЕР: ФИНАНСОВЫЕ ДАННЫЕ
     // =====================================================
 
-    /**
-     * Основной геттер финансовых данных
-     * без параметров голосования.
-     */
-
     function getRequestFinancialData(
         uint256 requestId
     )
@@ -1280,14 +1316,6 @@ contract RescueDAO {
     // ГЕТТЕР: ФИНАНСОВАЯ СТАТИСТИКА
     // =====================================================
 
-    /**
-     * Альтернативное имя геттера для совместимости
-     * с RescueDAOView.sol и IRescueDAORead.
-     *
-     * Возвращаемые значения полностью совпадают
-     * с getRequestFinancialData().
-     */
-
     function getRequestFinancialStats(
         uint256 requestId
     )
@@ -1317,15 +1345,6 @@ contract RescueDAO {
     // =====================================================
     // СТАРЫЙ ГЕТТЕР: СОВМЕСТИМОСТЬ С ПРЕЖНИМ UI
     // =====================================================
-
-    /**
-     * Устаревший геттер.
-     *
-     * yesVotes, noVotes и votingEndsAt всегда равны нулю.
-     * Новый интерфейс должен использовать
-     * getRequestFinancialStats() или
-     * getRequestFinancialData().
-     */
 
     function getRequestFinancialAndVoting(
         uint256 requestId

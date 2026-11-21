@@ -36,6 +36,7 @@ const EXPECTED_CHAIN_ID = 1337n;
 // ======================================================
 
 function resetWalletState() {
+
     signer = null;
     userAddress = null;
 
@@ -52,6 +53,7 @@ function resetWalletState() {
 // ======================================================
 
 function isWalletConnected() {
+
     return Boolean(
         provider &&
         signer &&
@@ -65,7 +67,9 @@ function isWalletConnected() {
 // ======================================================
 
 function requireContract(instance, name) {
+
     if (!instance) {
+
         throw new Error(
             `${name} не инициализирован.`
         );
@@ -73,10 +77,21 @@ function requireContract(instance, name) {
 }
 
 
-function requireMethod(instance, methodName, contractName) {
-    requireContract(instance, contractName);
+function requireMethod(
+    instance,
+    methodName,
+    contractName
+) {
 
-    if (typeof instance[methodName] !== "function") {
+    requireContract(
+        instance,
+        contractName
+    );
+
+    if (
+        typeof instance[methodName] !== "function"
+    ) {
+
         throw new Error(
             `В ABI ${contractName} отсутствует функция ${methodName}().`
         );
@@ -89,11 +104,16 @@ function requireMethod(instance, methodName, contractName) {
 // ======================================================
 
 async function isCurrentUserAdmin() {
-    if (!isWalletConnected() || !contract) {
+
+    if (
+        !isWalletConnected() ||
+        !contract
+    ) {
         return false;
     }
 
     try {
+
         requireMethod(
             contract,
             "admin",
@@ -108,6 +128,7 @@ async function isCurrentUserAdmin() {
         );
 
     } catch (err) {
+
         console.error(
             "Ошибка проверки администратора DAO:",
             err
@@ -125,32 +146,36 @@ async function isCurrentUserAdmin() {
 function initializeContracts(connection) {
 
     if (!connection) {
+
         throw new Error(
             "Не передан Web3 provider или signer."
         );
     }
 
     if (!provider) {
+
         throw new Error(
             "Web3 provider не инициализирован."
         );
     }
+
 
     // --------------------------------------------------
     // RescueDAO
     // --------------------------------------------------
 
     /*
-     * Основной контракт.
+     * Основной контракт DAO.
      *
      * Используется для:
      * - создания заявок;
      * - регистрации участников;
      * - пожертвований;
-     * - голосования;
-     * - публикации и финализации заявок;
      * - проверки ролей;
-     * - определения администратора DAO.
+     * - определения администратора;
+     * - проверки и изменения статусов заявок;
+     * - публикации одобренных заявок;
+     * - взаимодействия с системой этапов.
      *
      * При подключённом кошельке использует signer.
      * Без подключённого кошелька работает через provider.
@@ -168,12 +193,15 @@ function initializeContracts(connection) {
     // --------------------------------------------------
 
     /*
-     * Контракт для чтения данных:
+     * Контракт для чтения данных DAO:
      * - количества заявок;
      * - информации о заявках;
-     * - статистики голосования;
+     * - финансовой статистики;
      * - информации об участниках;
      * - информации об этапах.
+     *
+     * Использует provider, поскольку транзакции
+     * через этот контракт не выполняются.
      */
 
     daoViewContract = new ethers.Contract(
@@ -215,11 +243,11 @@ function initializeContracts(connection) {
      * Используется для:
      * - создания этапов;
      * - редактирования этапов до публикации;
-     * - резервирования средств для этапов;
+     * - резервирования средств;
      * - отправки отчётов;
      * - подтверждения этапов валидаторами;
      * - получения информации о выплатах;
-     * - проверки состояния финансирования этапа.
+     * - проверки состояния финансирования этапов.
      *
      * При подключённом кошельке использует signer,
      * поскольку через него выполняются транзакции.
@@ -286,6 +314,7 @@ function validateContractAddresses() {
             typeof address !== "string" ||
             !ethers.isAddress(address)
         ) {
+
             console.error(
                 `Некорректный адрес ${name}:`,
                 address
@@ -300,6 +329,7 @@ function validateContractAddresses() {
             address.toLowerCase() ===
             ethers.ZeroAddress.toLowerCase()
         ) {
+
             throw new Error(
                 `Для ${name} указан нулевой адрес.`
             );
@@ -317,6 +347,7 @@ function validateContractAddresses() {
 async function checkNetwork() {
 
     if (!provider) {
+
         throw new Error(
             "Web3-провайдер не инициализирован."
         );
@@ -340,7 +371,7 @@ async function checkNetwork() {
 
 
 // ======================================================
-// РЕГИСТРАЦИЯ ОБРАБОТЧИКОВ META MASK
+// РЕГИСТРАЦИЯ ОБРАБОТЧИКОВ METAMASK
 // ======================================================
 
 function registerMetaMaskListeners() {
@@ -453,7 +484,9 @@ async function initWeb3() {
         if (accounts.length > 0) {
 
             // Кошелёк уже подключён.
-            const ready = await setupSigner(accounts[0]);
+            const ready = await setupSigner(
+                accounts[0]
+            );
 
             if (!ready) {
                 return false;
@@ -508,7 +541,10 @@ async function handleAccountsChanged(accounts) {
         // Если пользователь отключил кошелёк
         // --------------------------------------------------
 
-        if (!accounts || accounts.length === 0) {
+        if (
+            !accounts ||
+            accounts.length === 0
+        ) {
 
             resetWalletState();
 
@@ -532,7 +568,9 @@ async function handleAccountsChanged(accounts) {
         // Если выбран другой аккаунт
         // --------------------------------------------------
 
-        const ready = await setupSigner(accounts[0]);
+        const ready = await setupSigner(
+            accounts[0]
+        );
 
         if (!ready) {
             return;
@@ -562,11 +600,9 @@ async function handleAccountsChanged(accounts) {
 async function handleChainChanged() {
 
     /*
-     * При смене сети пересоздаём provider,
-     * контракты и состояние кошелька.
-     *
-     * Перезагрузка страницы позволяет избежать
-     * использования старых экземпляров контрактов.
+     * При смене сети перезагружаем страницу,
+     * чтобы исключить использование старых экземпляров
+     * provider и контрактов.
      */
 
     resetWalletState();
@@ -585,7 +621,9 @@ async function connectWallet() {
 
         if (!window.ethereum) {
 
-            alert("MetaMask не найден!");
+            alert(
+                "MetaMask не найден!"
+            );
 
             return;
         }
@@ -619,7 +657,10 @@ async function connectWallet() {
             []
         );
 
-        if (!accounts || accounts.length === 0) {
+        if (
+            !accounts ||
+            accounts.length === 0
+        ) {
 
             alert(
                 "MetaMask не предоставил доступ к аккаунту."
@@ -644,7 +685,9 @@ async function connectWallet() {
         // 5. Подключаем signer и загружаем роли
         // --------------------------------------------------
 
-        const ready = await setupSigner(accounts[0]);
+        const ready = await setupSigner(
+            accounts[0]
+        );
 
         if (!ready) {
             return;
@@ -835,7 +878,9 @@ async function setupSigner(accountAddress = null) {
             userAddress
         );
 
-        userRoles.isMember = Boolean(memberFlag);
+        userRoles.isMember = Boolean(
+            memberFlag
+        );
 
     } catch (err) {
 
@@ -864,7 +909,9 @@ async function setupSigner(accountAddress = null) {
             userAddress
         );
 
-        userRoles.isValidator = Boolean(validatorFlag);
+        userRoles.isValidator = Boolean(
+            validatorFlag
+        );
 
     } catch (err) {
 
@@ -913,7 +960,9 @@ function updateConnectButton() {
         "connectBtn"
     );
 
-    if (!btn) return;
+    if (!btn) {
+        return;
+    }
 
 
     if (userAddress) {
@@ -921,14 +970,16 @@ function updateConnectButton() {
         btn.textContent =
             `${userAddress.slice(0, 6)}...${userAddress.slice(-4)}`;
 
-        btn.className = "btn btn-outline";
+        btn.className =
+            "btn btn-outline";
 
     } else {
 
         btn.textContent =
             "Подключить кошелёк";
 
-        btn.className = "btn btn-primary";
+        btn.className =
+            "btn btn-primary";
     }
 }
 
@@ -943,7 +994,9 @@ function updateRoleBadge() {
         "roleBadge"
     );
 
-    if (!badge) return;
+    if (!badge) {
+        return;
+    }
 
 
     const labels = [];

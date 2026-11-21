@@ -1,4 +1,3 @@
-
 // ======================================================
 // 1. ИНИЦИАЛИЗАЦИЯ СТРАНИЦЫ
 // ======================================================
@@ -6,6 +5,7 @@
 window.addEventListener("DOMContentLoaded", async () => {
     try {
         const ready = await initWeb3();
+
         if (!ready) return;
 
         if (
@@ -83,6 +83,7 @@ function escapeHtml(value) {
 
 function formatAddress(address) {
     if (!address) return "Не указан";
+
     return shortAddr(address);
 }
 
@@ -97,6 +98,7 @@ function formatEth(value) {
         return ethers.formatEther(value ?? 0n);
     } catch (err) {
         console.warn("Ошибка форматирования ETH:", err);
+
         return "0";
     }
 }
@@ -170,31 +172,28 @@ function getExplorerTransactionUrl(txHash) {
 
     } catch (err) {
         console.warn("Некорректный EXPLORER_URL:", err);
+
         return "";
     }
 }
 
 
-function getRequestStatusCode(name, fallback) {
-    if (
-        typeof REQUEST_STATUS !== "undefined" &&
-        REQUEST_STATUS[name] !== undefined
-    ) {
-        return Number(REQUEST_STATUS[name]);
-    }
-
-    return fallback;
-}
-
+// Новая система статусов RescueDAO:
+//
+// 0 — UnderReview
+// 1 — ChangesRequested
+// 2 — Approved
+// 3 — Rejected
+// 4 — Completed
+// 5 — Cancelled
 
 const ADMIN_REQUEST_STATUSES = {
-    UNDER_REVIEW: getRequestStatusCode("UNDER_REVIEW", 0),
-    CHANGES_REQUESTED: getRequestStatusCode("CHANGES_REQUESTED", 1),
-    VOTING: getRequestStatusCode("VOTING", 2),
-    APPROVED: getRequestStatusCode("APPROVED", 3),
-    REJECTED: getRequestStatusCode("REJECTED", 4),
-    COMPLETED: getRequestStatusCode("COMPLETED", 5),
-    CANCELLED: getRequestStatusCode("CANCELLED", 6)
+    UNDER_REVIEW: 0,
+    CHANGES_REQUESTED: 1,
+    APPROVED: 2,
+    REJECTED: 3,
+    COMPLETED: 4,
+    CANCELLED: 5
 };
 
 
@@ -216,8 +215,14 @@ function getEventArg(args, name, index, fallback = undefined) {
 
 
 // Получение поля из структуры Solidity.
-// Поддерживает как именованные поля ethers, так и индексы Result.
-function getStructField(value, name, index, fallback = undefined) {
+// Поддерживает именованные поля ethers и индексы Result.
+
+function getStructField(
+    value,
+    name,
+    index,
+    fallback = undefined
+) {
     if (value && value[name] !== undefined) {
         return value[name];
     }
@@ -292,7 +297,7 @@ async function registerMember() {
 
     if (
         !ethers.isAddress(addr) ||
-        addr === ethers.ZeroAddress
+        addr.toLowerCase() === ethers.ZeroAddress.toLowerCase()
     ) {
         alert("Введите корректный Ethereum-адрес (0x...).");
         return;
@@ -334,11 +339,21 @@ async function registerMember() {
 // ======================================================
 
 async function getDaoRequest(requestId) {
-    requireMethod(contract, "getRequestCore", "RescueDAO");
-    requireMethod(contract, "getRequestTextAndMeta", "RescueDAO");
     requireMethod(
         contract,
-        "getRequestFinancialAndVoting",
+        "getRequestCore",
+        "RescueDAO"
+    );
+
+    requireMethod(
+        contract,
+        "getRequestTextAndMeta",
+        "RescueDAO"
+    );
+
+    requireMethod(
+        contract,
+        "getRequestFinancialStats",
         "RescueDAO"
     );
 
@@ -349,30 +364,83 @@ async function getDaoRequest(requestId) {
     ] = await Promise.all([
         contract.getRequestCore(requestId),
         contract.getRequestTextAndMeta(requestId),
-        contract.getRequestFinancialAndVoting(requestId)
+        contract.getRequestFinancialStats(requestId)
     ]);
+
+    // Получение причины возврата на доработку.
+    // Функция должна присутствовать в обновлённом ABI RescueDAO.
+
+    let changeRequestReason = "";
+
+    if (
+        typeof contract.getRequestChangeReason === "function"
+    ) {
+        try {
+            changeRequestReason =
+                await contract.getRequestChangeReason(requestId);
+
+        } catch (err) {
+            console.warn(
+                `Не удалось получить причину доработки заявки #${requestId}:`,
+                err
+            );
+        }
+    }
 
     return {
         id: Number(requestId),
 
-        requester: core.requester ?? core[0],
-        requestedAmount: core.requestedAmount ?? core[1],
-        status: Number(core.status ?? core[2]),
-        votingEndsAt: core.votingEndsAt ?? core[3],
-        exists: Boolean(core.exists ?? core[4]),
+        // getRequestCore:
+        // requester, requestedAmount, status, exists
 
-        animalName: textMeta.animalName ?? textMeta[0],
-        description: textMeta.description ?? textMeta[1],
-        evidenceURI: textMeta.evidenceURI ?? textMeta[2],
-        evidenceHash: textMeta.evidenceHash ?? textMeta[3],
+        requester:
+            core.requester ?? core[0],
 
-        yesVotes: financial.yesVotes ?? financial[1],
-        noVotes: financial.noVotes ?? financial[2],
-        milestoneTotal: financial.milestoneTotal ?? financial[4],
-        releasedAmount: financial.releasedAmount ?? financial[5],
-        milestoneCount: financial.milestoneCount ?? financial[6],
+        requestedAmount:
+            core.requestedAmount ?? core[1],
+
+        status: Number(
+            core.status ?? core[2]
+        ),
+
+        exists: Boolean(
+            core.exists ?? core[3]
+        ),
+
+        // getRequestTextAndMeta
+
+        animalName:
+            textMeta.animalName ?? textMeta[0],
+
+        description:
+            textMeta.description ?? textMeta[1],
+
+        evidenceURI:
+            textMeta.evidenceURI ?? textMeta[2],
+
+        evidenceHash:
+            textMeta.evidenceHash ?? textMeta[3],
+
+        // Причина возврата заявки на доработку
+
+        changeRequestReason:
+            String(changeRequestReason ?? ""),
+
+        // getRequestFinancialStats:
+        // requestedAmount, milestoneTotal, releasedAmount,
+        // milestoneCount, completedMilestones, status
+
+        milestoneTotal:
+            financial.milestoneTotal ?? financial[1],
+
+        releasedAmount:
+            financial.releasedAmount ?? financial[2],
+
+        milestoneCount:
+            financial.milestoneCount ?? financial[3],
+
         completedMilestones:
-            financial.completedMilestones ?? financial[7]
+            financial.completedMilestones ?? financial[4]
     };
 }
 
@@ -391,13 +459,18 @@ async function loadAdminModerationQueue() {
         console.error(
             "Не найден контейнер очереди модерации."
         );
+
         return;
     }
 
     try {
         ensureAdmin();
 
-        requireMethod(contract, "requestCount", "RescueDAO");
+        requireMethod(
+            contract,
+            "requestCount",
+            "RescueDAO"
+        );
 
         container.innerHTML = `
             <p style="color:var(--text-muted);">
@@ -405,7 +478,8 @@ async function loadAdminModerationQueue() {
             </p>
         `;
 
-        const requestCount = Number(await contract.requestCount());
+        const requestCount =
+            Number(await contract.requestCount());
 
         console.log("Всего заявок:", requestCount);
 
@@ -415,6 +489,7 @@ async function loadAdminModerationQueue() {
                     Заявок пока нет.
                 </p>
             `;
+
             return;
         }
 
@@ -427,8 +502,10 @@ async function loadAdminModerationQueue() {
                 if (!request.exists) continue;
 
                 if (
-                    request.status !== ADMIN_REQUEST_STATUSES.UNDER_REVIEW &&
-                    request.status !== ADMIN_REQUEST_STATUSES.CHANGES_REQUESTED
+                    request.status !==
+                        ADMIN_REQUEST_STATUSES.UNDER_REVIEW &&
+                    request.status !==
+                        ADMIN_REQUEST_STATUSES.CHANGES_REQUESTED
                 ) {
                     continue;
                 }
@@ -449,12 +526,14 @@ async function loadAdminModerationQueue() {
                     Заявок, ожидающих модерации, нет.
                 </p>
             `;
+
             return;
         }
 
         container.innerHTML = requests.map(request => {
             const isUnderReview =
-                request.status === ADMIN_REQUEST_STATUSES.UNDER_REVIEW;
+                request.status ===
+                ADMIN_REQUEST_STATUSES.UNDER_REVIEW;
 
             const statusText = isUnderReview
                 ? "Ожидает проверки"
@@ -479,6 +558,46 @@ async function loadAdminModerationQueue() {
 
             const hasMilestones =
                 Number(request.milestoneCount) > 0;
+
+            // Причина возврата заявки.
+            const reasonHtml =
+                request.changeRequestReason.trim() !== ""
+                    ? `
+                        <div style="
+                            margin-top:0.75rem;
+                            padding:0.85rem;
+                            border-left:3px solid #d97706;
+                            background:rgba(217,119,6,0.08);
+                            border-radius:0.35rem;
+                        ">
+                            <strong>
+                                Причина возврата на доработку:
+                            </strong>
+
+                            <div style="
+                                margin-top:0.35rem;
+                                white-space:pre-wrap;
+                            ">
+                                ${escapeHtml(
+                                    request.changeRequestReason
+                                )}
+                            </div>
+                        </div>
+                    `
+                    : (
+                        !isUnderReview
+                            ? `
+                                <p style="
+                                    color:var(--text-muted);
+                                    font-size:0.85rem;
+                                    margin-top:0.5rem;
+                                ">
+                                    Причина возврата не указана
+                                    или отсутствует в сохранённых данных.
+                                </p>
+                            `
+                            : ""
+                    );
 
             return `
                 <div class="list-item admin-request-item">
@@ -507,25 +626,33 @@ async function loadAdminModerationQueue() {
 
                         <div style="margin-bottom:0.4rem;">
                             <strong>Запрашиваемая сумма:</strong>
-                            ${escapeHtml(formatEth(request.requestedAmount))}
-                            ETH
+                            ${escapeHtml(
+                                formatEth(request.requestedAmount)
+                            )} ETH
                         </div>
 
                         <div style="margin-bottom:0.4rem;">
                             <strong>Заявитель:</strong>
+
                             <span class="mono">
-                                ${escapeHtml(formatAddress(request.requester))}
+                                ${escapeHtml(
+                                    formatAddress(request.requester)
+                                )}
                             </span>
                         </div>
 
                         <div style="margin-bottom:0.4rem;">
                             <strong>Описание:</strong>
+
                             <div style="margin-top:0.25rem;">
                                 ${escapeHtml(
-                                    request.description || "Описание отсутствует"
+                                    request.description ||
+                                    "Описание отсутствует"
                                 )}
                             </div>
                         </div>
+
+                        ${reasonHtml}
 
                         <div style="margin-bottom:0.4rem;">
                             <strong>Количество этапов:</strong>
@@ -534,8 +661,10 @@ async function loadAdminModerationQueue() {
 
                         <div style="margin-bottom:0.4rem;">
                             <strong>Сумма этапов:</strong>
-                            ${escapeHtml(formatEth(request.milestoneTotal))}
-                            ETH
+
+                            ${escapeHtml(
+                                formatEth(request.milestoneTotal)
+                            )} ETH
 
                             ${
                                 !hasMilestones
@@ -565,7 +694,9 @@ async function loadAdminModerationQueue() {
                                 hasEvidence
                                     ? `
                                         <a
-                                            href="${escapeHtml(request.evidenceURI)}"
+                                            href="${escapeHtml(
+                                                request.evidenceURI
+                                            )}"
                                             target="_blank"
                                             rel="noopener noreferrer"
                                         >
@@ -579,10 +710,14 @@ async function loadAdminModerationQueue() {
                         ${
                             hasHash
                                 ? `
-                                    <div class="mono"
-                                         style="word-break:break-all;">
+                                    <div
+                                        class="mono"
+                                        style="word-break:break-all;"
+                                    >
                                         <strong>Хеш материалов:</strong>
-                                        ${escapeHtml(request.evidenceHash)}
+                                        ${escapeHtml(
+                                            request.evidenceHash
+                                        )}
                                     </div>
                                 `
                                 : ""
@@ -599,13 +734,19 @@ async function loadAdminModerationQueue() {
                                         padding-top:1rem;
                                         border-top:1px solid var(--border);
                                     ">
+
                                         <button
                                             type="button"
                                             class="btn btn-primary"
                                             onclick="publishAdminRequest(${request.id})"
-                                            ${!hasMilestones || !milestonesMatch ? "disabled" : ""}
+                                            ${
+                                                !hasMilestones ||
+                                                !milestonesMatch
+                                                    ? "disabled"
+                                                    : ""
+                                            }
                                         >
-                                            Опубликовать для голосования
+                                            Одобрить и опубликовать
                                         </button>
 
                                         <button
@@ -624,19 +765,22 @@ async function loadAdminModerationQueue() {
                                         >
                                             Отклонить заявку
                                         </button>
+
                                     </div>
 
                                     ${
-                                        !hasMilestones || !milestonesMatch
+                                        !hasMilestones ||
+                                        !milestonesMatch
                                             ? `
                                                 <p style="
                                                     color:var(--text-muted);
                                                     font-size:0.85rem;
                                                     margin-top:0.75rem;
                                                 ">
-                                                    Для публикации необходимо добавить
-                                                    этапы и привести их общую сумму
-                                                    в соответствие с суммой заявки.
+                                                    Для публикации необходимо
+                                                    добавить этапы и привести
+                                                    их общую сумму в соответствие
+                                                    с суммой заявки.
                                                 </p>
                                             `
                                             : ""
@@ -644,6 +788,7 @@ async function loadAdminModerationQueue() {
                                 `
                                 : `
                                     <div style="margin-top:1rem;">
+
                                         <span class="badge badge-yellow">
                                             Ожидается повторная отправка заявителем
                                         </span>
@@ -665,16 +810,21 @@ async function loadAdminModerationQueue() {
                                         >
                                             Отклонить заявку
                                         </button>
+
                                     </div>
                                 `
                         }
+
                     </div>
                 </div>
             `;
         }).join("");
 
     } catch (err) {
-        console.error("Ошибка загрузки очереди модерации:", err);
+        console.error(
+            "Ошибка загрузки очереди модерации:",
+            err
+        );
 
         container.innerHTML = `
             <p style="color:red;">
@@ -687,15 +837,24 @@ async function loadAdminModerationQueue() {
 
 
 // ======================================================
-// 7. ПУБЛИКАЦИЯ ЗАЯВКИ
+// 7. ОДОБРЕНИЕ И ПУБЛИКАЦИЯ ЗАЯВКИ
 // ======================================================
 
 async function publishAdminRequest(requestId) {
     try {
         ensureAdmin();
 
-        requireMethod(contract, "publishRequest", "RescueDAO");
-        requireMethod(contract, "getMilestoneSummary", "RescueDAO");
+        requireMethod(
+            contract,
+            "publishRequest",
+            "RescueDAO"
+        );
+
+        requireMethod(
+            contract,
+            "getMilestoneSummary",
+            "RescueDAO"
+        );
 
         const request = await getDaoRequest(requestId);
 
@@ -704,7 +863,8 @@ async function publishAdminRequest(requestId) {
         }
 
         if (
-            request.status !== ADMIN_REQUEST_STATUSES.UNDER_REVIEW
+            request.status !==
+            ADMIN_REQUEST_STATUSES.UNDER_REVIEW
         ) {
             throw new Error(
                 "Опубликовать можно только заявку, ожидающую проверки."
@@ -714,8 +874,11 @@ async function publishAdminRequest(requestId) {
         const summary =
             await contract.getMilestoneSummary(requestId);
 
-        const milestoneTotal = summary.total ?? summary[0];
-        const milestoneCount = summary.count ?? summary[1];
+        const milestoneTotal =
+            summary.total ?? summary[0];
+
+        const milestoneCount =
+            summary.count ?? summary[1];
 
         if (Number(milestoneCount) === 0) {
             throw new Error(
@@ -734,55 +897,20 @@ async function publishAdminRequest(requestId) {
             );
         }
 
-        const durationInput =
-            document.getElementById("votingDurationDays");
-
-        if (!durationInput) {
-            throw new Error(
-                "Не найдено поле продолжительности голосования."
-            );
-        }
-
-        const durationDays = Number(durationInput.value);
-
-        if (
-            !Number.isFinite(durationDays) ||
-            durationDays <= 0 ||
-            durationDays > 30
-        ) {
-            throw new Error(
-                "Продолжительность голосования должна быть больше 0 и не превышать 30 дней."
-            );
-        }
-
-        const votingDurationSeconds = Math.floor(
-            durationDays * 24 * 60 * 60
-        );
-
-        if (
-            votingDurationSeconds < 60 ||
-            votingDurationSeconds > 30 * 24 * 60 * 60
-        ) {
-            throw new Error(
-                "Контракт допускает голосование от 1 минуты до 30 дней."
-            );
-        }
-
         const confirmed = confirm(
-            `Опубликовать заявку #${requestId}?\n\n` +
+            `Одобрить и опубликовать заявку #${requestId}?\n\n` +
             `Животное: ${request.animalName}\n` +
             `Сумма: ${formatEth(request.requestedAmount)} ETH\n` +
-            `Количество этапов: ${milestoneCount}\n` +
-            `Продолжительность голосования: ${durationDays} дней\n\n` +
-            `После публикации начнётся голосование DAO.`
+            `Количество этапов: ${milestoneCount}\n\n` +
+            `После публикации заявка получит статус Approved.\n` +
+            `Станут доступны целевые пожертвования и резервирование средств этапов.\n\n` +
+            `Голосование DAO не проводится.`
         );
 
         if (!confirmed) return;
 
-        const tx = await contract.publishRequest(
-            requestId,
-            votingDurationSeconds
-        );
+        const tx =
+            await contract.publishRequest(requestId);
 
         alert(
             "Транзакция публикации отправлена. Ожидаем подтверждения..."
@@ -797,7 +925,7 @@ async function publishAdminRequest(requestId) {
         }
 
         alert(
-            `Заявка #${requestId} успешно опубликована. Голосование началось.`
+            `Заявка #${requestId} успешно одобрена и опубликована.`
         );
 
         await Promise.all([
@@ -807,10 +935,13 @@ async function publishAdminRequest(requestId) {
         ]);
 
     } catch (err) {
-        console.error("Ошибка публикации заявки:", err);
+        console.error(
+            "Ошибка публикации заявки:",
+            err
+        );
 
         alert(
-            "Не удалось опубликовать заявку:\n" +
+            "Не удалось одобрить заявку:\n" +
             getErrorMessage(err)
         );
     }
@@ -825,24 +956,34 @@ async function requestAdminChanges(requestId) {
     try {
         ensureAdmin();
 
-        requireMethod(contract, "requestChanges", "RescueDAO");
+        requireMethod(
+            contract,
+            "requestChanges",
+            "RescueDAO"
+        );
 
-        const request = await getDaoRequest(requestId);
+        const request =
+            await getDaoRequest(requestId);
 
         if (!request.exists) {
             throw new Error("Заявка не существует.");
         }
 
         if (
-            request.status !== ADMIN_REQUEST_STATUSES.UNDER_REVIEW
+            request.status !==
+            ADMIN_REQUEST_STATUSES.UNDER_REVIEW
         ) {
             throw new Error(
                 "Вернуть на доработку можно только заявку, ожидающую проверки."
             );
         }
 
+        // Администратор указывает конкретную причину возврата.
+
         const reason = prompt(
-            `Укажите причину возврата заявки #${requestId} на доработку:`
+            `Укажите, что именно необходимо изменить в заявке #${requestId}:\n\n` +
+            `Например: дополнить описание, исправить сумму этапов, ` +
+            `указать корректный адрес получателя или приложить подтверждающие материалы.`
         );
 
         if (reason === null) return;
@@ -857,7 +998,7 @@ async function requestAdminChanges(requestId) {
 
         const confirmed = confirm(
             `Вернуть заявку #${requestId} на доработку?\n\n` +
-            `Причина: ${cleanReason}`
+            `Причина:\n${cleanReason}`
         );
 
         if (!confirmed) return;
@@ -880,7 +1021,8 @@ async function requestAdminChanges(requestId) {
         }
 
         alert(
-            `Заявка #${requestId} возвращена заявителю на доработку.`
+            `Заявка #${requestId} возвращена заявителю на доработку.\n\n` +
+            `Указанная причина сохранена в блокчейне.`
         );
 
         await Promise.all([
@@ -889,7 +1031,10 @@ async function requestAdminChanges(requestId) {
         ]);
 
     } catch (err) {
-        console.error("Ошибка возврата заявки:", err);
+        console.error(
+            "Ошибка возврата заявки:",
+            err
+        );
 
         alert(
             "Не удалось вернуть заявку:\n" +
@@ -907,20 +1052,28 @@ async function rejectAdminRequest(requestId) {
     try {
         ensureAdmin();
 
-        requireMethod(contract, "rejectRequest", "RescueDAO");
+        requireMethod(
+            contract,
+            "rejectRequest",
+            "RescueDAO"
+        );
 
-        const request = await getDaoRequest(requestId);
+        const request =
+            await getDaoRequest(requestId);
 
         if (!request.exists) {
             throw new Error("Заявка не существует.");
         }
 
         if (
-            request.status !== ADMIN_REQUEST_STATUSES.UNDER_REVIEW &&
-            request.status !== ADMIN_REQUEST_STATUSES.CHANGES_REQUESTED
+            request.status !==
+                ADMIN_REQUEST_STATUSES.UNDER_REVIEW &&
+            request.status !==
+                ADMIN_REQUEST_STATUSES.CHANGES_REQUESTED
         ) {
             throw new Error(
-                "Отклонить можно только заявку на проверке или возвращённую на доработку."
+                "Отклонить можно только заявку на проверке " +
+                "или возвращённую на доработку."
             );
         }
 
@@ -971,7 +1124,10 @@ async function rejectAdminRequest(requestId) {
         ]);
 
     } catch (err) {
-        console.error("Ошибка отклонения заявки:", err);
+        console.error(
+            "Ошибка отклонения заявки:",
+            err
+        );
 
         alert(
             "Не удалось отклонить заявку:\n" +
@@ -1001,8 +1157,8 @@ async function fundMilestone(reqId, msId) {
             "RescueMilestones"
         );
 
-        // Дополнительная проверка роли непосредственно по контракту.
-        const actualAdmin = await contract.admin();
+        const actualAdmin =
+            await contract.admin();
 
         if (
             actualAdmin.toLowerCase() !==
@@ -1013,24 +1169,27 @@ async function fundMilestone(reqId, msId) {
             );
         }
 
-        const request = await getDaoRequest(reqId);
+        const request =
+            await getDaoRequest(reqId);
 
         if (!request.exists) {
             throw new Error("Заявка не существует.");
         }
 
         if (
-            request.status !== ADMIN_REQUEST_STATUSES.APPROVED
+            request.status !==
+            ADMIN_REQUEST_STATUSES.APPROVED
         ) {
             throw new Error(
                 "Резервировать средства можно только для одобренной заявки."
             );
         }
 
-        const ms = await milestonesContract.getMilestone(
-            reqId,
-            msId
-        );
+        const ms =
+            await milestonesContract.getMilestone(
+                reqId,
+                msId
+            );
 
         const amount = BigInt(
             getStructField(ms, "amount", 2, 0n)
@@ -1044,7 +1203,8 @@ async function fundMilestone(reqId, msId) {
             throw new Error("Этот этап уже оплачен.");
         }
 
-        const funding = await getMilestoneFunding(reqId, msId);
+        const funding =
+            await getMilestoneFunding(reqId, msId);
 
         if (funding.funded) {
             throw new Error(
@@ -1069,10 +1229,11 @@ async function fundMilestone(reqId, msId) {
 
         if (!confirmed) return;
 
-        const tx = await milestonesContract.fundMilestone(
-            reqId,
-            msId
-        );
+        const tx =
+            await milestonesContract.fundMilestone(
+                reqId,
+                msId
+            );
 
         alert(
             "Транзакция резервирования отправлена. Ожидаем подтверждения..."
@@ -1096,7 +1257,10 @@ async function fundMilestone(reqId, msId) {
         ]);
 
     } catch (err) {
-        console.error("Ошибка резервирования средств этапа:", err);
+        console.error(
+            "Ошибка резервирования средств этапа:",
+            err
+        );
 
         alert(
             "Не удалось зарезервировать средства:\n" +
@@ -1111,15 +1275,23 @@ async function fundMilestone(reqId, msId) {
 // ======================================================
 
 async function loadValidatorQueue() {
-    const container = document.getElementById("milestonesQueue");
+    const container =
+        document.getElementById("milestonesQueue");
 
     if (!container) {
-        console.error("Не найден элемент milestonesQueue.");
+        console.error(
+            "Не найден элемент milestonesQueue."
+        );
+
         return;
     }
 
     try {
-        requireMethod(contract, "requestCount", "RescueDAO");
+        requireMethod(
+            contract,
+            "requestCount",
+            "RescueDAO"
+        );
 
         requireMethod(
             milestonesContract,
@@ -1139,20 +1311,24 @@ async function loadValidatorQueue() {
             </p>
         `;
 
-        const count = Number(await contract.requestCount());
+        const count =
+            Number(await contract.requestCount());
 
         let html = "";
+
         let fundingCount = 0;
         let evidenceCount = 0;
 
         for (let i = 1; i <= count; i++) {
             try {
-                const request = await getDaoRequest(i);
+                const request =
+                    await getDaoRequest(i);
 
                 if (!request.exists) continue;
 
                 if (
-                    request.status !== ADMIN_REQUEST_STATUSES.APPROVED
+                    request.status !==
+                    ADMIN_REQUEST_STATUSES.APPROVED
                 ) {
                     continue;
                 }
@@ -1160,70 +1336,95 @@ async function loadValidatorQueue() {
                 const milestoneCount =
                     Number(request.milestoneCount);
 
-                for (let m = 1; m <= milestoneCount; m++) {
+                for (
+                    let m = 1;
+                    m <= milestoneCount;
+                    m++
+                ) {
                     try {
                         const ms =
-                            await milestonesContract.getMilestone(i, m);
+                            await milestonesContract.getMilestone(
+                                i,
+                                m
+                            );
 
                         const funding =
                             await getMilestoneFunding(i, m);
 
                         const approvalCount = Number(
-                            getStructField(ms, "approvalCount", 6, 0)
+                            getStructField(
+                                ms,
+                                "approvalCount",
+                                6,
+                                0
+                            )
                         );
 
                         const isReleased =
                             Boolean(
-                                getStructField(ms, "released", 5, false)
-                            ) || funding.released;
+                                getStructField(
+                                    ms,
+                                    "released",
+                                    5,
+                                    false
+                                )
+                            ) ||
+                            funding.released;
 
-                        const evidenceSubmitted = Boolean(
+                        const evidenceSubmitted =
+                            Boolean(
+                                getStructField(
+                                    ms,
+                                    "evidenceSubmitted",
+                                    7,
+                                    false
+                                )
+                            );
+
+                        const description =
                             getStructField(
                                 ms,
-                                "evidenceSubmitted",
-                                7,
-                                false
-                            )
-                        );
+                                "description",
+                                0,
+                                ""
+                            );
 
-                        const description = getStructField(
-                            ms,
-                            "description",
-                            0,
-                            ""
-                        );
+                        const recipient =
+                            getStructField(
+                                ms,
+                                "recipient",
+                                1,
+                                ""
+                            );
 
-                        const recipient = getStructField(
-                            ms,
-                            "recipient",
-                            1,
-                            ""
-                        );
+                        const amount =
+                            getStructField(
+                                ms,
+                                "amount",
+                                2,
+                                0n
+                            );
 
-                        const amount = getStructField(
-                            ms,
-                            "amount",
-                            2,
-                            0n
-                        );
+                        const evidenceURI =
+                            getStructField(
+                                ms,
+                                "evidenceURI",
+                                3,
+                                ""
+                            );
 
-                        const evidenceURI = getStructField(
-                            ms,
-                            "evidenceURI",
-                            3,
-                            ""
-                        );
+                        const evidenceHash =
+                            getStructField(
+                                ms,
+                                "evidenceHash",
+                                4,
+                                ""
+                            );
 
-                        const evidenceHash = getStructField(
-                            ms,
-                            "evidenceHash",
-                            4,
-                            ""
-                        );
 
-                        // -------------------------------------------------
+                        // -----------------------------------------
                         // 11.1. ЭТАП УЖЕ ОПЛАЧЕН
-                        // -------------------------------------------------
+                        // -----------------------------------------
 
                         if (isReleased) {
                             html += `
@@ -1245,7 +1446,8 @@ async function loadValidatorQueue() {
 
                                         <div style="margin-top:0.4rem;">
                                             <span class="badge badge-green">
-                                                Выплачено (${formatApprovalCount(approvalCount)})
+                                                Выплачено
+                                                (${formatApprovalCount(approvalCount)})
                                             </span>
                                         </div>
                                     </div>
@@ -1255,32 +1457,35 @@ async function loadValidatorQueue() {
                             continue;
                         }
 
-                        // -------------------------------------------------
+
+                        // -----------------------------------------
                         // 11.2. ЭТАП ЕЩЁ НЕ ПРОФИНАНСИРОВАН
-                        // -------------------------------------------------
+                        // -----------------------------------------
 
                         if (!funding.funded) {
                             fundingCount++;
 
-                            const adminAction = userRoles?.isAdmin
-                                ? `
-                                    <button
-                                        type="button"
-                                        class="btn btn-primary"
-                                        onclick="fundMilestone(${i}, ${m})"
-                                    >
-                                        Зарезервировать средства
-                                    </button>
-                                `
-                                : `
-                                    <span class="badge badge-gray">
-                                        Ожидает резервирования администратором
-                                    </span>
-                                `;
+                            const adminAction =
+                                userRoles?.isAdmin
+                                    ? `
+                                        <button
+                                            type="button"
+                                            class="btn btn-primary"
+                                            onclick="fundMilestone(${i}, ${m})"
+                                        >
+                                            Зарезервировать средства
+                                        </button>
+                                    `
+                                    : `
+                                        <span class="badge badge-gray">
+                                            Ожидает резервирования администратором
+                                        </span>
+                                    `;
 
                             html += `
                                 <div class="list-item">
                                     <div style="width:100%;">
+
                                         <span
                                             class="badge badge-blue"
                                             style="margin-bottom:0.35rem;"
@@ -1316,14 +1521,16 @@ async function loadValidatorQueue() {
                                             font-size:0.85rem;
                                             margin-top:0.5rem;
                                         ">
-                                            Средства для этого этапа ещё не зарезервированы.
-                                            После резервирования заявитель сможет
-                                            отправить отчёт о выполнении этапа.
+                                            Средства для этого этапа ещё не
+                                            зарезервированы. После резервирования
+                                            заявитель сможет отправить отчёт
+                                            о выполнении этапа.
                                         </p>
 
                                         <div style="margin-top:0.75rem;">
                                             ${adminAction}
                                         </div>
+
                                     </div>
                                 </div>
                             `;
@@ -1331,14 +1538,16 @@ async function loadValidatorQueue() {
                             continue;
                         }
 
-                        // -------------------------------------------------
+
+                        // -----------------------------------------
                         // 11.3. ЭТАП ПРОФИНАНСИРОВАН, НО ОТЧЁТА НЕТ
-                        // -------------------------------------------------
+                        // -----------------------------------------
 
                         if (!evidenceSubmitted) {
                             html += `
                                 <div class="list-item">
                                     <div>
+
                                         <span class="badge badge-blue">
                                             Заявка #${i}
                                             (${escapeHtml(request.animalName)})
@@ -1376,11 +1585,16 @@ async function loadValidatorQueue() {
                                             color:var(--text-muted);
                                         ">
                                             Целевые пожертвования:
-                                            ${escapeHtml(formatEth(funding.targetReserved))} ETH
+                                            ${escapeHtml(formatEth(funding.targetReserved))}
+                                            ETH
+
                                             <br>
+
                                             Общий фонд:
-                                            ${escapeHtml(formatEth(funding.generalReserved))} ETH
+                                            ${escapeHtml(formatEth(funding.generalReserved))}
+                                            ETH
                                         </div>
+
                                     </div>
                                 </div>
                             `;
@@ -1388,9 +1602,10 @@ async function loadValidatorQueue() {
                             continue;
                         }
 
-                        // -------------------------------------------------
+
+                        // -----------------------------------------
                         // 11.4. ОТЧЁТ ЗАГРУЖЕН, ЭТАП ОЖИДАЕТ ВАЛИДАЦИИ
-                        // -------------------------------------------------
+                        // -----------------------------------------
 
                         evidenceCount++;
 
@@ -1432,7 +1647,10 @@ async function loadValidatorQueue() {
 
                         } else if (alreadyApproved) {
                             btnHtml = `
-                                <button class="btn btn-outline" disabled>
+                                <button
+                                    class="btn btn-outline"
+                                    disabled
+                                >
                                     Подтверждено вами
                                     (${formatApprovalCount(approvalCount)})
                                 </button>
@@ -1460,6 +1678,7 @@ async function loadValidatorQueue() {
                         html += `
                             <div class="list-item">
                                 <div style="width:100%;">
+
                                     <span
                                         class="badge badge-blue"
                                         style="margin-bottom:0.35rem;"
@@ -1510,10 +1729,14 @@ async function loadValidatorQueue() {
                                         color:var(--text-muted);
                                     ">
                                         Целевые пожертвования:
-                                        ${escapeHtml(formatEth(funding.targetReserved))} ETH
+                                        ${escapeHtml(formatEth(funding.targetReserved))}
+                                        ETH
+
                                         <br>
+
                                         Общий фонд:
-                                        ${escapeHtml(formatEth(funding.generalReserved))} ETH
+                                        ${escapeHtml(formatEth(funding.generalReserved))}
+                                        ETH
                                     </div>
 
                                     ${
@@ -1552,6 +1775,7 @@ async function loadValidatorQueue() {
                                     <div style="margin-top:0.75rem;">
                                         ${btnHtml}
                                     </div>
+
                                 </div>
                             </div>
                         `;
@@ -1578,6 +1802,7 @@ async function loadValidatorQueue() {
                     Одобренных заявок с этапами пока нет.
                 </p>
             `;
+
             return;
         }
 
@@ -1585,10 +1810,16 @@ async function loadValidatorQueue() {
 
         console.log("Очередь этапов загружена.");
         console.log("Ожидают финансирования:", fundingCount);
-        console.log("Ожидают проверки валидаторами:", evidenceCount);
+        console.log(
+            "Ожидают проверки валидаторами:",
+            evidenceCount
+        );
 
     } catch (err) {
-        console.error("Ошибка загрузки очереди этапов:", err);
+        console.error(
+            "Ошибка загрузки очереди этапов:",
+            err
+        );
 
         container.innerHTML = `
             <p style="color:red;">
@@ -1620,25 +1851,31 @@ async function approveMs(reqId, msId) {
             "RescueMilestones"
         );
 
-        const request = await getDaoRequest(reqId);
+        const request =
+            await getDaoRequest(reqId);
 
         if (
-            request.status !== ADMIN_REQUEST_STATUSES.APPROVED
+            request.status !==
+            ADMIN_REQUEST_STATUSES.APPROVED
         ) {
             throw new Error(
                 "Подтверждать этапы можно только после одобрения заявки DAO."
             );
         }
 
-        const ms = await milestonesContract.getMilestone(
-            reqId,
-            msId
-        );
+        const ms =
+            await milestonesContract.getMilestone(
+                reqId,
+                msId
+            );
 
-        const funding = await getMilestoneFunding(reqId, msId);
+        const funding =
+            await getMilestoneFunding(reqId, msId);
 
         if (
-            Boolean(getStructField(ms, "released", 5, false)) ||
+            Boolean(
+                getStructField(ms, "released", 5, false)
+            ) ||
             funding.released
         ) {
             throw new Error("Этот этап уже оплачен.");
@@ -1650,9 +1887,15 @@ async function approveMs(reqId, msId) {
             );
         }
 
-        const evidenceSubmitted = Boolean(
-            getStructField(ms, "evidenceSubmitted", 7, false)
-        );
+        const evidenceSubmitted =
+            Boolean(
+                getStructField(
+                    ms,
+                    "evidenceSubmitted",
+                    7,
+                    false
+                )
+            );
 
         if (!evidenceSubmitted) {
             throw new Error(
@@ -1668,7 +1911,9 @@ async function approveMs(reqId, msId) {
             );
 
         if (alreadyApproved) {
-            throw new Error("Вы уже подтверждали этот этап.");
+            throw new Error(
+                "Вы уже подтверждали этот этап."
+            );
         }
 
         const approvalCount = Number(
@@ -1681,7 +1926,8 @@ async function approveMs(reqId, msId) {
             );
         }
 
-        const amount = getStructField(ms, "amount", 2, 0n);
+        const amount =
+            getStructField(ms, "amount", 2, 0n);
 
         const confirmed = confirm(
             `Подтвердить выполнение этапа #${msId} заявки #${reqId} ` +
@@ -1693,10 +1939,11 @@ async function approveMs(reqId, msId) {
 
         if (!confirmed) return;
 
-        const tx = await milestonesContract.approveMilestone(
-            reqId,
-            msId
-        );
+        const tx =
+            await milestonesContract.approveMilestone(
+                reqId,
+                msId
+            );
 
         alert(
             "Подтверждение отправлено в блокчейн. " +
@@ -1719,10 +1966,14 @@ async function approveMs(reqId, msId) {
         ]);
 
     } catch (err) {
-        console.error("Ошибка подтверждения этапа:", err);
+        console.error(
+            "Ошибка подтверждения этапа:",
+            err
+        );
 
         alert(
-            "Ошибка подтверждения: " + getErrorMessage(err)
+            "Ошибка подтверждения: " +
+            getErrorMessage(err)
         );
     }
 }
@@ -1733,16 +1984,22 @@ async function approveMs(reqId, msId) {
 // ======================================================
 
 async function loadAuditHistory() {
-    const timeline = document.getElementById("auditTimeline");
+    const timeline =
+        document.getElementById("auditTimeline");
 
     if (!timeline) {
-        console.error("Не найден элемент auditTimeline.");
+        console.error(
+            "Не найден элемент auditTimeline."
+        );
+
         return;
     }
 
     try {
         if (!provider) {
-            throw new Error("Provider не инициализирован.");
+            throw new Error(
+                "Provider не инициализирован."
+            );
         }
 
         if (
@@ -1761,7 +2018,8 @@ async function loadAuditHistory() {
             </p>
         `;
 
-        const currentBlock = await provider.getBlockNumber();
+        const currentBlock =
+            await provider.getBlockNumber();
 
         const sources = [
             {
@@ -1781,7 +2039,10 @@ async function loadAuditHistory() {
             }
         ];
 
-        console.log("========== ДИАГНОСТИКА ЖУРНАЛА ==========");
+        console.log(
+            "========== ДИАГНОСТИКА ЖУРНАЛА =========="
+        );
+
         console.log("Текущий блок:", currentBlock);
 
         console.table(
@@ -1791,6 +2052,7 @@ async function loadAuditHistory() {
             }))
         );
 
+
         // -------------------------------------------------
         // 13.1. ПРОВЕРКА BYTECODE
         // -------------------------------------------------
@@ -1798,7 +2060,8 @@ async function loadAuditHistory() {
         const codeResults = await Promise.all(
             sources.map(async source => {
                 try {
-                    const code = await provider.getCode(source.address);
+                    const code =
+                        await provider.getCode(source.address);
 
                     return {
                         contract: source.name,
@@ -1823,9 +2086,8 @@ async function loadAuditHistory() {
         console.log("Проверка bytecode контрактов:");
         console.table(codeResults);
 
-        const contractsWithoutCode = codeResults.filter(
-            result => !result.hasCode
-        );
+        const contractsWithoutCode =
+            codeResults.filter(result => !result.hasCode);
 
         if (contractsWithoutCode.length > 0) {
             console.error(
@@ -1834,19 +2096,25 @@ async function loadAuditHistory() {
             );
         }
 
+
         // -------------------------------------------------
         // 13.2. ПРОВЕРКА ABI
         // -------------------------------------------------
 
         for (const source of sources) {
-            const events = getContractEvents(source.iface);
+            const events =
+                getContractEvents(source.iface);
 
             console.group(`ABI событий: ${source.name}`);
+
             console.log("Адрес:", source.address);
             console.log("Количество событий:", events.length);
+
             console.table(events);
+
             console.groupEnd();
         }
+
 
         // -------------------------------------------------
         // 13.3. ПОЛУЧЕНИЕ ЛОГОВ
@@ -1861,6 +2129,22 @@ async function loadAuditHistory() {
         };
 
         const logErrors = [];
+
+        // Создаём таблицу соответствия адресов контрактам.
+        // Адреса нормализуются в нижний регистр.
+
+        const sourceByAddress = new Map();
+
+        for (const source of sources) {
+            sourceByAddress.set(
+                source.address.toLowerCase(),
+                source
+            );
+        }
+
+        // Не используем address в eth_getLogs:
+        // в текущем RPC фильтрация по address вместе
+        // с fromBlock/toBlock возвращает пустой массив.
 
         const CHUNK_SIZE = 2000;
 
@@ -1878,64 +2162,99 @@ async function loadAuditHistory() {
                 `Получение логов: блоки ${startBlock}–${endBlock}`
             );
 
-            for (const source of sources) {
-                try {
-                    const logs = await provider.getLogs({
-                        address: source.address,
-                        fromBlock: startBlock,
-                        toBlock: endBlock
-                    });
+            try {
+                // Получаем все события диапазона без фильтра адреса.
 
-                    logsByContract[source.name] += logs.length;
+                const logs = await provider.getLogs({
+                    fromBlock: startBlock,
+                    toBlock: endBlock
+                });
 
-                    for (const log of logs) {
-                        allLogs.push({
-                            blockNumber: log.blockNumber,
-                            transactionHash: log.transactionHash,
-                            transactionIndex: log.transactionIndex,
-                            logIndex: log.index,
-                            topics: log.topics,
-                            data: log.data,
-                            address: log.address,
-                            source: source.name,
-                            iface: source.iface
-                        });
+                console.log(
+                    `Получено логов за блоки ${startBlock}–${endBlock}:`,
+                    logs.length
+                );
+
+                // Отбираем события только нужных контрактов
+                // непосредственно в JavaScript.
+
+                for (const log of logs) {
+                    const logAddress =
+                        log.address.toLowerCase();
+
+                    const source =
+                        sourceByAddress.get(logAddress);
+
+                    // Пропускаем события посторонних контрактов.
+                    if (!source) {
+                        continue;
                     }
 
-                } catch (err) {
-                    const errorInfo = {
-                        contract: source.name,
-                        address: source.address,
-                        fromBlock: startBlock,
-                        toBlock: endBlock,
-                        error: getErrorMessage(err)
-                    };
+                    logsByContract[source.name]++;
 
-                    logErrors.push(errorInfo);
-
-                    console.error(
-                        `Ошибка получения логов ${source.name} ` +
-                        `за блоки ${startBlock}–${endBlock}:`,
-                        err
-                    );
+                    allLogs.push({
+                        blockNumber: log.blockNumber,
+                        transactionHash: log.transactionHash,
+                        transactionIndex: log.transactionIndex,
+                        logIndex: log.index,
+                        topics: log.topics,
+                        data: log.data,
+                        address: log.address,
+                        source: source.name,
+                        iface: source.iface
+                    });
                 }
+
+            } catch (err) {
+                const errorInfo = {
+                    fromBlock: startBlock,
+                    toBlock: endBlock,
+                    error: getErrorMessage(err)
+                };
+
+                logErrors.push(errorInfo);
+
+                console.error(
+                    `Ошибка получения логов за блоки ` +
+                    `${startBlock}–${endBlock}:`,
+                    err
+                );
             }
         }
 
-        console.log("========== РЕЗУЛЬТАТ ЗАГРУЗКИ ЛОГОВ ==========");
-        console.log("Всего найдено логов:", allLogs.length);
+        console.log(
+            "========== РЕЗУЛЬТАТ ЗАГРУЗКИ ЛОГОВ =========="
+        );
+
+        console.log(
+            "Всего найдено логов нужных контрактов:",
+            allLogs.length
+        );
 
         console.table([
-            { contract: "DAO", logs: logsByContract.DAO },
-            { contract: "Treasury", logs: logsByContract.Treasury },
-            { contract: "Milestones", logs: logsByContract.Milestones }
+            {
+                contract: "DAO",
+                logs: logsByContract.DAO
+            },
+            {
+                contract: "Treasury",
+                logs: logsByContract.Treasury
+            },
+            {
+                contract: "Milestones",
+                logs: logsByContract.Milestones
+            }
         ]);
 
-        console.log("Ошибок получения логов:", logErrors.length);
+        console.log(
+            "Ошибок получения логов:",
+            logErrors.length
+        );
 
         if (logErrors.length > 0) {
             console.table(logErrors);
         }
+
 
         // -------------------------------------------------
         // 13.4. ДЕКОДИРОВАНИЕ СОБЫТИЙ
@@ -1945,7 +2264,13 @@ async function loadAuditHistory() {
         const undecodedLogs = [];
         const ignoredEvents = [];
 
-        function addRecord(log, tag, cls, desc, type) {
+        function addRecord(
+            log,
+            tag,
+            cls,
+            desc,
+            type
+        ) {
             records.push({
                 block: log.blockNumber,
                 txHash: log.transactionHash,
@@ -1983,14 +2308,17 @@ async function loadAuditHistory() {
                     block: log.blockNumber,
                     txHash: log.transactionHash,
                     topic0: log.topics[0],
-                    error: "Событие отсутствует в ABI или сигнатура не совпадает"
+                    error:
+                        "Событие отсутствует в ABI или сигнатура не совпадает"
                 });
 
                 continue;
             }
 
             const a = event.args;
+
             let eventWasHandled = false;
+
 
             // ---------------------------------------------
             // RESCUEDAO
@@ -2000,8 +2328,11 @@ async function loadAuditHistory() {
                 switch (event.name) {
 
                     case "DonationReceived": {
-                        const donor = getEventArg(a, "donor", 0);
-                        const amount = getEventArg(a, "amount", 1);
+                        const donor =
+                            getEventArg(a, "donor", 0);
+
+                        const amount =
+                            getEventArg(a, "amount", 1);
 
                         addRecord(
                             log,
@@ -2017,9 +2348,14 @@ async function loadAuditHistory() {
                     }
 
                     case "RequestDonationReceived": {
-                        const requestId = getEventArg(a, "requestId", 0);
-                        const donor = getEventArg(a, "donor", 1);
-                        const amount = getEventArg(a, "amount", 2);
+                        const requestId =
+                            getEventArg(a, "requestId", 0);
+
+                        const donor =
+                            getEventArg(a, "donor", 1);
+
+                        const amount =
+                            getEventArg(a, "amount", 2);
 
                         addRecord(
                             log,
@@ -2035,15 +2371,25 @@ async function loadAuditHistory() {
                     }
 
                     case "AidRequestCreated": {
-                        const requestId = getEventArg(a, "requestId", 0);
-                        const requester = getEventArg(a, "requester", 1);
-                        const animalName = getEventArg(a, "animalName", 2);
-                        const requestedAmount = getEventArg(a, "requestedAmount", 3);
-                        const submittedAt = getEventArg(a, "submittedAt", 4, 0n);
+                        const requestId =
+                            getEventArg(a, "requestId", 0);
+
+                        const requester =
+                            getEventArg(a, "requester", 1);
+
+                        const animalName =
+                            getEventArg(a, "animalName", 2);
+
+                        const requestedAmount =
+                            getEventArg(a, "requestedAmount", 3);
+
+                        const submittedAt =
+                            getEventArg(a, "submittedAt", 4, 0n);
 
                         const submittedDate = submittedAt
-                            ? new Date(Number(submittedAt) * 1000)
-                                .toLocaleString("ru-RU")
+                            ? new Date(
+                                Number(submittedAt) * 1000
+                            ).toLocaleString("ru-RU")
                             : "";
 
                         addRecord(
@@ -2054,9 +2400,11 @@ async function loadAuditHistory() {
                             `создана на сумму ${formatEth(requestedAmount)} ETH. ` +
                             `Заявитель: ${formatAddress(requester)}. ` +
                             `Заявка направлена на проверку.` +
-                            (submittedDate
-                                ? ` Время отправки: ${submittedDate}.`
-                                : ""),
+                            (
+                                submittedDate
+                                    ? ` Время отправки: ${submittedDate}.`
+                                    : ""
+                            ),
                             "request-created"
                         );
 
@@ -2065,8 +2413,11 @@ async function loadAuditHistory() {
                     }
 
                     case "AidRequestUpdated": {
-                        const requestId = getEventArg(a, "requestId", 0);
-                        const requestedAmount = getEventArg(a, "requestedAmount", 1);
+                        const requestId =
+                            getEventArg(a, "requestId", 0);
+
+                        const requestedAmount =
+                            getEventArg(a, "requestedAmount", 1);
 
                         addRecord(
                             log,
@@ -2082,15 +2433,22 @@ async function loadAuditHistory() {
                     }
 
                     case "AidRequestChangesRequested": {
-                        const requestId = getEventArg(a, "requestId", 0);
-                        const reason = getEventArg(a, "reason", 1, "");
+                        const requestId =
+                            getEventArg(a, "requestId", 0);
+
+                        const reason =
+                            getEventArg(a, "reason", 1, "");
 
                         addRecord(
                             log,
                             "Заявка возвращена на доработку",
                             "badge-yellow",
                             `Администратор запросил изменения по заявке #${requestId}.` +
-                            (reason ? ` Причина: ${reason}.` : ""),
+                            (
+                                reason
+                                    ? ` Причина: ${reason}.`
+                                    : ""
+                            ),
                             "request-changes"
                         );
 
@@ -2099,7 +2457,8 @@ async function loadAuditHistory() {
                     }
 
                     case "AidRequestResubmitted": {
-                        const requestId = getEventArg(a, "requestId", 0);
+                        const requestId =
+                            getEventArg(a, "requestId", 0);
 
                         addRecord(
                             log,
@@ -2113,24 +2472,21 @@ async function loadAuditHistory() {
                         break;
                     }
 
-                    case "AidRequestPublished": {
-                        const requestId = getEventArg(a, "requestId", 0);
-                        const votingEndsAt = getEventArg(a, "votingEndsAt", 1);
-                        const votingDuration = getEventArg(a, "votingDuration", 2);
+                    // Событие публикации означает одобрение
+                    // заявки администратором, а не начало голосования.
 
-                        const endDate = votingEndsAt
-                            ? new Date(Number(votingEndsAt) * 1000)
-                                .toLocaleString("ru-RU")
-                            : "не указано";
+                    case "AidRequestPublished":
+                    case "RequestPublished": {
+                        const requestId =
+                            getEventArg(a, "requestId", 0);
 
                         addRecord(
                             log,
-                            "Заявка опубликована",
-                            "badge-blue",
-                            `Заявка #${requestId} опубликована. ` +
-                            `Началось голосование DAO. ` +
-                            `Окончание: ${endDate}. ` +
-                            `Длительность: ${votingDuration ?? "не указана"} сек.`,
+                            "Заявка одобрена и опубликована",
+                            "badge-green",
+                            `Заявка #${requestId} одобрена администратором. ` +
+                            `Теперь доступны целевые пожертвования ` +
+                            `и резервирование средств по этапам.`,
                             "request-published"
                         );
 
@@ -2138,43 +2494,25 @@ async function loadAuditHistory() {
                         break;
                     }
 
-                    case "VoteCast": {
-                        const requestId = getEventArg(a, "requestId", 0);
-                        const voter = getEventArg(a, "voter", 1);
-                        const support = getEventArg(a, "support", 2);
-                        const yesVotes = getEventArg(a, "yesVotes", 3, 0n);
-                        const noVotes = getEventArg(a, "noVotes", 4, 0n);
+                    case "AidRequestRejected":
+                    case "RequestRejected": {
+                        const requestId =
+                            getEventArg(a, "requestId", 0);
+
+                        const reason =
+                            getEventArg(a, "reason", 1, "");
 
                         addRecord(
                             log,
-                            "Голос DAO",
-                            "badge-gray",
-                            `Участник ${formatAddress(voter)} проголосовал ` +
-                            `${support ? "ЗА" : "ПРОТИВ"} по заявке #${requestId}. ` +
-                            `Голоса: ${yesVotes} за, ${noVotes} против.`,
-                            "vote"
-                        );
-
-                        eventWasHandled = true;
-                        break;
-                    }
-
-                    case "AidRequestFinalized": {
-                        const requestId = getEventArg(a, "requestId", 0);
-                        const status = Number(getEventArg(a, "status", 1, -1));
-
-                        const approved =
-                            status === ADMIN_REQUEST_STATUSES.APPROVED;
-
-                        addRecord(
-                            log,
-                            "Итог голосования DAO",
-                            approved ? "badge-green" : "badge-red",
-                            approved
-                                ? `Заявка #${requestId} одобрена DAO. ` +
-                                  `Теперь средства резервируются отдельно для каждого этапа.`
-                                : `Заявка #${requestId} не одобрена DAO.`,
-                            "request-finalized"
+                            "Заявка отклонена",
+                            "badge-red",
+                            `Заявка #${requestId} отклонена администратором.` +
+                            (
+                                reason
+                                    ? ` Причина: ${reason}.`
+                                    : ""
+                            ),
+                            "request-rejected"
                         );
 
                         eventWasHandled = true;
@@ -2182,13 +2520,16 @@ async function loadAuditHistory() {
                     }
 
                     case "AidRequestCancelled": {
-                        const requestId = getEventArg(a, "requestId", 0);
-                        const returnedAmount = getEventArg(
-                            a,
-                            "returnedToAvailableBalance",
-                            1,
-                            0n
-                        );
+                        const requestId =
+                            getEventArg(a, "requestId", 0);
+
+                        const returnedAmount =
+                            getEventArg(
+                                a,
+                                "returnedToAvailableBalance",
+                                1,
+                                0n
+                            );
 
                         addRecord(
                             log,
@@ -2204,10 +2545,33 @@ async function loadAuditHistory() {
                         break;
                     }
 
+                    case "AidRequestCompleted":
+                    case "RequestCompleted": {
+                        const requestId =
+                            getEventArg(a, "requestId", 0);
+
+                        addRecord(
+                            log,
+                            "Заявка завершена",
+                            "badge-green",
+                            `Все этапы заявки #${requestId} выполнены, ` +
+                            `заявка завершена.`,
+                            "request-completed"
+                        );
+
+                        eventWasHandled = true;
+                        break;
+                    }
+
                     case "PassportMinted": {
-                        const requestId = getEventArg(a, "requestId", 0);
-                        const tokenId = getEventArg(a, "tokenId", 1);
-                        const owner = getEventArg(a, "owner", 2);
+                        const requestId =
+                            getEventArg(a, "requestId", 0);
+
+                        const tokenId =
+                            getEventArg(a, "tokenId", 1);
+
+                        const owner =
+                            getEventArg(a, "owner", 2);
 
                         addRecord(
                             log,
@@ -2224,6 +2588,7 @@ async function loadAuditHistory() {
                 }
             }
 
+
             // ---------------------------------------------
             // RESCUETREASURY
             // ---------------------------------------------
@@ -2232,9 +2597,14 @@ async function loadAuditHistory() {
                 switch (event.name) {
 
                     case "DonationReceived": {
-                        const donor = getEventArg(a, "donor", 0);
-                        const amount = getEventArg(a, "amount", 1);
-                        const totalDonated = getEventArg(a, "totalDonated", 2, 0n);
+                        const donor =
+                            getEventArg(a, "donor", 0);
+
+                        const amount =
+                            getEventArg(a, "amount", 1);
+
+                        const totalDonated =
+                            getEventArg(a, "totalDonated", 2, 0n);
 
                         addRecord(
                             log,
@@ -2251,15 +2621,22 @@ async function loadAuditHistory() {
                     }
 
                     case "RequestDonationReceived": {
-                        const requestId = getEventArg(a, "requestId", 0);
-                        const donor = getEventArg(a, "donor", 1);
-                        const amount = getEventArg(a, "amount", 2);
-                        const totalRequestDonations = getEventArg(
-                            a,
-                            "totalRequestDonations",
-                            3,
-                            0n
-                        );
+                        const requestId =
+                            getEventArg(a, "requestId", 0);
+
+                        const donor =
+                            getEventArg(a, "donor", 1);
+
+                        const amount =
+                            getEventArg(a, "amount", 2);
+
+                        const totalRequestDonations =
+                            getEventArg(
+                                a,
+                                "totalRequestDonations",
+                                3,
+                                0n
+                            );
 
                         addRecord(
                             log,
@@ -2277,8 +2654,11 @@ async function loadAuditHistory() {
                     }
 
                     case "TargetFundsReserved": {
-                        const requestId = getEventArg(a, "requestId", 0);
-                        const amount = getEventArg(a, "amount", 1);
+                        const requestId =
+                            getEventArg(a, "requestId", 0);
+
+                        const amount =
+                            getEventArg(a, "amount", 1);
 
                         addRecord(
                             log,
@@ -2294,8 +2674,11 @@ async function loadAuditHistory() {
                     }
 
                     case "GeneralFundsReserved": {
-                        const requestId = getEventArg(a, "requestId", 0);
-                        const amount = getEventArg(a, "amount", 1);
+                        const requestId =
+                            getEventArg(a, "requestId", 0);
+
+                        const amount =
+                            getEventArg(a, "amount", 1);
 
                         addRecord(
                             log,
@@ -2311,8 +2694,11 @@ async function loadAuditHistory() {
                     }
 
                     case "TargetFundsReassigned": {
-                        const requestId = getEventArg(a, "requestId", 0);
-                        const amount = getEventArg(a, "amount", 1);
+                        const requestId =
+                            getEventArg(a, "requestId", 0);
+
+                        const amount =
+                            getEventArg(a, "amount", 1);
 
                         addRecord(
                             log,
@@ -2328,10 +2714,17 @@ async function loadAuditHistory() {
                     }
 
                     case "FundsReleased": {
-                        const requestId = getEventArg(a, "requestId", 0);
-                        const milestoneId = getEventArg(a, "milestoneId", 1);
-                        const recipient = getEventArg(a, "recipient", 2);
-                        const amount = getEventArg(a, "amount", 3);
+                        const requestId =
+                            getEventArg(a, "requestId", 0);
+
+                        const milestoneId =
+                            getEventArg(a, "milestoneId", 1);
+
+                        const recipient =
+                            getEventArg(a, "recipient", 2);
+
+                        const amount =
+                            getEventArg(a, "amount", 3);
 
                         addRecord(
                             log,
@@ -2348,10 +2741,17 @@ async function loadAuditHistory() {
                     }
 
                     case "FundsReleasedBySource": {
-                        const requestId = getEventArg(a, "requestId", 0);
-                        const milestoneId = getEventArg(a, "milestoneId", 1);
-                        const targetAmount = getEventArg(a, "targetAmount", 2, 0n);
-                        const generalAmount = getEventArg(a, "generalAmount", 3, 0n);
+                        const requestId =
+                            getEventArg(a, "requestId", 0);
+
+                        const milestoneId =
+                            getEventArg(a, "milestoneId", 1);
+
+                        const targetAmount =
+                            getEventArg(a, "targetAmount", 2, 0n);
+
+                        const generalAmount =
+                            getEventArg(a, "generalAmount", 3, 0n);
 
                         addRecord(
                             log,
@@ -2369,9 +2769,14 @@ async function loadAuditHistory() {
                     }
 
                     case "ReservationReleased": {
-                        const requestId = getEventArg(a, "requestId", 0);
-                        const generalAmount = getEventArg(a, "generalAmount", 1, 0n);
-                        const targetAmount = getEventArg(a, "targetAmount", 2, 0n);
+                        const requestId =
+                            getEventArg(a, "requestId", 0);
+
+                        const generalAmount =
+                            getEventArg(a, "generalAmount", 1, 0n);
+
+                        const targetAmount =
+                            getEventArg(a, "targetAmount", 2, 0n);
 
                         addRecord(
                             log,
@@ -2389,6 +2794,7 @@ async function loadAuditHistory() {
                 }
             }
 
+
             // ---------------------------------------------
             // RESCUEMILESTONES
             // ---------------------------------------------
@@ -2397,11 +2803,20 @@ async function loadAuditHistory() {
                 switch (event.name) {
 
                     case "MilestoneCreated": {
-                        const requestId = getEventArg(a, "requestId", 0);
-                        const milestoneId = getEventArg(a, "milestoneId", 1);
-                        const description = getEventArg(a, "description", 2);
-                        const recipient = getEventArg(a, "recipient", 3);
-                        const amount = getEventArg(a, "amount", 4);
+                        const requestId =
+                            getEventArg(a, "requestId", 0);
+
+                        const milestoneId =
+                            getEventArg(a, "milestoneId", 1);
+
+                        const description =
+                            getEventArg(a, "description", 2);
+
+                        const recipient =
+                            getEventArg(a, "recipient", 3);
+
+                        const amount =
+                            getEventArg(a, "amount", 4);
 
                         addRecord(
                             log,
@@ -2418,12 +2833,23 @@ async function loadAuditHistory() {
                     }
 
                     case "MilestoneUpdated": {
-                        const requestId = getEventArg(a, "requestId", 0);
-                        const milestoneId = getEventArg(a, "milestoneId", 1);
-                        const description = getEventArg(a, "description", 2);
-                        const recipient = getEventArg(a, "recipient", 3);
-                        const oldAmount = getEventArg(a, "oldAmount", 4);
-                        const newAmount = getEventArg(a, "newAmount", 5);
+                        const requestId =
+                            getEventArg(a, "requestId", 0);
+
+                        const milestoneId =
+                            getEventArg(a, "milestoneId", 1);
+
+                        const description =
+                            getEventArg(a, "description", 2);
+
+                        const recipient =
+                            getEventArg(a, "recipient", 3);
+
+                        const oldAmount =
+                            getEventArg(a, "oldAmount", 4);
+
+                        const newAmount =
+                            getEventArg(a, "newAmount", 5);
 
                         addRecord(
                             log,
@@ -2441,8 +2867,11 @@ async function loadAuditHistory() {
                     }
 
                     case "MilestoneEvidenceSubmitted": {
-                        const requestId = getEventArg(a, "requestId", 0);
-                        const milestoneId = getEventArg(a, "milestoneId", 1);
+                        const requestId =
+                            getEventArg(a, "requestId", 0);
+
+                        const milestoneId =
+                            getEventArg(a, "milestoneId", 1);
 
                         addRecord(
                             log,
@@ -2458,10 +2887,17 @@ async function loadAuditHistory() {
                     }
 
                     case "MilestoneApproved": {
-                        const requestId = getEventArg(a, "requestId", 0);
-                        const milestoneId = getEventArg(a, "milestoneId", 1);
-                        const validator = getEventArg(a, "validator", 2);
-                        const approvalCount = getEventArg(a, "approvalCount", 3, 0);
+                        const requestId =
+                            getEventArg(a, "requestId", 0);
+
+                        const milestoneId =
+                            getEventArg(a, "milestoneId", 1);
+
+                        const validator =
+                            getEventArg(a, "validator", 2);
+
+                        const approvalCount =
+                            getEventArg(a, "approvalCount", 3, 0);
 
                         addRecord(
                             log,
@@ -2477,32 +2913,19 @@ async function loadAuditHistory() {
                         break;
                     }
 
-                    case "MilestoneFundsReserved": {
-                        const requestId = getEventArg(a, "requestId", 0);
-                        const milestoneId = getEventArg(a, "milestoneId", 1);
-                        const targetAmount = getEventArg(a, "targetAmount", 2, 0n);
-                        const generalAmount = getEventArg(a, "generalAmount", 3, 0n);
-
-                        addRecord(
-                            log,
-                            "Резервирование средств этапа",
-                            "badge-green",
-                            `Заявка #${requestId}, этап #${milestoneId}: ` +
-                            `зарезервировано ${formatEth(targetAmount)} ETH ` +
-                            `из целевых пожертвований и ` +
-                            `${formatEth(generalAmount)} ETH из общего фонда.`,
-                            "milestone-funded"
-                        );
-
-                        eventWasHandled = true;
-                        break;
-                    }
-
+                    case "MilestoneFundsReserved":
                     case "MilestoneFunded": {
-                        const requestId = getEventArg(a, "requestId", 0);
-                        const milestoneId = getEventArg(a, "milestoneId", 1);
-                        const targetAmount = getEventArg(a, "targetAmount", 2, 0n);
-                        const generalAmount = getEventArg(a, "generalAmount", 3, 0n);
+                        const requestId =
+                            getEventArg(a, "requestId", 0);
+
+                        const milestoneId =
+                            getEventArg(a, "milestoneId", 1);
+
+                        const targetAmount =
+                            getEventArg(a, "targetAmount", 2, 0n);
+
+                        const generalAmount =
+                            getEventArg(a, "generalAmount", 3, 0n);
 
                         addRecord(
                             log,
@@ -2520,12 +2943,23 @@ async function loadAuditHistory() {
                     }
 
                     case "MilestoneFundsReleased": {
-                        const requestId = getEventArg(a, "requestId", 0);
-                        const milestoneId = getEventArg(a, "milestoneId", 1);
-                        const recipient = getEventArg(a, "recipient", 2);
-                        const amount = getEventArg(a, "amount", 3);
-                        const targetAmount = getEventArg(a, "targetAmount", 4, 0n);
-                        const generalAmount = getEventArg(a, "generalAmount", 5, 0n);
+                        const requestId =
+                            getEventArg(a, "requestId", 0);
+
+                        const milestoneId =
+                            getEventArg(a, "milestoneId", 1);
+
+                        const recipient =
+                            getEventArg(a, "recipient", 2);
+
+                        const amount =
+                            getEventArg(a, "amount", 3);
+
+                        const targetAmount =
+                            getEventArg(a, "targetAmount", 4, 0n);
+
+                        const generalAmount =
+                            getEventArg(a, "generalAmount", 5, 0n);
 
                         addRecord(
                             log,
@@ -2555,25 +2989,45 @@ async function loadAuditHistory() {
             }
         }
 
+
         // -------------------------------------------------
         // 13.5. ДИАГНОСТИКА ДЕКОДИРОВАНИЯ
         // -------------------------------------------------
 
-        console.log("========== РЕЗУЛЬТАТ ДЕКОДИРОВАНИЯ ==========");
+        console.log(
+            "========== РЕЗУЛЬТАТ ДЕКОДИРОВАНИЯ =========="
+        );
+
         console.log("Всего логов:", allLogs.length);
         console.log("Обработано событий:", records.length);
-        console.log("Не удалось декодировать:", undecodedLogs.length);
-        console.log("Неизвестных обработчиков:", ignoredEvents.length);
+        console.log(
+            "Не удалось декодировать:",
+            undecodedLogs.length
+        );
+
+        console.log(
+            "Неизвестных обработчиков:",
+            ignoredEvents.length
+        );
 
         if (undecodedLogs.length > 0) {
-            console.warn("Не декодированные логи:", undecodedLogs);
+            console.warn(
+                "Не декодированные логи:",
+                undecodedLogs
+            );
+
             console.table(undecodedLogs);
         }
 
         if (ignoredEvents.length > 0) {
-            console.warn("Необработанные события:", ignoredEvents);
+            console.warn(
+                "Необработанные события:",
+                ignoredEvents
+            );
+
             console.table(ignoredEvents);
         }
+
 
         // -------------------------------------------------
         // 13.6. УДАЛЕНИЕ ДУБЛЕЙ ПОЖЕРТВОВАНИЙ
@@ -2581,13 +3035,19 @@ async function loadAuditHistory() {
 
         const daoGeneralDonations = new Set(
             records
-                .filter(record => record.type === "general-donation")
+                .filter(
+                    record =>
+                        record.type === "general-donation"
+                )
                 .map(record => record.txHash)
         );
 
         const daoRequestDonations = new Set(
             records
-                .filter(record => record.type === "request-donation")
+                .filter(
+                    record =>
+                        record.type === "request-donation"
+                )
                 .map(record => record.txHash)
         );
 
@@ -2608,6 +3068,7 @@ async function loadAuditHistory() {
 
             return true;
         });
+
 
         // -------------------------------------------------
         // 13.7. ГРУППИРОВКА СОБЫТИЙ ПО ТРАНЗАКЦИЯМ
@@ -2635,11 +3096,11 @@ async function loadAuditHistory() {
             "request-changes",
             "request-resubmitted",
             "request-published",
-            "request-finalized",
+            "request-rejected",
+            "request-completed",
             "request-cancelled",
             "general-donation",
             "request-donation",
-            "vote",
             "passport-minted",
             "milestone-created",
             "milestone-updated",
@@ -2654,39 +3115,52 @@ async function loadAuditHistory() {
             "reservation-released"
         ];
 
-        const allEvents = Array.from(grouped.values()).map(group => {
-            const items = group.records;
+        const allEvents =
+            Array.from(grouped.values()).map(group => {
+                const items = group.records;
 
-            const sortedItems = items.slice().sort((a, b) => {
-                const indexA = priority.indexOf(a.type);
-                const indexB = priority.indexOf(b.type);
+                const sortedItems = items
+                    .slice()
+                    .sort((a, b) => {
+                        const indexA =
+                            priority.indexOf(a.type);
 
-                return (
-                    (indexA === -1 ? 999 : indexA) -
-                    (indexB === -1 ? 999 : indexB)
-                );
+                        const indexB =
+                            priority.indexOf(b.type);
+
+                        return (
+                            (indexA === -1 ? 999 : indexA) -
+                            (indexB === -1 ? 999 : indexB)
+                        );
+                    });
+
+                const main = sortedItems[0];
+
+                const descriptions = [
+                    ...new Set(
+                        items.map(item => item.desc)
+                    )
+                ];
+
+                const tags = [
+                    ...new Set(
+                        items.map(item => item.tag)
+                    )
+                ];
+
+                return {
+                    block: group.block,
+                    txHash: group.txHash,
+                    tag: tags.join(" · "),
+                    cls: main.cls,
+                    desc: descriptions.join(" ")
+                };
             });
 
-            const main = sortedItems[0];
+        allEvents.sort(
+            (a, b) => b.block - a.block
+        );
 
-            const descriptions = [
-                ...new Set(items.map(item => item.desc))
-            ];
-
-            const tags = [
-                ...new Set(items.map(item => item.tag))
-            ];
-
-            return {
-                block: group.block,
-                txHash: group.txHash,
-                tag: tags.join(" · "),
-                cls: main.cls,
-                desc: descriptions.join(" ")
-            };
-        });
-
-        allEvents.sort((a, b) => b.block - a.block);
 
         // -------------------------------------------------
         // 13.8. ОТОБРАЖЕНИЕ ИСТОРИИ
@@ -2700,6 +3174,7 @@ async function loadAuditHistory() {
                 emptyMessage =
                     "Логи найдены, но ни одно событие не удалось " +
                     "добавить в журнал. Проверьте ABI и обработчики событий.";
+
             } else if (logErrors.length > 0) {
                 emptyMessage =
                     "Не удалось получить логи блокчейна. " +
@@ -2713,12 +3188,22 @@ async function loadAuditHistory() {
             `;
 
             console.warn("Журнал пуст.");
+
             console.log("DAO:", logsByContract.DAO);
             console.log("Treasury:", logsByContract.Treasury);
             console.log("Milestones:", logsByContract.Milestones);
+
             console.log("Всего логов:", allLogs.length);
-            console.log("Обработано событий:", records.length);
-            console.log("Ошибок получения логов:", logErrors.length);
+            console.log(
+                "Обработано событий:",
+                records.length
+            );
+
+            console.log(
+                "Ошибок получения логов:",
+                logErrors.length
+            );
+
             console.log("======================================");
 
             return;
@@ -2751,6 +3236,7 @@ async function loadAuditHistory() {
             return `
                 <div class="list-item">
                     <div>
+
                         <span
                             class="badge ${escapeHtml(event.cls)}"
                             style="margin-right:0.5rem;"
@@ -2758,11 +3244,14 @@ async function loadAuditHistory() {
                             ${escapeHtml(event.tag)}
                         </span>
 
-                        <span>${escapeHtml(event.desc)}</span>
+                        <span>
+                            ${escapeHtml(event.desc)}
+                        </span>
 
                         <div class="mono" style="margin-top:0.25rem;">
                             Блок: ${Number(event.block)}
                         </div>
+
                     </div>
 
                     ${txElement}
@@ -2779,7 +3268,10 @@ async function loadAuditHistory() {
         console.log("======================================");
 
     } catch (err) {
-        console.error("Ошибка загрузки истории DAO:", err);
+        console.error(
+            "Ошибка загрузки истории DAO:",
+            err
+        );
 
         timeline.innerHTML = `
             <p style="color:red;">
@@ -2797,18 +3289,26 @@ async function loadAuditHistory() {
 
 window.registerMember = registerMember;
 
-window.loadAdminModerationQueue = loadAdminModerationQueue;
+window.loadAdminModerationQueue =
+    loadAdminModerationQueue;
 
-window.publishAdminRequest = publishAdminRequest;
+window.publishAdminRequest =
+    publishAdminRequest;
 
-window.requestAdminChanges = requestAdminChanges;
+window.requestAdminChanges =
+    requestAdminChanges;
 
-window.rejectAdminRequest = rejectAdminRequest;
+window.rejectAdminRequest =
+    rejectAdminRequest;
 
-window.fundMilestone = fundMilestone;
+window.fundMilestone =
+    fundMilestone;
 
-window.loadValidatorQueue = loadValidatorQueue;
+window.loadValidatorQueue =
+    loadValidatorQueue;
 
-window.approveMs = approveMs;
+window.approveMs =
+    approveMs;
 
-window.loadAuditHistory = loadAuditHistory;
+window.loadAuditHistory =
+    loadAuditHistory;
