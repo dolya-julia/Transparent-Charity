@@ -1,3 +1,4 @@
+
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
@@ -9,49 +10,79 @@ import "./IRescueContracts.sol";
 
 contract RescueMilestones {
 
+    // -----------------------------------------------------
+    // АДРЕСА СВЯЗАННЫХ КОНТРАКТОВ
+    // -----------------------------------------------------
+
     address public admin;
     address public daoContract;
     address public treasuryContract;
 
+    // -----------------------------------------------------
+    // СТАТУСЫ ЗАЯВОК
+    // -----------------------------------------------------
+
     uint8 private constant STATUS_UNDER_REVIEW = 0;
     uint8 private constant STATUS_CHANGES_REQUESTED = 1;
-    uint8 private constant STATUS_APPROVED = 3;
+    uint8 private constant STATUS_APPROVED = 2;
 
-    // Количество созданных этапов за всё время.
+    // -----------------------------------------------------
+    // СЧЁТЧИК СОЗДАННЫХ ЭТАПОВ
+    // -----------------------------------------------------
+
     // Используется для защиты адресов связанных контрактов.
     uint256 public totalMilestonesCreated;
 
+    // -----------------------------------------------------
+    // СТРУКТУРА ЭТАПА
+    // -----------------------------------------------------
+
     struct Milestone {
+
         string description;
+
         address payable recipient;
+
         uint256 amount;
 
         string evidenceURI;
+
         bytes32 evidenceHash;
 
         uint256 approvalCount;
 
         bool evidenceSubmitted;
+
         bool funded;
+
         bool released;
+
         bool exists;
     }
 
-    mapping(uint256 => mapping(uint256 => Milestone))
-        private milestones;
+    // -----------------------------------------------------
+    // ХРАНИЛИЩА
+    // -----------------------------------------------------
 
-    mapping(uint256 => uint256)
-        public milestoneCount;
+    mapping(
+        uint256 => mapping(uint256 => Milestone)
+    ) private milestones;
 
-    mapping(uint256 => uint256)
-        public milestoneTotal;
+    mapping(
+        uint256 => uint256
+    ) public milestoneCount;
 
-    mapping(uint256 => mapping(uint256 => mapping(address => bool)))
-        public hasApprovedMilestone;
+    mapping(
+        uint256 => uint256
+    ) public milestoneTotal;
 
-    // =========================================================
+    mapping(
+        uint256 => mapping(uint256 => mapping(address => bool))
+    ) public hasApprovedMilestone;
+
+    // =====================================================
     // СОБЫТИЯ
-    // =========================================================
+    // =====================================================
 
     event MilestoneCreated(
         uint256 indexed requestId,
@@ -101,29 +132,37 @@ contract RescueMilestones {
         uint256 generalAmount
     );
 
-    event DAOUpdated(address indexed dao);
-    event TreasuryUpdated(address indexed treasury);
+    event DAOUpdated(
+        address indexed dao
+    );
 
-    // =========================================================
+    event TreasuryUpdated(
+        address indexed treasury
+    );
+
+    // =====================================================
     // МОДИФИКАТОРЫ
-    // =========================================================
+    // =====================================================
 
     modifier onlyAdmin() {
+
         require(
             msg.sender == admin,
             "Only admin"
         );
+
         _;
     }
 
-    // =========================================================
+    // =====================================================
     // КОНСТРУКТОР
-    // =========================================================
+    // =====================================================
 
     constructor(
         address _dao,
         address _treasury
     ) {
+
         require(
             _dao != address(0),
             "Invalid DAO"
@@ -145,20 +184,22 @@ contract RescueMilestones {
         );
 
         admin = msg.sender;
+
         daoContract = _dao;
+
         treasuryContract = _treasury;
     }
 
-    // =========================================================
+    // =====================================================
     // НАСТРОЙКА КОНТРАКТОВ
-    // =========================================================
+    // =====================================================
 
     /**
-     * DAO можно заменить только до создания первого этапа.
+     * @notice Замена DAO.
      *
-     * После создания этапов изменение DAO может нарушить
-     * связь существующих заявок с первоначальным контрактом.
+     * Разрешена только до создания первого этапа.
      */
+
     function setDAO(
         address _dao
     ) external onlyAdmin {
@@ -184,18 +225,11 @@ contract RescueMilestones {
     }
 
     /**
-     * Treasury можно заменить только до создания первого этапа.
+     * @notice Замена Treasury.
      *
-     * Вызов разрешён:
-     * 1. Администратору.
-     * 2. DAO-контракту.
-     *
-     * DAO вызывает эту функцию при настройке Milestones
-     * через RescueDAO.setMilestonesContract().
-     *
-     * Это предотвращает ошибку Only admin при первоначальной
-     * настройке связанных контрактов.
+     * Вызвать функцию может администратор или DAO.
      */
+
     function setTreasury(
         address _treasury
     ) external {
@@ -226,9 +260,18 @@ contract RescueMilestones {
         emit TreasuryUpdated(_treasury);
     }
 
-    // =========================================================
+    // =====================================================
     // ПРОВЕРКА ПРАВ НА ПОДГОТОВКУ ЗАЯВКИ
-    // =========================================================
+    // =====================================================
+
+    /**
+     * @notice Проверяет, что этап добавляет или редактирует
+     * именно заявитель и заявка ещё не опубликована.
+     *
+     * Допустимые статусы:
+     * 0 — UnderReview
+     * 1 — ChangesRequested
+     */
 
     function _checkPreparationAccess(
         uint256 requestId
@@ -237,11 +280,11 @@ contract RescueMilestones {
         view
         returns (uint256 requestedAmount)
     {
+
         (
             address requester,
             uint256 amount,
             uint8 status,
-            ,
             bool exists
         ) = IRescueDAOView(daoContract)
             .getRequestCore(requestId);
@@ -265,9 +308,15 @@ contract RescueMilestones {
         return amount;
     }
 
-    // =========================================================
+    // =====================================================
     // ДОБАВЛЕНИЕ ЭТАПА
-    // =========================================================
+    // =====================================================
+
+    /**
+     * @notice Добавляет новый этап заявки.
+     *
+     * Вызывается заявителем до одобрения заявки.
+     */
 
     function addMilestone(
         uint256 requestId,
@@ -299,20 +348,25 @@ contract RescueMilestones {
             "Milestone total exceeds request"
         );
 
-        uint256 id = ++milestoneCount[requestId];
+        uint256 id =
+            ++milestoneCount[requestId];
 
         Milestone storage m =
             milestones[requestId][id];
 
         m.description = description;
+
         m.recipient = recipient;
+
         m.amount = amount;
+
         m.exists = true;
 
         milestoneTotal[requestId] += amount;
 
         totalMilestonesCreated++;
 
+        // Уведомляем DAO об изменении общей суммы этапов.
         IRescueDAOView(daoContract).onMilestoneAdded(
             requestId,
             amount
@@ -327,9 +381,15 @@ contract RescueMilestones {
         );
     }
 
-    // =========================================================
+    // =====================================================
     // РЕДАКТИРОВАНИЕ ЭТАПА
-    // =========================================================
+    // =====================================================
+
+    /**
+     * @notice Изменяет описание, получателя или сумму этапа.
+     *
+     * Изменение возможно только до одобрения заявки.
+     */
 
     function updateMilestone(
         uint256 requestId,
@@ -388,15 +448,20 @@ contract RescueMilestones {
         );
 
         m.description = description;
+
         m.recipient = recipient;
+
         m.amount = newAmount;
 
         m.evidenceURI = "";
+
         m.evidenceHash = bytes32(0);
+
         m.evidenceSubmitted = false;
 
         milestoneTotal[requestId] = newTotal;
 
+        // Уведомляем DAO об изменении суммы этапа.
         IRescueDAOView(daoContract).onMilestoneUpdated(
             requestId,
             oldAmount,
@@ -413,20 +478,23 @@ contract RescueMilestones {
         );
     }
 
-    // =========================================================
+    // =====================================================
     // ФИНАНСИРОВАНИЕ ОТДЕЛЬНОГО ЭТАПА
-    // =========================================================
+    // =====================================================
 
     /**
      * @notice Резервирует средства для конкретного этапа.
      *
      * Может вызвать любой пользователь после одобрения заявки.
      *
-     * Сначала используются целевые пожертвования заявки.
-     * Недостающая сумма берётся из общего фонда.
+     * Приоритет источников финансирования:
+     *
+     * 1. Целевые пожертвования заявки.
+     * 2. Общий фонд для покрытия недостающей суммы.
      *
      * Если средств недостаточно, транзакция отменяется.
      */
+
     function fundMilestone(
         uint256 requestId,
         uint256 milestoneId
@@ -436,7 +504,6 @@ contract RescueMilestones {
             ,
             ,
             uint8 status,
-            ,
             bool exists
         ) = IRescueDAOView(daoContract)
             .getRequestCore(requestId);
@@ -472,18 +539,30 @@ contract RescueMilestones {
         IRescueTreasury treasury =
             IRescueTreasury(treasuryContract);
 
-        // Доступные целевые пожертвования заявки.
-        uint256 targetAvailable =
-            treasury.getAvailableRequestDonations(requestId);
+        // -------------------------------------------------
+        // 1. Получаем доступные целевые пожертвования.
+        // -------------------------------------------------
 
-        // Сначала используем целевые средства.
+        uint256 targetAvailable =
+            treasury.getAvailableRequestDonations(
+                requestId
+            );
+
+        // -------------------------------------------------
+        // 2. Сначала используем целевые средства.
+        // -------------------------------------------------
+
         uint256 targetAmount = m.amount;
 
         if (targetAmount > targetAvailable) {
+
             targetAmount = targetAvailable;
         }
 
-        // Остаток финансируется из общего фонда.
+        // -------------------------------------------------
+        // 3. Недостающая сумма берётся из общего фонда.
+        // -------------------------------------------------
+
         uint256 generalAmount =
             m.amount - targetAmount;
 
@@ -492,7 +571,10 @@ contract RescueMilestones {
             "Insufficient funds for milestone"
         );
 
-        // Резервирование в Treasury.
+        // -------------------------------------------------
+        // 4. Резервируем средства в Treasury.
+        // -------------------------------------------------
+
         treasury.reserveMilestoneFunds(
             requestId,
             milestoneId,
@@ -500,7 +582,10 @@ contract RescueMilestones {
             generalAmount
         );
 
-        // Отмечаем этап как профинансированный.
+        // -------------------------------------------------
+        // 5. Отмечаем этап как профинансированный.
+        // -------------------------------------------------
+
         m.funded = true;
 
         emit MilestoneFunded(
@@ -512,9 +597,23 @@ contract RescueMilestones {
         );
     }
 
-    // =========================================================
+    // =====================================================
     // ЗАГРУЗКА ДОКАЗАТЕЛЬСТВ ВЫПОЛНЕНИЯ
-    // =========================================================
+    // =====================================================
+
+    /**
+     * @notice Заявитель прикрепляет доказательства выполнения.
+     *
+     * Например:
+     * - чек;
+     * - счёт;
+     * - акт выполненных работ;
+     * - фотографии;
+     * - документы ветеринарной клиники.
+     *
+     * Доказательства должны быть представлены до одобрения
+     * этапа валидаторами.
+     */
 
     function submitMilestoneEvidence(
         uint256 requestId,
@@ -527,7 +626,6 @@ contract RescueMilestones {
             address requester,
             ,
             uint8 status,
-            ,
             bool exists
         ) = IRescueDAOView(daoContract)
             .getRequestCore(requestId);
@@ -581,7 +679,9 @@ contract RescueMilestones {
         );
 
         m.evidenceURI = evidenceURI;
+
         m.evidenceHash = evidenceHash;
+
         m.evidenceSubmitted = true;
 
         emit MilestoneEvidenceSubmitted(
@@ -592,9 +692,15 @@ contract RescueMilestones {
         );
     }
 
-    // =========================================================
+    // =====================================================
     // ПОДТВЕРЖДЕНИЕ ЭТАПА ВАЛИДАТОРАМИ
-    // =========================================================
+    // =====================================================
+
+    /**
+     * @notice Валидатор подтверждает выполнение этапа.
+     *
+     * Для выплаты необходимо минимум два подтверждения.
+     */
 
     function approveMilestone(
         uint256 requestId,
@@ -610,7 +716,6 @@ contract RescueMilestones {
             ,
             ,
             uint8 status,
-            ,
             bool exists
         ) = IRescueDAOView(daoContract)
             .getRequestCore(requestId);
@@ -653,10 +758,18 @@ contract RescueMilestones {
             "Already approved"
         );
 
-        hasApprovedMilestone[requestId][milestoneId][msg.sender] = true;
+        // Фиксируем одобрение конкретного валидатора.
+        hasApprovedMilestone[
+            requestId
+        ][
+            milestoneId
+        ][
+            msg.sender
+        ] = true;
 
         m.approvalCount++;
 
+        // Уведомляем DAO для обновления статистики валидаторов.
         IRescueDAOView(daoContract).onValidatorApproved(
             msg.sender
         );
@@ -668,7 +781,9 @@ contract RescueMilestones {
             m.approvalCount
         );
 
+        // После двух подтверждений выполняем выплату.
         if (m.approvalCount >= 2) {
+
             _releaseMilestone(
                 requestId,
                 milestoneId,
@@ -677,9 +792,15 @@ contract RescueMilestones {
         }
     }
 
-    // =========================================================
+    // =====================================================
     // ВЫПУСК СРЕДСТВ ПО ЭТАПУ
-    // =========================================================
+    // =====================================================
+
+    /**
+     * @notice Внутренняя функция выплаты.
+     *
+     * Проверяет резервы и переводит средства получателю.
+     */
 
     function _releaseMilestone(
         uint256 requestId,
@@ -700,13 +821,14 @@ contract RescueMilestones {
         IRescueTreasury treasury =
             IRescueTreasury(treasuryContract);
 
-        // Получаем индивидуальные резервы этапа.
+        // Получаем целевой резерв этапа.
         uint256 targetAmount =
             treasury.milestoneTargetReserved(
                 requestId,
                 milestoneId
             );
 
+        // Получаем резерв из общего фонда.
         uint256 generalAmount =
             treasury.milestoneGeneralReserved(
                 requestId,
@@ -718,9 +840,8 @@ contract RescueMilestones {
             "Invalid milestone reservation"
         );
 
-        // Сначала блокируем повторную выплату.
-        // Если внешний вызов завершится ошибкой,
-        // вся транзакция будет автоматически отменена.
+        // Блокируем повторную выплату.
+        // При ошибке внешнего вызова транзакция полностью откатится.
         m.released = true;
 
         // Выплачиваем средства получателю.
@@ -749,9 +870,15 @@ contract RescueMilestones {
         );
     }
 
-    // =========================================================
+    // =====================================================
     // ПОЛУЧЕНИЕ ИНФОРМАЦИИ ОБ ЭТАПЕ
-    // =========================================================
+    // =====================================================
+
+    /**
+     * @notice Возвращает подробную информацию об этапе.
+     *
+     * milestoneId начинается с 1.
+     */
 
     function getMilestone(
         uint256 requestId,
@@ -770,6 +897,7 @@ contract RescueMilestones {
             bool released
         )
     {
+
         Milestone storage m =
             milestones[requestId][milestoneId];
 
@@ -790,9 +918,18 @@ contract RescueMilestones {
         );
     }
 
-    // =========================================================
+    // =====================================================
     // ДОПОЛНИТЕЛЬНАЯ ИНФОРМАЦИЯ ОБ ЭТАПЕ
-    // =========================================================
+    // =====================================================
+
+    /**
+     * @notice Возвращает состояние финансирования этапа.
+     *
+     * funded          — средства зарезервированы;
+     * targetReserved  — резерв из целевых пожертвований;
+     * generalReserved — резерв из общего фонда;
+     * released        — средства выплачены.
+     */
 
     function getMilestoneFundingStatus(
         uint256 requestId,
@@ -807,6 +944,7 @@ contract RescueMilestones {
             bool released
         )
     {
+
         Milestone storage m =
             milestones[requestId][milestoneId];
 
@@ -820,21 +958,28 @@ contract RescueMilestones {
 
         return (
             m.funded,
+
             treasury.milestoneTargetReserved(
                 requestId,
                 milestoneId
             ),
+
             treasury.milestoneGeneralReserved(
                 requestId,
                 milestoneId
             ),
+
             m.released
         );
     }
 
-    // =========================================================
+    // =====================================================
     // СВОДНАЯ ИНФОРМАЦИЯ ОБ ЭТАПАХ
-    // =========================================================
+    // =====================================================
+
+    /**
+     * @notice Возвращает общую сумму и количество этапов.
+     */
 
     function getMilestoneSummary(
         uint256 requestId
@@ -846,21 +991,30 @@ contract RescueMilestones {
             uint256 count
         )
     {
+
         return (
             milestoneTotal[requestId],
             milestoneCount[requestId]
         );
     }
 
-    // =========================================================
+    // =====================================================
     // ПРОВЕРКА ОДОБРЕНИЯ ВАЛИДАТОРОМ
-    // =========================================================
+    // =====================================================
+
+    /**
+     * @notice Проверяет, одобрил ли конкретный валидатор этап.
+     */
 
     function hasValidatorApproved(
         uint256 requestId,
         uint256 milestoneId,
         address validator
-    ) external view returns (bool) {
+    )
+        external
+        view
+        returns (bool)
+    {
 
         return hasApprovedMilestone[
             requestId

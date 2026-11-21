@@ -1,3 +1,4 @@
+
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
@@ -19,6 +20,7 @@ interface IRescuePortraitRenderer {
 // =========================================================
 
 interface IRescuePassportLayout {
+
     function renderHeader(
         uint256 seed
     ) external pure returns (string memory);
@@ -36,18 +38,13 @@ interface IRescuePassportLayout {
  * @title RescuePassportRenderer
  * @dev Генерирует SVG-изображение и JSON metadata NFT-паспорта.
  *
- * В metadata отображаются:
- * - имя животного;
- * - визуальные характеристики портрета;
- * - статус заявки;
- * - прогресс лечения;
- * - количество этапов лечения;
- * - сумма, необходимая для заявки;
- * - сумма целевых пожертвований;
- * - процент финансирования.
- *
- * Все денежные значения поступают в wei,
- * а в metadata преобразуются в ETH.
+ * Статусы заявки:
+ * 0 — UnderReview
+ * 1 — ChangesRequested
+ * 2 — Approved
+ * 3 — Rejected
+ * 4 — Completed
+ * 5 — Cancelled
  */
 contract RescuePassportRenderer {
 
@@ -215,6 +212,11 @@ contract RescuePassportRenderer {
     // СТАТУС ЗАЯВКИ
     // =========================================================
 
+    /**
+     * @dev Преобразует числовой статус DAO в текст.
+     *
+     * Важно: значения соответствуют новой схеме без Voting.
+     */
     function _statusText(
         uint8 s
     )
@@ -222,11 +224,12 @@ contract RescuePassportRenderer {
         pure
         returns (string memory)
     {
-        if (s == 0) return "Waiting for Help";
-        if (s == 1) return "In Rehabilitation";
-        if (s == 2) return "Rejected";
-        if (s == 3) return "Program Completed";
-        if (s == 4) return "Cancelled";
+        if (s == 0) return "Waiting for Review";
+        if (s == 1) return "Changes Requested";
+        if (s == 2) return "Approved - Help in Progress";
+        if (s == 3) return "Rejected";
+        if (s == 4) return "Program Completed";
+        if (s == 5) return "Cancelled";
 
         return "Unknown";
     }
@@ -271,13 +274,11 @@ contract RescuePassportRenderer {
         for (uint256 i; i < source.length; i++) {
             bytes1 c = source[i];
 
-            // Экранирование кавычек и обратного слеша
             if (c == 0x22 || c == 0x5C) {
                 result[length] = 0x5C;
                 length++;
             }
 
-            // Управляющие символы заменяем пробелом
             if (uint8(c) < 0x20) {
                 result[length] = 0x20;
             } else {
@@ -300,16 +301,6 @@ contract RescuePassportRenderer {
     // ПРЕОБРАЗОВАНИЕ WEI В ETH
     // =========================================================
 
-    /**
-     * @dev Преобразует сумму из wei в строку ETH.
-     *
-     * Например:
-     * 1000000000000000000 -> "1"
-     * 1500000000000000000 -> "1.5"
-     * 125000000000000000  -> "0.125"
-     *
-     * Лишние нули в дробной части удаляются.
-     */
     function _formatEther(
         uint256 weiAmount
     )
@@ -322,12 +313,10 @@ contract RescuePassportRenderer {
 
         string memory wholePart = whole.toString();
 
-        // Если дробная часть отсутствует
         if (remainder == 0) {
             return wholePart;
         }
 
-        // Формируем дробную часть из 18 цифр
         bytes memory fraction = new bytes(18);
 
         for (uint256 i = 18; i > 0; i--) {
@@ -338,7 +327,6 @@ contract RescuePassportRenderer {
             remainder /= 10;
         }
 
-        // Удаляем нули справа
         uint256 fractionLength = 18;
 
         while (
@@ -348,7 +336,6 @@ contract RescuePassportRenderer {
             fractionLength--;
         }
 
-        // Создаём строку нужной длины
         bytes memory trimmedFraction = new bytes(
             fractionLength
         );
@@ -391,9 +378,6 @@ contract RescuePassportRenderer {
     // ПРОГРЕСС ЛЕЧЕНИЯ
     // =========================================================
 
-    /**
-     * @dev Рассчитывает процент завершённых этапов лечения.
-     */
     function _progress(
         RenderParams memory p
     )
@@ -419,14 +403,6 @@ contract RescuePassportRenderer {
     // ПРОГРЕСС ФИНАНСИРОВАНИЯ
     // =========================================================
 
-    /**
-     * @dev Рассчитывает процент целевого финансирования заявки.
-     *
-     * Если целевые пожертвования достигли запрошенной суммы,
-     * возвращается 100%.
-     *
-     * Если запрошенная сумма равна нулю, возвращается 0%.
-     */
     function _fundingProgress(
         RenderParams memory p
     )
@@ -452,15 +428,6 @@ contract RescuePassportRenderer {
     // ФОРМИРОВАНИЕ SVG
     // =========================================================
 
-    /**
-     * @dev Генерирует изображение NFT.
-     *
-     * Использует существующий интерфейс Layout:
-     * renderHeader(seed) и renderFooter(...).
-     *
-     * Поэтому текущий RescuePassportLayout менять
-     * для совместимости этого Renderer не требуется.
-     */
     function _generateSVG(
         RenderParams memory p,
         uint256 seed,
@@ -563,10 +530,6 @@ contract RescuePassportRenderer {
         pure
         returns (string memory)
     {
-        // -----------------------------------------------------
-        // Атрибуты лечения
-        // -----------------------------------------------------
-
         string memory treatmentAttributes = string(
             abi.encodePacked(
                 '{"trait_type":"Status","value":"',
@@ -590,10 +553,6 @@ contract RescuePassportRenderer {
                 '"},'
             )
         );
-
-        // -----------------------------------------------------
-        // Атрибуты финансирования
-        // -----------------------------------------------------
 
         string memory fundingAttributes = string(
             abi.encodePacked(
@@ -698,18 +657,6 @@ contract RescuePassportRenderer {
     // ОСНОВНАЯ ФУНКЦИЯ RENDER
     // =========================================================
 
-    /**
-     * @dev Формирует итоговые JSON metadata NFT.
-     *
-     * Последовательность:
-     * 1. Рассчитывает seed для генерации портрета.
-     * 2. Рассчитывает прогресс лечения.
-     * 3. Рассчитывает прогресс финансирования.
-     * 4. Генерирует SVG.
-     * 5. Кодирует SVG в Base64.
-     * 6. Формирует JSON metadata.
-     * 7. Кодирует JSON в Base64.
-     */
     function render(
         RenderParams memory params
     )
@@ -725,19 +672,16 @@ contract RescuePassportRenderer {
         uint256 fundingProgress =
             _fundingProgress(params);
 
-        // Генерация SVG
         string memory svg = _generateSVG(
             params,
             seed,
             treatmentProgress
         );
 
-        // Кодирование SVG
         string memory imageBase64 = Base64.encode(
             bytes(svg)
         );
 
-        // Формирование JSON
         string memory json = _generateJSON(
             params,
             seed,
@@ -746,7 +690,6 @@ contract RescuePassportRenderer {
             imageBase64
         );
 
-        // Возвращаем Base64 JSON
         return string(
             abi.encodePacked(
                 "data:application/json;base64,",

@@ -1,3 +1,4 @@
+
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
@@ -17,18 +18,21 @@ interface IRescueDAORead {
         view
         returns (address);
 
-    function getRequestCore(uint256 requestId)
+    function getRequestCore(
+        uint256 requestId
+    )
         external
         view
         returns (
             address requester,
             uint256 requestedAmount,
             uint8 status,
-            uint256 votingEndsAt,
             bool exists
         );
 
-    function getRequestTextAndMeta(uint256 requestId)
+    function getRequestTextAndMeta(
+        uint256 requestId
+    )
         external
         view
         returns (
@@ -40,14 +44,13 @@ interface IRescueDAORead {
             bool exists
         );
 
-    function getRequestFinancialAndVoting(uint256 requestId)
+    function getRequestFinancialStats(
+        uint256 requestId
+    )
         external
         view
         returns (
             uint256 requestedAmount,
-            uint256 yesVotes,
-            uint256 noVotes,
-            uint256 votingEndsAt,
             uint256 milestoneTotal,
             uint256 releasedAmount,
             uint256 milestoneCount,
@@ -55,21 +58,15 @@ interface IRescueDAORead {
             uint8 status
         );
 
-    function getMilestoneSummary(uint256 requestId)
+    function getMilestoneSummary(
+        uint256 requestId
+    )
         external
         view
         returns (
             uint256 total,
             uint256 count
         );
-
-    function hasVoted(
-        uint256 requestId,
-        address voter
-    )
-        external
-        view
-        returns (bool);
 }
 
 // =========================================================
@@ -259,11 +256,10 @@ contract RescueDAOView {
 
     uint8 public constant STATUS_UNDER_REVIEW = 0;
     uint8 public constant STATUS_CHANGES_REQUESTED = 1;
-    uint8 public constant STATUS_VOTING = 2;
-    uint8 public constant STATUS_APPROVED = 3;
-    uint8 public constant STATUS_REJECTED = 4;
-    uint8 public constant STATUS_COMPLETED = 5;
-    uint8 public constant STATUS_CANCELLED = 6;
+    uint8 public constant STATUS_APPROVED = 2;
+    uint8 public constant STATUS_REJECTED = 3;
+    uint8 public constant STATUS_COMPLETED = 4;
+    uint8 public constant STATUS_CANCELLED = 5;
 
     // -----------------------------------------------------
     // КОНСТРУКТОР
@@ -304,16 +300,13 @@ contract RescueDAOView {
     // ВНУТРЕННЯЯ ФУНКЦИЯ ПОЛУЧЕНИЯ RESCUEMILESTONES
     // =====================================================
 
-    /**
-     * @notice Получает актуальный адрес RescueMilestones
-     * из основного контракта DAO.
-     */
     function _getMilestones()
         internal
         view
         returns (IRescueMilestonesRead)
     {
-        address milestonesAddress = dao.milestonesContract();
+        address milestonesAddress =
+            dao.milestonesContract();
 
         require(
             milestonesAddress != address(0),
@@ -325,16 +318,15 @@ contract RescueDAOView {
             "Invalid Milestones contract"
         );
 
-        return IRescueMilestonesRead(milestonesAddress);
+        return IRescueMilestonesRead(
+            milestonesAddress
+        );
     }
 
     // =====================================================
     // ОБЩАЯ ИНФОРМАЦИЯ О ЗАЯВКАХ
     // =====================================================
 
-    /**
-     * @notice Возвращает количество созданных заявок.
-     */
     function getRequestCount()
         external
         view
@@ -343,27 +335,24 @@ contract RescueDAOView {
         return dao.requestCount();
     }
 
-    /**
-     * @notice Возвращает основные данные заявки.
-     */
-    function getRequestCore(uint256 requestId)
+    function getRequestCore(
+        uint256 requestId
+    )
         external
         view
         returns (
             address requester,
             uint256 requestedAmount,
             uint8 status,
-            uint256 votingEndsAt,
             bool exists
         )
     {
         return dao.getRequestCore(requestId);
     }
 
-    /**
-     * @notice Возвращает текстовые данные заявки.
-     */
-    function getAidRequestInfo(uint256 requestId)
+    function getAidRequestInfo(
+        uint256 requestId
+    )
         external
         view
         returns (
@@ -381,21 +370,22 @@ contract RescueDAOView {
             evidenceHash,
             requester,
 
-        ) = dao.getRequestTextAndMeta(requestId);
+        ) = dao.getRequestTextAndMeta(
+            requestId
+        );
     }
 
-    /**
-     * @notice Возвращает финансовые данные,
-     * информацию о голосовании и этапах.
-     */
-    function getAidRequestStats(uint256 requestId)
+    // =====================================================
+    // ФИНАНСОВЫЕ ДАННЫЕ И ЭТАПЫ ЗАЯВКИ
+    // =====================================================
+
+    function getAidRequestStats(
+        uint256 requestId
+    )
         external
         view
         returns (
             uint256 requestedAmount,
-            uint256 yesVotes,
-            uint256 noVotes,
-            uint256 votingEndsAt,
             uint256 milestoneTotal,
             uint256 releasedAmount,
             uint256 milestoneCount,
@@ -403,13 +393,14 @@ contract RescueDAOView {
             uint8 status
         )
     {
-        return dao.getRequestFinancialAndVoting(requestId);
+        return dao.getRequestFinancialStats(
+            requestId
+        );
     }
 
-    /**
-     * @notice Возвращает сумму и количество этапов.
-     */
-    function getMilestoneSummary(uint256 requestId)
+    function getMilestoneSummary(
+        uint256 requestId
+    )
         external
         view
         returns (
@@ -417,16 +408,15 @@ contract RescueDAOView {
             uint256 count
         )
     {
-        return dao.getMilestoneSummary(requestId);
+        return dao.getMilestoneSummary(
+            requestId
+        );
     }
 
     // =====================================================
     // ИНФОРМАЦИЯ ОБ ОТДЕЛЬНЫХ ЭТАПАХ
     // =====================================================
 
-    /**
-     * @notice Возвращает количество этапов заявки.
-     */
     function getMilestoneCount(
         uint256 requestId
     )
@@ -434,14 +424,11 @@ contract RescueDAOView {
         view
         returns (uint256)
     {
-        return _getMilestones().milestoneCount(requestId);
+        return _getMilestones().milestoneCount(
+            requestId
+        );
     }
 
-    /**
-     * @notice Возвращает подробную информацию об этапе.
-     *
-     * milestoneId начинается с 1.
-     */
     function getMilestoneDetails(
         uint256 requestId,
         uint256 milestoneId
@@ -465,14 +452,6 @@ contract RescueDAOView {
         );
     }
 
-    /**
-     * @notice Возвращает финансовое состояние отдельного этапа.
-     *
-     * funded          — средства зарезервированы;
-     * targetReserved  — сумма из целевых пожертвований;
-     * generalReserved — сумма из общего фонда;
-     * released        — средства выплачены получателю.
-     */
     function getMilestoneFundingStatus(
         uint256 requestId,
         uint256 milestoneId
@@ -492,10 +471,6 @@ contract RescueDAOView {
         );
     }
 
-    /**
-     * @notice Проверяет, одобрил ли конкретный валидатор
-     * доказательства по этапу.
-     */
     function hasValidatorApprovedMilestone(
         uint256 requestId,
         uint256 milestoneId,
@@ -512,15 +487,10 @@ contract RescueDAOView {
         );
     }
 
-    /**
-     * @notice Возвращает сводную информацию по финансированию
-     * и выплатам всех этапов заявки.
-     *
-     * fundedCount — число профинансированных этапов;
-     * releasedCount — число выплаченных этапов;
-     * targetReserved — общая сумма целевых резервов;
-     * generalReserved — общая сумма резервов из общего фонда.
-     */
+    // =====================================================
+    // СВОДНАЯ ИНФОРМАЦИЯ ПО ФИНАНСИРОВАНИЮ ЭТАПОВ
+    // =====================================================
+
     function getMilestonesFundingSummary(
         uint256 requestId
     )
@@ -533,11 +503,14 @@ contract RescueDAOView {
             uint256 generalReserved
         )
     {
-        IRescueMilestonesRead milestones = _getMilestones();
+        IRescueMilestonesRead milestones =
+            _getMilestones();
 
-        uint256 count = milestones.milestoneCount(requestId);
+        uint256 count =
+            milestones.milestoneCount(requestId);
 
         for (uint256 i = 1; i <= count; i++) {
+
             (
                 bool funded,
                 uint256 targetAmount,
@@ -565,17 +538,6 @@ contract RescueDAOView {
     // ФИНАНСОВАЯ СТАТИСТИКА ЗАЯВКИ
     // =====================================================
 
-    /**
-     * @notice Возвращает статистику финансирования заявки.
-     *
-     * fundingGoal       — требуемая сумма;
-     * targetRaised      — целевые пожертвования;
-     * fundingProgress   — процент сбора;
-     * targetReserved    — зарезервированные целевые средства;
-     * generalReserved   — зарезервированные общие средства;
-     * targetSpent       — потраченные целевые средства;
-     * targetReassigned  — перенаправленные целевые средства.
-     */
     function getAidRequestFundingStats(
         uint256 requestId
     )
@@ -597,13 +559,13 @@ contract RescueDAOView {
             ,
             ,
             ,
-            ,
-            ,
-            ,
 
-        ) = dao.getRequestFinancialAndVoting(requestId);
+        ) = dao.getRequestFinancialStats(
+            requestId
+        );
 
-        targetRaised = treasury.requestDonations(requestId);
+        targetRaised =
+            treasury.requestDonations(requestId);
 
         if (fundingGoal > 0) {
             fundingProgress =
@@ -611,22 +573,30 @@ contract RescueDAOView {
         }
 
         targetReserved =
-            treasury.requestTargetReserved(requestId);
+            treasury.requestTargetReserved(
+                requestId
+            );
 
         generalReserved =
-            treasury.requestGeneralReserved(requestId);
+            treasury.requestGeneralReserved(
+                requestId
+            );
 
         targetSpent =
-            treasury.requestTargetSpent(requestId);
+            treasury.requestTargetSpent(
+                requestId
+            );
 
         targetReassigned =
-            treasury.requestTargetReassigned(requestId);
+            treasury.requestTargetReassigned(
+                requestId
+            );
     }
 
-    /**
-     * @notice Возвращает пожертвование конкретного пользователя
-     * на конкретную заявку.
-     */
+    // =====================================================
+    // ПОЖЕРТВОВАНИЯ ПОЛЬЗОВАТЕЛЯ
+    // =====================================================
+
     function getUserRequestDonation(
         uint256 requestId,
         address user
@@ -645,9 +615,6 @@ contract RescueDAOView {
     // ОБЩАЯ ФИНАНСОВАЯ СТАТИСТИКА
     // =====================================================
 
-    /**
-     * @notice Доступный общий баланс фонда.
-     */
     function getAvailableBalance()
         external
         view
@@ -656,9 +623,6 @@ contract RescueDAOView {
         return treasury.getAvailableBalance();
     }
 
-    /**
-     * @notice Доступные целевые пожертвования заявки.
-     */
     function getAvailableRequestDonations(
         uint256 requestId
     )
@@ -671,9 +635,6 @@ contract RescueDAOView {
         );
     }
 
-    /**
-     * @notice Полный баланс Treasury.
-     */
     function getContractBalance()
         external
         view
@@ -682,22 +643,15 @@ contract RescueDAOView {
         return treasury.getContractBalance();
     }
 
-    /**
-     * @notice Общая сумма расходов из всех источников.
-     */
     function getTotalSpentAllSources()
         external
         view
         returns (uint256)
     {
-        return
-            treasury.totalSpent() +
+        return treasury.totalSpent() +
             treasury.totalTargetSpent();
     }
 
-    /**
-     * @notice Возвращает общую финансовую статистику фонда.
-     */
     function getTreasuryTotals()
         external
         view
@@ -726,9 +680,6 @@ contract RescueDAOView {
     // ДОПОЛНИТЕЛЬНЫЕ ПРОВЕРКИ
     // =====================================================
 
-    /**
-     * @notice Проверяет существование заявки.
-     */
     function requestExists(
         uint256 requestId
     )
@@ -740,45 +691,16 @@ contract RescueDAOView {
             ,
             ,
             ,
-            ,
             bool exists
         ) = dao.getRequestCore(requestId);
 
         return exists;
     }
 
-    /**
-     * @notice Проверяет, голосовал ли участник.
-     */
-    function hasParticipantVoted(
-        uint256 requestId,
-        address participant
-    )
-        external
-        view
-        returns (bool)
-    {
-        return dao.hasVoted(
-            requestId,
-            participant
-        );
-    }
-
     // =====================================================
     // ПРОВЕРКА СТАТУСА ЗАЯВКИ
     // =====================================================
 
-    /**
-     * @notice Возвращает числовой статус заявки.
-     *
-     * 0 — UnderReview
-     * 1 — ChangesRequested
-     * 2 — Voting
-     * 3 — Approved
-     * 4 — Rejected
-     * 5 — Completed
-     * 6 — Cancelled
-     */
     function getRequestStatus(
         uint256 requestId
     )
@@ -790,7 +712,6 @@ contract RescueDAOView {
             ,
             ,
             uint8 status,
-            ,
             bool exists
         ) = dao.getRequestCore(requestId);
 
@@ -802,9 +723,6 @@ contract RescueDAOView {
         return status;
     }
 
-    /**
-     * @notice Проверяет, находится ли заявка на модерации.
-     */
     function isRequestUnderReview(
         uint256 requestId
     )
@@ -812,12 +730,10 @@ contract RescueDAOView {
         view
         returns (bool)
     {
-        return getStatusInternal(requestId) == STATUS_UNDER_REVIEW;
+        return getStatusInternal(requestId) ==
+            STATUS_UNDER_REVIEW;
     }
 
-    /**
-     * @notice Проверяет, возвращена ли заявка на доработку.
-     */
     function isRequestChangesRequested(
         uint256 requestId
     )
@@ -825,25 +741,10 @@ contract RescueDAOView {
         view
         returns (bool)
     {
-        return getStatusInternal(requestId) == STATUS_CHANGES_REQUESTED;
+        return getStatusInternal(requestId) ==
+            STATUS_CHANGES_REQUESTED;
     }
 
-    /**
-     * @notice Проверяет, идёт ли голосование.
-     */
-    function isRequestVoting(
-        uint256 requestId
-    )
-        external
-        view
-        returns (bool)
-    {
-        return getStatusInternal(requestId) == STATUS_VOTING;
-    }
-
-    /**
-     * @notice Проверяет, одобрена ли заявка.
-     */
     function isRequestApproved(
         uint256 requestId
     )
@@ -851,12 +752,21 @@ contract RescueDAOView {
         view
         returns (bool)
     {
-        return getStatusInternal(requestId) == STATUS_APPROVED;
+        return getStatusInternal(requestId) ==
+            STATUS_APPROVED;
     }
 
-    /**
-     * @notice Проверяет, завершена ли заявка.
-     */
+    function isRequestRejected(
+        uint256 requestId
+    )
+        external
+        view
+        returns (bool)
+    {
+        return getStatusInternal(requestId) ==
+            STATUS_REJECTED;
+    }
+
     function isRequestCompleted(
         uint256 requestId
     )
@@ -864,12 +774,10 @@ contract RescueDAOView {
         view
         returns (bool)
     {
-        return getStatusInternal(requestId) == STATUS_COMPLETED;
+        return getStatusInternal(requestId) ==
+            STATUS_COMPLETED;
     }
 
-    /**
-     * @notice Проверяет, отменена ли заявка.
-     */
     function isRequestCancelled(
         uint256 requestId
     )
@@ -877,12 +785,14 @@ contract RescueDAOView {
         view
         returns (bool)
     {
-        return getStatusInternal(requestId) == STATUS_CANCELLED;
+        return getStatusInternal(requestId) ==
+            STATUS_CANCELLED;
     }
 
-    /**
-     * @notice Внутренняя функция получения статуса.
-     */
+    // =====================================================
+    // ВНУТРЕННЯЯ ФУНКЦИЯ ПОЛУЧЕНИЯ СТАТУСА
+    // =====================================================
+
     function getStatusInternal(
         uint256 requestId
     )
@@ -894,7 +804,6 @@ contract RescueDAOView {
             ,
             ,
             uint8 status,
-            ,
             bool exists
         ) = dao.getRequestCore(requestId);
 

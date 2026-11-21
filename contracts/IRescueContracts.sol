@@ -1,3 +1,4 @@
+
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
@@ -22,34 +23,54 @@ interface IRescueTreasury {
         address _milestones
     ) external;
 
-    // Пожертвования
-    function donate(address donor) external payable;
+    // -----------------------------------------------------
+    // ПОЖЕРТВОВАНИЯ
+    // -----------------------------------------------------
+
+    function donate(
+        address donor
+    ) external payable;
 
     function donateToRequest(
         uint256 requestId,
         address donor
     ) external payable;
 
-    // Доступные средства
+    // -----------------------------------------------------
+    // ДОСТУПНЫЕ СРЕДСТВА
+    // -----------------------------------------------------
+
     function getAvailableBalance()
-        external view returns (uint256);
+        external
+        view
+        returns (uint256);
 
     function getAvailableRequestDonations(
         uint256 requestId
     ) external view returns (uint256);
 
     function getContractBalance()
-        external view returns (uint256);
+        external
+        view
+        returns (uint256);
 
     function getTotalSpentAllSources()
-        external view returns (uint256);
+        external
+        view
+        returns (uint256);
 
-    // Проверка резервирования
+    // -----------------------------------------------------
+    // ПРОВЕРКА РЕЗЕРВИРОВАНИЯ
+    // -----------------------------------------------------
+
     function requestReservationCreated(
         uint256 requestId
     ) external view returns (bool);
 
-    // Резервирование отдельного этапа
+    // -----------------------------------------------------
+    // РЕЗЕРВИРОВАНИЕ ОТДЕЛЬНОГО ЭТАПА
+    // -----------------------------------------------------
+
     function reserveMilestoneFunds(
         uint256 requestId,
         uint256 milestoneId,
@@ -57,7 +78,10 @@ interface IRescueTreasury {
         uint256 generalAmount
     ) external;
 
-    // Выплата по этапу
+    // -----------------------------------------------------
+    // ВЫПЛАТА ПО ЭТАПУ
+    // -----------------------------------------------------
+
     function releaseMilestone(
         uint256 requestId,
         uint256 milestoneId,
@@ -67,17 +91,26 @@ interface IRescueTreasury {
         uint256 generalAmount
     ) external;
 
-    // Освобождение всех резервов заявки
+    // -----------------------------------------------------
+    // ОСВОБОЖДЕНИЕ ВСЕХ РЕЗЕРВОВ ЗАЯВКИ
+    // -----------------------------------------------------
+
     function releaseReservation(
         uint256 requestId
     ) external returns (uint256 generalReleased);
 
-    // Перераспределение доступных целевых средств
+    // -----------------------------------------------------
+    // ПЕРЕРАСПРЕДЕЛЕНИЕ ЦЕЛЕВЫХ СРЕДСТВ
+    // -----------------------------------------------------
+
     function reassignAvailableTargetFunds(
         uint256 requestId
     ) external returns (uint256 amount);
 
-    // Пожертвования
+    // -----------------------------------------------------
+    // ПОЖЕРТВОВАНИЯ НА ЗАЯВКУ
+    // -----------------------------------------------------
+
     function requestDonations(
         uint256 requestId
     ) external view returns (uint256);
@@ -87,7 +120,10 @@ interface IRescueTreasury {
         address user
     ) external view returns (uint256);
 
-    // Общие резервы заявки
+    // -----------------------------------------------------
+    // ОБЩИЕ РЕЗЕРВЫ ЗАЯВКИ
+    // -----------------------------------------------------
+
     function requestTargetReserved(
         uint256 requestId
     ) external view returns (uint256);
@@ -104,7 +140,10 @@ interface IRescueTreasury {
         uint256 requestId
     ) external view returns (uint256);
 
-    // Резервы отдельного этапа
+    // -----------------------------------------------------
+    // РЕЗЕРВЫ ОТДЕЛЬНОГО ЭТАПА
+    // -----------------------------------------------------
+
     function milestoneTargetReserved(
         uint256 requestId,
         uint256 milestoneId
@@ -120,24 +159,44 @@ interface IRescueTreasury {
         uint256 milestoneId
     ) external view returns (bool);
 
-    // Общая статистика
-    function totalDonated() external view returns (uint256);
+    // -----------------------------------------------------
+    // ОБЩАЯ СТАТИСТИКА
+    // -----------------------------------------------------
 
-    function totalReserved() external view returns (uint256);
+    function totalDonated()
+        external
+        view
+        returns (uint256);
 
-    function totalSpent() external view returns (uint256);
+    function totalReserved()
+        external
+        view
+        returns (uint256);
+
+    function totalSpent()
+        external
+        view
+        returns (uint256);
 
     function totalTargetDonations()
-        external view returns (uint256);
+        external
+        view
+        returns (uint256);
 
     function totalTargetReserved()
-        external view returns (uint256);
+        external
+        view
+        returns (uint256);
 
     function totalTargetSpent()
-        external view returns (uint256);
+        external
+        view
+        returns (uint256);
 
     function totalTargetReassigned()
-        external view returns (uint256);
+        external
+        view
+        returns (uint256);
 }
 
 // =========================================================
@@ -146,9 +205,17 @@ interface IRescueTreasury {
 
 interface IRescueDAOView {
 
+    // -----------------------------------------------------
+    // ПРОВЕРКА ВАЛИДАТОРА
+    // -----------------------------------------------------
+
     function isValidator(
         address account
     ) external view returns (bool);
+
+    // -----------------------------------------------------
+    // ОСНОВНЫЕ ДАННЫЕ ЗАЯВКИ
+    // -----------------------------------------------------
 
     function getRequestCore(
         uint256 requestId
@@ -159,9 +226,12 @@ interface IRescueDAOView {
             address requester,
             uint256 requestedAmount,
             uint8 status,
-            uint256 votingEndsAt,
             bool exists
         );
+
+    // -----------------------------------------------------
+    // СВОДКА ПО ЭТАПАМ
+    // -----------------------------------------------------
 
     function getMilestoneSummary(
         uint256 requestId
@@ -172,6 +242,10 @@ interface IRescueDAOView {
             uint256 total,
             uint256 count
         );
+
+    // -----------------------------------------------------
+    // ОБРАТНЫЕ ВЫЗОВЫ ОТ RESCUEMILESTONES
+    // -----------------------------------------------------
 
     function onMilestoneAdded(
         uint256 requestId,

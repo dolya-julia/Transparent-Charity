@@ -1,3 +1,4 @@
+
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
@@ -19,9 +20,9 @@ interface IRescueMilestoneCounter {
 
 contract RescueTreasury is ITreasury {
 
-    // =========================================================
+    // =====================================================
     // 1. ОСНОВНЫЕ ПАРАМЕТРЫ
-    // =========================================================
+    // =====================================================
 
     address public immutable dao;
 
@@ -50,7 +51,10 @@ contract RescueTreasury is ITreasury {
     }
 
     modifier nonReentrant() {
-        require(!entered, "Reentrant call");
+        require(
+            !entered,
+            "Reentrant call"
+        );
 
         entered = true;
         _;
@@ -58,45 +62,82 @@ contract RescueTreasury is ITreasury {
         entered = false;
     }
 
-    // =========================================================
+    // =====================================================
     // 2. ОБЩИЙ ФОНД
-    // =========================================================
+    // =====================================================
 
+    /**
+     * Все средства общего фонда.
+     *
+     * Сюда входят:
+     * - прямые пожертвования в общий фонд;
+     * - адресные средства, переведённые в общий фонд.
+     */
     uint256 public totalDonated;
+
+    /**
+     * Зарезервированные средства общего фонда.
+     */
     uint256 public totalReserved;
+
+    /**
+     * Средства общего фонда, уже перечисленные получателям.
+     */
     uint256 public totalSpent;
 
-    // =========================================================
-    // 3. ЦЕЛЕВОЕ ФИНАНСИРОВАНИЕ
-    // =========================================================
+
+    // =====================================================
+    // 3. АДРЕСНОЕ ФИНАНСИРОВАНИЕ
+    // =====================================================
 
     uint256 public totalTargetDonations;
+
     uint256 public totalTargetReserved;
+
     uint256 public totalTargetSpent;
+
     uint256 public totalTargetReassigned;
 
+    /**
+     * Все адресные пожертвования конкретной заявки.
+     */
     mapping(uint256 => uint256)
-        public requestDonations;
+        public override requestDonations;
 
+    /**
+     * Пожертвования конкретного пользователя на заявку.
+     */
     mapping(uint256 => mapping(address => uint256))
-        public userRequestDonations;
+        public override userRequestDonations;
 
-    // Общие резервы заявки
+    /**
+     * Целевые средства заявки, находящиеся в резерве.
+     */
     mapping(uint256 => uint256)
-        public requestTargetReserved;
+        public override requestTargetReserved;
 
+    /**
+     * Целевые средства заявки, уже потраченные.
+     */
     mapping(uint256 => uint256)
-        public requestTargetSpent;
+        public override requestTargetSpent;
 
+    /**
+     * Целевые средства заявки, переведённые в общий фонд.
+     */
     mapping(uint256 => uint256)
-        public requestTargetReassigned;
+        public override requestTargetReassigned;
 
+    /**
+     * Средства общего фонда, зарезервированные для заявки.
+     */
     mapping(uint256 => uint256)
-        public requestGeneralReserved;
+        public override requestGeneralReserved;
 
-    // =========================================================
+
+    // =====================================================
     // 4. РЕЗЕРВЫ ОТДЕЛЬНЫХ ЭТАПОВ
-    // =========================================================
+    // =====================================================
 
     mapping(uint256 => mapping(uint256 => uint256))
         public override milestoneTargetReserved;
@@ -107,9 +148,10 @@ contract RescueTreasury is ITreasury {
     mapping(uint256 => mapping(uint256 => bool))
         public override milestoneReservationCreated;
 
-    // =========================================================
+
+    // =====================================================
     // 5. СОБЫТИЯ
-    // =========================================================
+    // =====================================================
 
     event DonationReceived(
         address indexed donor,
@@ -170,9 +212,10 @@ contract RescueTreasury is ITreasury {
         address indexed milestones
     );
 
-    // =========================================================
+
+    // =====================================================
     // 6. КОНСТРУКТОР
-    // =========================================================
+    // =====================================================
 
     constructor(address _dao) {
         require(
@@ -188,9 +231,10 @@ contract RescueTreasury is ITreasury {
         dao = _dao;
     }
 
-    // =========================================================
+
+    // =====================================================
     // 7. НАСТРОЙКА КОНТРАКТА ЭТАПОВ
-    // =========================================================
+    // =====================================================
 
     function setMilestonesContract(
         address _milestones
@@ -214,10 +258,17 @@ contract RescueTreasury is ITreasury {
         emit MilestonesContractUpdated(_milestones);
     }
 
-    // =========================================================
-    // 8. ДОСТУПНЫЕ БАЛАНСЫ
-    // =========================================================
 
+    // =====================================================
+    // 8. ДОСТУПНЫЕ БАЛАНСЫ
+    // =====================================================
+
+    /**
+     * Доступный баланс общего фонда.
+     *
+     * Переведённые из адресных пожертвований средства
+     * также учитываются в общем фонде.
+     */
     function getAvailableBalance()
         public
         view
@@ -230,6 +281,9 @@ contract RescueTreasury is ITreasury {
             totalSpent;
     }
 
+    /**
+     * Фактический ETH-баланс контракта.
+     */
     function getContractBalance()
         external
         view
@@ -239,6 +293,14 @@ contract RescueTreasury is ITreasury {
         return address(this).balance;
     }
 
+    /**
+     * Доступные адресные средства заявки.
+     *
+     * Из суммы пожертвований вычитаются:
+     * - зарезервированные средства;
+     * - уже потраченные средства;
+     * - средства, переведённые в общий фонд.
+     */
     function getAvailableRequestDonations(
         uint256 requestId
     )
@@ -254,6 +316,9 @@ contract RescueTreasury is ITreasury {
             - requestTargetReassigned[requestId];
     }
 
+    /**
+     * Общая сумма выплат из обоих источников.
+     */
     function getTotalSpentAllSources()
         external
         view
@@ -263,9 +328,10 @@ contract RescueTreasury is ITreasury {
         return totalSpent + totalTargetSpent;
     }
 
-    // =========================================================
+
+    // =====================================================
     // 9. ПОЖЕРТВОВАНИЕ В ОБЩИЙ ФОНД
-    // =========================================================
+    // =====================================================
 
     function donate(
         address donor
@@ -294,9 +360,10 @@ contract RescueTreasury is ITreasury {
         );
     }
 
-    // =========================================================
-    // 10. ЦЕЛЕВОЕ ПОЖЕРТВОВАНИЕ
-    // =========================================================
+
+    // =====================================================
+    // 10. АДРЕСНОЕ ПОЖЕРТВОВАНИЕ
+    // =====================================================
 
     function donateToRequest(
         uint256 requestId,
@@ -336,15 +403,20 @@ contract RescueTreasury is ITreasury {
         );
     }
 
-    // =========================================================
+
+    // =====================================================
     // 11. РЕЗЕРВИРОВАНИЕ СРЕДСТВ ДЛЯ ЭТАПА
-    // =========================================================
+    // =====================================================
 
     /**
      * Вызывается RescueMilestones.
      *
-     * Резервирование производится независимо
-     * для каждого этапа.
+     * Сначала RescueMilestones определяет, сколько средств
+     * необходимо взять из адресных пожертвований и сколько
+     * добавить из общего фонда.
+     *
+     * Treasury проверяет доступность обеих частей
+     * и фиксирует резервы.
      */
     function reserveMilestoneFunds(
         uint256 requestId,
@@ -396,11 +468,11 @@ contract RescueTreasury is ITreasury {
 
         requestReservationCreated[requestId] = true;
 
-        // Обновляем общие резервы заявки.
+        // Резервы заявки.
         requestTargetReserved[requestId] += targetAmount;
         requestGeneralReserved[requestId] += generalAmount;
 
-        // Обновляем глобальные резервы.
+        // Глобальные резервы.
         totalTargetReserved += targetAmount;
         totalReserved += generalAmount;
 
@@ -426,10 +498,17 @@ contract RescueTreasury is ITreasury {
         }
     }
 
-    // =========================================================
-    // 12. ВЫПЛАТА СРЕДСТВ ПО ЭТАПУ
-    // =========================================================
 
+    // =====================================================
+    // 12. ВЫПЛАТА СРЕДСТВ ПО ЭТАПУ
+    // =====================================================
+
+    /**
+     * Вызывается RescueMilestones после подтверждения
+     * выполнения этапа необходимым количеством валидаторов.
+     *
+     * Перечисляет средства непосредственно получателю этапа.
+     */
     function releaseMilestone(
         uint256 requestId,
         uint256 milestoneId,
@@ -478,7 +557,10 @@ contract RescueTreasury is ITreasury {
             "Invalid general reserve"
         );
 
-        // Списание целевого резерва этапа.
+        // ---------------------------------------------
+        // Списание целевого резерва
+        // ---------------------------------------------
+
         if (targetAmount > 0) {
             milestoneTargetReserved[requestId][milestoneId] = 0;
 
@@ -489,7 +571,10 @@ contract RescueTreasury is ITreasury {
             totalTargetSpent += targetAmount;
         }
 
-        // Списание резерва общего фонда этапа.
+        // ---------------------------------------------
+        // Списание резерва общего фонда
+        // ---------------------------------------------
+
         if (generalAmount > 0) {
             milestoneGeneralReserved[requestId][milestoneId] = 0;
 
@@ -498,6 +583,10 @@ contract RescueTreasury is ITreasury {
 
             totalSpent += generalAmount;
         }
+
+        // ---------------------------------------------
+        // Перечисление ETH получателю
+        // ---------------------------------------------
 
         (bool success, ) = recipient.call{value: amount}("");
 
@@ -521,13 +610,20 @@ contract RescueTreasury is ITreasury {
         );
     }
 
-    // =========================================================
+
+    // =====================================================
     // 13. ОСВОБОЖДЕНИЕ ВСЕХ РЕЗЕРВОВ ЗАЯВКИ
-    // =========================================================
+    // =====================================================
 
     /**
-     * При отмене заявки освобождаются резервы
-     * всех её этапов.
+     * Вызывается DAO при отмене заявки.
+     *
+     * Освобождает все неиспользованные резервы этапов.
+     *
+     * Возвращает только generalReleased.
+     *
+     * Целевой резерв DAO предварительно получает через
+     * requestTargetReserved(requestId).
      *
      * Уже выплаченные средства не затрагиваются.
      */
@@ -573,11 +669,13 @@ contract RescueTreasury is ITreasury {
             }
         }
 
+        // Освобождаем резервы целевых средств.
         if (targetReleased > 0) {
             requestTargetReserved[requestId] -= targetReleased;
             totalTargetReserved -= targetReleased;
         }
 
+        // Освобождаем резервы общего фонда.
         if (generalReleased > 0) {
             requestGeneralReserved[requestId] -= generalReleased;
             totalReserved -= generalReleased;
@@ -590,10 +688,21 @@ contract RescueTreasury is ITreasury {
         );
     }
 
-    // =========================================================
-    // 14. ПЕРЕВОД ЦЕЛЕВЫХ СРЕДСТВ В ОБЩИЙ ФОНД
-    // =========================================================
 
+    // =====================================================
+    // 14. ПЕРЕВОД АДРЕСНЫХ СРЕДСТВ В ОБЩИЙ ФОНД
+    // =====================================================
+
+    /**
+     * Переводит все доступные адресные пожертвования
+     * заявки в общий фонд.
+     *
+     * Зарезервированные и уже потраченные средства
+     * не затрагиваются.
+     *
+     * ETH физически остаётся в Treasury.
+     * Меняется только его финансовая категория.
+     */
     function reassignAvailableTargetFunds(
         uint256 requestId
     )
@@ -617,7 +726,7 @@ contract RescueTreasury is ITreasury {
 
         totalTargetReassigned += amount;
 
-        // Целевые средства переходят в общий фонд.
+        // Перевод в общий фонд.
         totalDonated += amount;
 
         emit TargetFundsReassigned(
@@ -626,9 +735,10 @@ contract RescueTreasury is ITreasury {
         );
     }
 
-    // =========================================================
+
+    // =====================================================
     // 15. ЗАПРЕТ НЕКОНТРОЛИРУЕМОГО ПОЛУЧЕНИЯ ETH
-    // =========================================================
+    // =====================================================
 
     receive() external payable {
         revert("Use DAO donation functions");
