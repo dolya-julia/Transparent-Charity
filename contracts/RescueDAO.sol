@@ -1,4 +1,3 @@
-
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
@@ -31,6 +30,14 @@ interface IRescueBadges {
 }
 
 // =========================================================
+// ИНТЕРФЕЙС НАСТРОЙКИ RESCUEMILESTONES
+// =========================================================
+
+interface IRescueMilestonesConfig {
+    function setTreasury(address treasury) external;
+}
+
+// =========================================================
 // ОСНОВНОЙ КОНТРАКТ RESCUEDAO
 // =========================================================
 
@@ -58,13 +65,13 @@ contract RescueDAO {
     mapping(uint256 => bool) public pendingBadgeCompletion;
 
     enum RequestStatus {
-        UnderReview,       // 0 — отправлена на проверку
-        ChangesRequested,  // 1 — возвращена на доработку
-        Voting,            // 2 — голосование
-        Approved,          // 3 — одобрена
-        Rejected,          // 4 — отклонена
-        Completed,         // 5 — завершена
-        Cancelled          // 6 — отменена
+        UnderReview,
+        ChangesRequested,
+        Voting,
+        Approved,
+        Rejected,
+        Completed,
+        Cancelled
     }
 
     struct AidRequest {
@@ -90,7 +97,9 @@ contract RescueDAO {
     }
 
     mapping(uint256 => AidRequest) private aidRequests;
-    mapping(uint256 => mapping(address => bool)) public hasVoted;
+
+    mapping(uint256 => mapping(address => bool))
+        public hasVoted;
 
     uint256 public requestCount;
 
@@ -210,7 +219,10 @@ contract RescueDAO {
     // =====================================================
 
     modifier onlyAdmin() {
-        require(msg.sender == admin, "Only admin");
+        require(
+            msg.sender == admin,
+            "Only admin"
+        );
         _;
     }
 
@@ -239,7 +251,10 @@ contract RescueDAO {
     }
 
     modifier nonReentrant() {
-        require(!entered, "Reentrant call");
+        require(
+            !entered,
+            "Reentrant call"
+        );
 
         entered = true;
         _;
@@ -278,10 +293,22 @@ contract RescueDAO {
     // НАСТРОЙКА ВНЕШНИХ КОНТРАКТОВ
     // =====================================================
 
+    /**
+     * Treasury настраивается один раз.
+     *
+     * Это предотвращает ситуацию, когда DAO начинает
+     * использовать новое казначейство, а RescueMilestones
+     * продолжает работать со старым.
+     */
     function setTreasuryContract(address treasury)
         external
         onlyAdmin
     {
+        require(
+            treasuryContract == address(0),
+            "Treasury already configured"
+        );
+
         require(
             treasury != address(0),
             "Invalid Treasury"
@@ -298,6 +325,9 @@ contract RescueDAO {
             IRescueTreasury(treasury).setMilestonesContract(
                 milestonesContract
             );
+
+            IRescueMilestonesConfig(milestonesContract)
+                .setTreasury(treasury);
         }
 
         emit TreasuryUpdated(treasury);
@@ -322,10 +352,20 @@ contract RescueDAO {
         emit NftContractUpdated(nft);
     }
 
+    /**
+     * Контракт этапов также настраивается один раз.
+     *
+     * При настройке автоматически связывается с Treasury.
+     */
     function setMilestonesContract(address milestones)
         external
         onlyAdmin
     {
+        require(
+            milestonesContract == address(0),
+            "Milestones already configured"
+        );
+
         require(
             milestones != address(0),
             "Invalid Milestones"
@@ -345,6 +385,10 @@ contract RescueDAO {
 
         IRescueTreasury(treasuryContract).setMilestonesContract(
             milestones
+        );
+
+        IRescueMilestonesConfig(milestones).setTreasury(
+            treasuryContract
         );
 
         emit MilestonesUpdated(milestones);
@@ -387,19 +431,16 @@ contract RescueDAO {
 
         isMember[member] = registered;
 
-        emit MemberStatusChanged(member, registered);
+        emit MemberStatusChanged(
+            member,
+            registered
+        );
     }
 
     // =====================================================
     // СОЗДАНИЕ ЗАЯВКИ
     // =====================================================
 
-    /**
-     * @notice Создаёт заявку и отправляет её на модерацию.
-     *
-     * Голосование не начинается автоматически.
-     * Этапы можно добавлять после создания заявки.
-     */
     function createAidRequest(
         string calldata animalName,
         string calldata description,
@@ -468,10 +509,6 @@ contract RescueDAO {
     // ИЗМЕНЕНИЕ ДАННЫХ ЗАЯВКИ
     // =====================================================
 
-    /**
-     * @notice Инициатор может изменить данные заявки
-     * до её публикации.
-     */
     function updateRequestDetails(
         uint256 requestId,
         string calldata animalName,
@@ -641,15 +678,6 @@ contract RescueDAO {
     // ПУБЛИКАЦИЯ ЗАЯВКИ И ЗАПУСК ГОЛОСОВАНИЯ
     // =====================================================
 
-    /**
-     * @notice Администратор публикует проверенную заявку.
-     *
-     * Перед публикацией проверяется:
-     * - наличие этапов;
-     * - соответствие суммы этапов сумме заявки.
-     *
-     * После публикации этапы нельзя редактировать.
-     */
     function publishRequest(
         uint256 requestId,
         uint256 votingDuration
@@ -701,6 +729,7 @@ contract RescueDAO {
 
         r.yesVotes = 0;
         r.noVotes = 0;
+
         r.votingEndsAt = block.timestamp + votingDuration;
 
         r.status = RequestStatus.Voting;
@@ -716,7 +745,7 @@ contract RescueDAO {
                     r.requester
                 );
             } catch {
-                // Ошибка NFT не отменяет публикацию.
+                // Ошибка NFT не отменяет публикацию заявки.
             }
         }
 
@@ -758,6 +787,14 @@ contract RescueDAO {
         );
     }
 
+    /**
+     * Целевые пожертвования принимаются:
+     * - во время голосования;
+     * - после одобрения заявки.
+     *
+     * После одобрения сбор продолжается,
+     * пока не будет достигнута запрошенная сумма.
+     */
     function donateToRequest(uint256 requestId)
         external
         payable
@@ -772,14 +809,17 @@ contract RescueDAO {
         );
 
         require(
-            r.status == RequestStatus.Voting,
-            "Request is not in voting"
+            r.status == RequestStatus.Voting ||
+            r.status == RequestStatus.Approved,
+            "Request does not accept donations"
         );
 
-        require(
-            block.timestamp < r.votingEndsAt,
-            "Voting ended"
-        );
+        if (r.status == RequestStatus.Voting) {
+            require(
+                block.timestamp < r.votingEndsAt,
+                "Voting ended"
+            );
+        }
 
         require(
             msg.value > 0,
@@ -866,6 +906,13 @@ contract RescueDAO {
     // ЗАВЕРШЕНИЕ ГОЛОСОВАНИЯ
     // =====================================================
 
+    /**
+     * Одобрение заявки не зависит от полного сбора средств.
+     *
+     * После успешного голосования заявка получает статус
+     * Approved. Средства резервируются позднее отдельно
+     * для каждого этапа через RescueMilestones.
+     */
     function finalizeRequest(uint256 requestId)
         external
         onlyTreasuryConfigured
@@ -896,58 +943,31 @@ contract RescueDAO {
             r.yesVotes > r.noVotes &&
             r.yesVotes > 0;
 
-        IRescueTreasury t =
+        IRescueTreasury treasury =
             IRescueTreasury(treasuryContract);
 
-        uint256 targetAvailable =
-            t.getAvailableRequestDonations(requestId);
-
-        uint256 targetToReserve = targetAvailable;
-
-        if (targetToReserve > r.requestedAmount) {
-            targetToReserve = r.requestedAmount;
-        }
-
-        uint256 generalRequired =
-            r.requestedAmount - targetToReserve;
-
-        bool fundsAvailable =
-            t.getAvailableBalance() >= generalRequired;
-
-        if (votingApproved && fundsAvailable) {
-            t.reserveFunds(
-                requestId,
-                targetToReserve,
-                generalRequired
-            );
+        if (votingApproved) {
+            // Полный сбор средств не требуется.
+            // Резервирование выполняется отдельно
+            // для каждого этапа.
 
             r.status = RequestStatus.Approved;
-
-            if (targetToReserve > 0) {
-                emit TargetFundsReserved(
-                    requestId,
-                    targetToReserve
-                );
-            }
-
-            if (generalRequired > 0) {
-                emit GeneralFundsReserved(
-                    requestId,
-                    generalRequired
-                );
-            }
 
             emit AidRequestFinalized(
                 requestId,
                 RequestStatus.Approved,
-                r.requestedAmount
+                0
             );
 
         } else {
             r.status = RequestStatus.Rejected;
 
+            // При отклонении заявки доступные целевые
+            // пожертвования переводятся в общий фонд.
             uint256 reassigned =
-                t.reassignAvailableTargetFunds(requestId);
+                treasury.reassignAvailableTargetFunds(
+                    requestId
+                );
 
             if (reassigned > 0) {
                 emit TargetFundsReassigned(
@@ -968,11 +988,6 @@ contract RescueDAO {
     // ВЫЗОВЫ ИЗ RESCUEMILESTONES
     // =====================================================
 
-    /**
-     * @notice Вызывается при добавлении нового этапа.
-     *
-     * Этапы разрешено добавлять до публикации заявки.
-     */
     function onMilestoneAdded(
         uint256 requestId,
         uint256 amount
@@ -1007,11 +1022,6 @@ contract RescueDAO {
         r.milestoneCount++;
     }
 
-    /**
-     * @notice Вызывается RescueMilestones при изменении суммы этапа.
-     *
-     * Синхронизирует общую сумму этапов в DAO с RescueMilestones.
-     */
     function onMilestoneUpdated(
         uint256 requestId,
         uint256 oldAmount,
@@ -1068,7 +1078,10 @@ contract RescueDAO {
     }
 
     /**
-     * @notice Вызывается после выплаты средств по этапу.
+     * Вызывается после выплаты средств по этапу.
+     *
+     * Когда выплачены все этапы и общая сумма выплат
+     * совпадает с запрошенной суммой, заявка завершается.
      */
     function onMilestoneReleased(
         uint256 requestId,
@@ -1094,18 +1107,18 @@ contract RescueDAO {
             "Zero amount"
         );
 
-        r.completedMilestones++;
-        r.releasedAmount += amount;
-
         require(
-            r.completedMilestones <= r.milestoneCount,
-            "Too many completed milestones"
+            r.completedMilestones < r.milestoneCount,
+            "All milestones already completed"
         );
 
         require(
-            r.releasedAmount <= r.requestedAmount,
+            r.releasedAmount + amount <= r.requestedAmount,
             "Released amount exceeds goal"
         );
+
+        r.completedMilestones++;
+        r.releasedAmount += amount;
 
         if (
             r.completedMilestones == r.milestoneCount
@@ -1150,16 +1163,22 @@ contract RescueDAO {
             "Cannot cancel"
         );
 
+        // Сначала меняем статус, чтобы исключить
+        // повторное выполнение операций с заявкой.
         r.status = RequestStatus.Cancelled;
 
-        IRescueTreasury t =
+        IRescueTreasury treasury =
             IRescueTreasury(treasuryContract);
 
+        // Освобождаются все неиспользованные резервы
+        // отдельных этапов.
         uint256 returnedAmount =
-            t.releaseReservation(requestId);
+            treasury.releaseReservation(requestId);
 
+        // Доступные целевые пожертвования переводятся
+        // в общий фонд.
         uint256 reassignedAmount =
-            t.reassignAvailableTargetFunds(requestId);
+            treasury.reassignAvailableTargetFunds(requestId);
 
         returnedAmount += reassignedAmount;
 

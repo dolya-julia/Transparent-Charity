@@ -1,4 +1,3 @@
-
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
@@ -12,6 +11,11 @@ interface IRescueDAORead {
         external
         view
         returns (uint256);
+
+    function milestonesContract()
+        external
+        view
+        returns (address);
 
     function getRequestCore(uint256 requestId)
         external
@@ -171,6 +175,69 @@ interface IRescueTreasuryRead {
 }
 
 // =========================================================
+// ИНТЕРФЕЙС ДЛЯ ЧТЕНИЯ ДАННЫХ RESCUEMILESTONES
+// =========================================================
+
+interface IRescueMilestonesRead {
+
+    function milestoneCount(
+        uint256 requestId
+    )
+        external
+        view
+        returns (uint256);
+
+    function getMilestone(
+        uint256 requestId,
+        uint256 milestoneId
+    )
+        external
+        view
+        returns (
+            string memory description,
+            address recipient,
+            uint256 amount,
+            string memory evidenceURI,
+            bytes32 evidenceHash,
+            uint256 approvalCount,
+            bool evidenceSubmitted,
+            bool released
+        );
+
+    function getMilestoneFundingStatus(
+        uint256 requestId,
+        uint256 milestoneId
+    )
+        external
+        view
+        returns (
+            bool funded,
+            uint256 targetReserved,
+            uint256 generalReserved,
+            bool released
+        );
+
+    function getMilestoneSummary(
+        uint256 requestId
+    )
+        external
+        view
+        returns (
+            uint256 total,
+            uint256 count
+        );
+
+    function hasValidatorApproved(
+        uint256 requestId,
+        uint256 milestoneId,
+        address validator
+    )
+        external
+        view
+        returns (bool);
+}
+
+// =========================================================
 // RESCUEDAOVIEW
 // =========================================================
 
@@ -231,6 +298,34 @@ contract RescueDAOView {
 
         dao = IRescueDAORead(daoAddress);
         treasury = IRescueTreasuryRead(treasuryAddress);
+    }
+
+    // =====================================================
+    // ВНУТРЕННЯЯ ФУНКЦИЯ ПОЛУЧЕНИЯ RESCUEMILESTONES
+    // =====================================================
+
+    /**
+     * @notice Получает актуальный адрес RescueMilestones
+     * из основного контракта DAO.
+     */
+    function _getMilestones()
+        internal
+        view
+        returns (IRescueMilestonesRead)
+    {
+        address milestonesAddress = dao.milestonesContract();
+
+        require(
+            milestonesAddress != address(0),
+            "Milestones not configured"
+        );
+
+        require(
+            milestonesAddress.code.length > 0,
+            "Invalid Milestones contract"
+        );
+
+        return IRescueMilestonesRead(milestonesAddress);
     }
 
     // =====================================================
@@ -323,6 +418,147 @@ contract RescueDAOView {
         )
     {
         return dao.getMilestoneSummary(requestId);
+    }
+
+    // =====================================================
+    // ИНФОРМАЦИЯ ОБ ОТДЕЛЬНЫХ ЭТАПАХ
+    // =====================================================
+
+    /**
+     * @notice Возвращает количество этапов заявки.
+     */
+    function getMilestoneCount(
+        uint256 requestId
+    )
+        external
+        view
+        returns (uint256)
+    {
+        return _getMilestones().milestoneCount(requestId);
+    }
+
+    /**
+     * @notice Возвращает подробную информацию об этапе.
+     *
+     * milestoneId начинается с 1.
+     */
+    function getMilestoneDetails(
+        uint256 requestId,
+        uint256 milestoneId
+    )
+        external
+        view
+        returns (
+            string memory description,
+            address recipient,
+            uint256 amount,
+            string memory evidenceURI,
+            bytes32 evidenceHash,
+            uint256 approvalCount,
+            bool evidenceSubmitted,
+            bool released
+        )
+    {
+        return _getMilestones().getMilestone(
+            requestId,
+            milestoneId
+        );
+    }
+
+    /**
+     * @notice Возвращает финансовое состояние отдельного этапа.
+     *
+     * funded          — средства зарезервированы;
+     * targetReserved  — сумма из целевых пожертвований;
+     * generalReserved — сумма из общего фонда;
+     * released        — средства выплачены получателю.
+     */
+    function getMilestoneFundingStatus(
+        uint256 requestId,
+        uint256 milestoneId
+    )
+        external
+        view
+        returns (
+            bool funded,
+            uint256 targetReserved,
+            uint256 generalReserved,
+            bool released
+        )
+    {
+        return _getMilestones().getMilestoneFundingStatus(
+            requestId,
+            milestoneId
+        );
+    }
+
+    /**
+     * @notice Проверяет, одобрил ли конкретный валидатор
+     * доказательства по этапу.
+     */
+    function hasValidatorApprovedMilestone(
+        uint256 requestId,
+        uint256 milestoneId,
+        address validator
+    )
+        external
+        view
+        returns (bool)
+    {
+        return _getMilestones().hasValidatorApproved(
+            requestId,
+            milestoneId,
+            validator
+        );
+    }
+
+    /**
+     * @notice Возвращает сводную информацию по финансированию
+     * и выплатам всех этапов заявки.
+     *
+     * fundedCount — число профинансированных этапов;
+     * releasedCount — число выплаченных этапов;
+     * targetReserved — общая сумма целевых резервов;
+     * generalReserved — общая сумма резервов из общего фонда.
+     */
+    function getMilestonesFundingSummary(
+        uint256 requestId
+    )
+        external
+        view
+        returns (
+            uint256 fundedCount,
+            uint256 releasedCount,
+            uint256 targetReserved,
+            uint256 generalReserved
+        )
+    {
+        IRescueMilestonesRead milestones = _getMilestones();
+
+        uint256 count = milestones.milestoneCount(requestId);
+
+        for (uint256 i = 1; i <= count; i++) {
+            (
+                bool funded,
+                uint256 targetAmount,
+                uint256 generalAmount,
+                bool released
+            ) = milestones.getMilestoneFundingStatus(
+                requestId,
+                i
+            );
+
+            if (funded) {
+                fundedCount++;
+            }
+
+            if (released) {
+                releasedCount++;
+            }
+
+            targetReserved += targetAmount;
+            generalReserved += generalAmount;
+        }
     }
 
     // =====================================================
@@ -616,6 +852,32 @@ contract RescueDAOView {
         returns (bool)
     {
         return getStatusInternal(requestId) == STATUS_APPROVED;
+    }
+
+    /**
+     * @notice Проверяет, завершена ли заявка.
+     */
+    function isRequestCompleted(
+        uint256 requestId
+    )
+        external
+        view
+        returns (bool)
+    {
+        return getStatusInternal(requestId) == STATUS_COMPLETED;
+    }
+
+    /**
+     * @notice Проверяет, отменена ли заявка.
+     */
+    function isRequestCancelled(
+        uint256 requestId
+    )
+        external
+        view
+        returns (bool)
+    {
+        return getStatusInternal(requestId) == STATUS_CANCELLED;
     }
 
     /**

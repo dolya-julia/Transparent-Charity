@@ -1,34 +1,22 @@
-
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
 import "./ITreasury.sol";
 
-/**
- * @title RescueTreasury
- * @dev Финансовое хранилище системы RescueDAO.
- *
- * Контракт отвечает за:
- * - хранение ETH;
- * - приём пожертвований в общий фонд;
- * - приём целевых пожертвований на заявки;
- * - учёт вкладов пользователей;
- * - резервирование средств из двух источников;
- * - выплаты по этапам лечения;
- * - освобождение неиспользованных резервов;
- * - перевод неиспользованных целевых средств в общий фонд.
- *
- * Управление резервами выполняет RescueDAO.
- * Выплаты по этапам лечения выполняет RescueMilestones.
- *
- * Жизненный цикл заявки:
- * UnderReview -> ChangesRequested -> UnderReview
- * -> Voting -> Approved / Rejected
- * -> Completed / Cancelled
- *
- * Treasury не управляет статусами заявок.
- * Все проверки статусов выполняет RescueDAO.
- */
+// =========================================================
+// ИНТЕРФЕЙС ДЛЯ ПОЛУЧЕНИЯ КОЛИЧЕСТВА ЭТАПОВ
+// =========================================================
+
+interface IRescueMilestoneCounter {
+    function milestoneCount(
+        uint256 requestId
+    ) external view returns (uint256);
+}
+
+// =========================================================
+// ОСНОВНОЙ КОНТРАКТ RESCUETREASURY
+// =========================================================
+
 contract RescueTreasury is ITreasury {
 
     // =========================================================
@@ -41,8 +29,6 @@ contract RescueTreasury is ITreasury {
 
     bool private entered;
 
-    // Защита от повторного резервирования одной заявки.
-    // Геттер реализует функцию интерфейса ITreasury.
     mapping(uint256 => bool)
         public override requestReservationCreated;
 
@@ -64,10 +50,7 @@ contract RescueTreasury is ITreasury {
     }
 
     modifier nonReentrant() {
-        require(
-            !entered,
-            "Reentrant call"
-        );
+        require(!entered, "Reentrant call");
 
         entered = true;
         _;
@@ -80,9 +63,7 @@ contract RescueTreasury is ITreasury {
     // =========================================================
 
     uint256 public totalDonated;
-
     uint256 public totalReserved;
-
     uint256 public totalSpent;
 
     // =========================================================
@@ -90,11 +71,8 @@ contract RescueTreasury is ITreasury {
     // =========================================================
 
     uint256 public totalTargetDonations;
-
     uint256 public totalTargetReserved;
-
     uint256 public totalTargetSpent;
-
     uint256 public totalTargetReassigned;
 
     mapping(uint256 => uint256)
@@ -103,6 +81,7 @@ contract RescueTreasury is ITreasury {
     mapping(uint256 => mapping(address => uint256))
         public userRequestDonations;
 
+    // Общие резервы заявки
     mapping(uint256 => uint256)
         public requestTargetReserved;
 
@@ -116,7 +95,20 @@ contract RescueTreasury is ITreasury {
         public requestGeneralReserved;
 
     // =========================================================
-    // 4. СОБЫТИЯ
+    // 4. РЕЗЕРВЫ ОТДЕЛЬНЫХ ЭТАПОВ
+    // =========================================================
+
+    mapping(uint256 => mapping(uint256 => uint256))
+        public override milestoneTargetReserved;
+
+    mapping(uint256 => mapping(uint256 => uint256))
+        public override milestoneGeneralReserved;
+
+    mapping(uint256 => mapping(uint256 => bool))
+        public override milestoneReservationCreated;
+
+    // =========================================================
+    // 5. СОБЫТИЯ
     // =========================================================
 
     event DonationReceived(
@@ -140,6 +132,13 @@ contract RescueTreasury is ITreasury {
     event GeneralFundsReserved(
         uint256 indexed requestId,
         uint256 amount
+    );
+
+    event MilestoneFundsReserved(
+        uint256 indexed requestId,
+        uint256 indexed milestoneId,
+        uint256 targetAmount,
+        uint256 generalAmount
     );
 
     event TargetFundsReassigned(
@@ -172,7 +171,7 @@ contract RescueTreasury is ITreasury {
     );
 
     // =========================================================
-    // 5. КОНСТРУКТОР
+    // 6. КОНСТРУКТОР
     // =========================================================
 
     constructor(address _dao) {
@@ -190,7 +189,7 @@ contract RescueTreasury is ITreasury {
     }
 
     // =========================================================
-    // 6. НАСТРОЙКА КОНТРАКТА ЭТАПОВ
+    // 7. НАСТРОЙКА КОНТРАКТА ЭТАПОВ
     // =========================================================
 
     function setMilestonesContract(
@@ -212,21 +211,13 @@ contract RescueTreasury is ITreasury {
 
         milestonesContract = _milestones;
 
-        emit MilestonesContractUpdated(
-            _milestones
-        );
+        emit MilestonesContractUpdated(_milestones);
     }
 
     // =========================================================
-    // 7. ДОСТУПНЫЕ БАЛАНСЫ
+    // 8. ДОСТУПНЫЕ БАЛАНСЫ
     // =========================================================
 
-    /**
-     * Доступный остаток общего фонда.
-     *
-     * Не включает зарезервированные и выплаченные средства.
-     * Незарезервированные целевые пожертвования сюда не входят.
-     */
     function getAvailableBalance()
         public
         view
@@ -239,9 +230,6 @@ contract RescueTreasury is ITreasury {
             totalSpent;
     }
 
-    /**
-     * Фактический баланс ETH на контракте.
-     */
     function getContractBalance()
         external
         view
@@ -251,9 +239,6 @@ contract RescueTreasury is ITreasury {
         return address(this).balance;
     }
 
-    /**
-     * Доступные целевые пожертвования конкретной заявки.
-     */
     function getAvailableRequestDonations(
         uint256 requestId
     )
@@ -269,22 +254,17 @@ contract RescueTreasury is ITreasury {
             - requestTargetReassigned[requestId];
     }
 
-    /**
-     * Общая сумма расходов из двух источников.
-     */
     function getTotalSpentAllSources()
         external
         view
         override
         returns (uint256)
     {
-        return
-            totalSpent +
-            totalTargetSpent;
+        return totalSpent + totalTargetSpent;
     }
 
     // =========================================================
-    // 8. ПОЖЕРТВОВАНИЕ В ОБЩИЙ ФОНД
+    // 9. ПОЖЕРТВОВАНИЕ В ОБЩИЙ ФОНД
     // =========================================================
 
     function donate(
@@ -315,16 +295,9 @@ contract RescueTreasury is ITreasury {
     }
 
     // =========================================================
-    // 9. ЦЕЛЕВОЕ ПОЖЕРТВОВАНИЕ
+    // 10. ЦЕЛЕВОЕ ПОЖЕРТВОВАНИЕ
     // =========================================================
 
-    /**
-     * Проверки существования заявки, её статуса,
-     * окончания голосования и лимита сбора выполняет DAO.
-     *
-     * DAO должно разрешать целевые пожертвования
-     * только для заявок в статусе Voting.
-     */
     function donateToRequest(
         uint256 requestId,
         address donor
@@ -364,26 +337,24 @@ contract RescueTreasury is ITreasury {
     }
 
     // =========================================================
-    // 10. РЕЗЕРВИРОВАНИЕ СРЕДСТВ
+    // 11. РЕЗЕРВИРОВАНИЕ СРЕДСТВ ДЛЯ ЭТАПА
     // =========================================================
 
     /**
-     * Резервирует средства для одобренной заявки.
+     * Вызывается RescueMilestones.
      *
-     * targetAmount — средства из целевых пожертвований.
-     * generalAmount — средства из общего фонда.
-     *
-     * Резервирование возможно только один раз
-     * для каждой заявки.
+     * Резервирование производится независимо
+     * для каждого этапа.
      */
-    function reserveFunds(
+    function reserveMilestoneFunds(
         uint256 requestId,
+        uint256 milestoneId,
         uint256 targetAmount,
         uint256 generalAmount
     )
         external
         override
-        onlyDAO
+        onlyMilestones
     {
         require(
             requestId > 0,
@@ -391,13 +362,18 @@ contract RescueTreasury is ITreasury {
         );
 
         require(
-            targetAmount + generalAmount > 0,
-            "Reservation must be greater than zero"
+            milestoneId > 0,
+            "Invalid milestone ID"
         );
 
         require(
-            !requestReservationCreated[requestId],
-            "Funds already reserved"
+            targetAmount + generalAmount > 0,
+            "Empty reservation"
+        );
+
+        require(
+            !milestoneReservationCreated[requestId][milestoneId],
+            "Milestone already funded"
         );
 
         require(
@@ -410,26 +386,39 @@ contract RescueTreasury is ITreasury {
             "Insufficient general funds"
         );
 
+        milestoneReservationCreated[requestId][milestoneId] = true;
+
+        milestoneTargetReserved[requestId][milestoneId] =
+            targetAmount;
+
+        milestoneGeneralReserved[requestId][milestoneId] =
+            generalAmount;
+
         requestReservationCreated[requestId] = true;
 
-        // Резервирование целевых средств.
+        // Обновляем общие резервы заявки.
+        requestTargetReserved[requestId] += targetAmount;
+        requestGeneralReserved[requestId] += generalAmount;
+
+        // Обновляем глобальные резервы.
+        totalTargetReserved += targetAmount;
+        totalReserved += generalAmount;
+
+        emit MilestoneFundsReserved(
+            requestId,
+            milestoneId,
+            targetAmount,
+            generalAmount
+        );
+
         if (targetAmount > 0) {
-            requestTargetReserved[requestId] = targetAmount;
-
-            totalTargetReserved += targetAmount;
-
             emit TargetFundsReserved(
                 requestId,
                 targetAmount
             );
         }
 
-        // Резервирование средств общего фонда.
         if (generalAmount > 0) {
-            requestGeneralReserved[requestId] = generalAmount;
-
-            totalReserved += generalAmount;
-
             emit GeneralFundsReserved(
                 requestId,
                 generalAmount
@@ -438,15 +427,9 @@ contract RescueTreasury is ITreasury {
     }
 
     // =========================================================
-    // 11. ВЫПЛАТА СРЕДСТВ ПО ЭТАПУ ЛЕЧЕНИЯ
+    // 12. ВЫПЛАТА СРЕДСТВ ПО ЭТАПУ
     // =========================================================
 
-    /**
-     * Выплачивает средства после подтверждения этапа
-     * необходимым количеством валидаторов.
-     *
-     * Вызывается только RescueMilestones.
-     */
     function releaseMilestone(
         uint256 requestId,
         uint256 milestoneId,
@@ -481,44 +464,42 @@ contract RescueTreasury is ITreasury {
         );
 
         require(
-            requestReservationCreated[requestId],
-            "No reservation for request"
+            milestoneReservationCreated[requestId][milestoneId],
+            "Milestone not funded"
         );
 
         require(
-            requestTargetReserved[requestId] >= targetAmount,
-            "Insufficient reserved target funds"
+            milestoneTargetReserved[requestId][milestoneId] == targetAmount,
+            "Invalid target reserve"
         );
 
         require(
-            requestGeneralReserved[requestId] >= generalAmount,
-            "Insufficient reserved general funds"
+            milestoneGeneralReserved[requestId][milestoneId] == generalAmount,
+            "Invalid general reserve"
         );
 
-        // Учёт выплаты из целевых средств.
+        // Списание целевого резерва этапа.
         if (targetAmount > 0) {
-            requestTargetReserved[requestId] -= targetAmount;
+            milestoneTargetReserved[requestId][milestoneId] = 0;
 
+            requestTargetReserved[requestId] -= targetAmount;
             totalTargetReserved -= targetAmount;
 
             requestTargetSpent[requestId] += targetAmount;
-
             totalTargetSpent += targetAmount;
         }
 
-        // Учёт выплаты из общего фонда.
+        // Списание резерва общего фонда этапа.
         if (generalAmount > 0) {
-            requestGeneralReserved[requestId] -= generalAmount;
+            milestoneGeneralReserved[requestId][milestoneId] = 0;
 
+            requestGeneralReserved[requestId] -= generalAmount;
             totalReserved -= generalAmount;
 
             totalSpent += generalAmount;
         }
 
-        // Перевод ETH получателю.
-        (bool success, ) = recipient.call{
-            value: amount
-        }("");
+        (bool success, ) = recipient.call{value: amount}("");
 
         require(
             success,
@@ -541,19 +522,14 @@ contract RescueTreasury is ITreasury {
     }
 
     // =========================================================
-    // 12. ОСВОБОЖДЕНИЕ РЕЗЕРВОВ
+    // 13. ОСВОБОЖДЕНИЕ ВСЕХ РЕЗЕРВОВ ЗАЯВКИ
     // =========================================================
 
     /**
-     * Освобождает неиспользованные резервы заявки.
+     * При отмене заявки освобождаются резервы
+     * всех её этапов.
      *
-     * Вызывается RescueDAO при отмене одобренной заявки.
-     *
-     * Целевые средства после освобождения резерва
-     * ещё не переводятся в общий фонд.
-     *
-     * Для этого DAO отдельно вызывает
-     * reassignAvailableTargetFunds(requestId).
+     * Уже выплаченные средства не затрагиваются.
      */
     function releaseReservation(
         uint256 requestId
@@ -568,24 +544,43 @@ contract RescueTreasury is ITreasury {
             "Invalid request ID"
         );
 
-        // Освобождение резерва общего фонда.
-        generalReleased =
-            requestGeneralReserved[requestId];
+        uint256 targetReleased;
 
-        if (generalReleased > 0) {
-            totalReserved -= generalReleased;
+        if (milestonesContract != address(0)) {
+            uint256 count =
+                IRescueMilestoneCounter(milestonesContract)
+                    .milestoneCount(requestId);
 
-            requestGeneralReserved[requestId] = 0;
+            for (uint256 i = 1; i <= count; i++) {
+                uint256 targetAmount =
+                    milestoneTargetReserved[requestId][i];
+
+                uint256 generalAmount =
+                    milestoneGeneralReserved[requestId][i];
+
+                if (
+                    targetAmount == 0 &&
+                    generalAmount == 0
+                ) {
+                    continue;
+                }
+
+                milestoneTargetReserved[requestId][i] = 0;
+                milestoneGeneralReserved[requestId][i] = 0;
+
+                targetReleased += targetAmount;
+                generalReleased += generalAmount;
+            }
         }
 
-        // Освобождение резерва целевых средств.
-        uint256 targetReleased =
-            requestTargetReserved[requestId];
-
         if (targetReleased > 0) {
+            requestTargetReserved[requestId] -= targetReleased;
             totalTargetReserved -= targetReleased;
+        }
 
-            requestTargetReserved[requestId] = 0;
+        if (generalReleased > 0) {
+            requestGeneralReserved[requestId] -= generalReleased;
+            totalReserved -= generalReleased;
         }
 
         emit ReservationReleased(
@@ -596,21 +591,9 @@ contract RescueTreasury is ITreasury {
     }
 
     // =========================================================
-    // 13. ПЕРЕВОД ЦЕЛЕВЫХ СРЕДСТВ В ОБЩИЙ ФОНД
+    // 14. ПЕРЕВОД ЦЕЛЕВЫХ СРЕДСТВ В ОБЩИЙ ФОНД
     // =========================================================
 
-    /**
-     * Переводит все доступные целевые пожертвования
-     * конкретной заявки в общий фонд.
-     *
-     * Используется при отклонении или отмене заявки.
-     *
-     * Уже выплаченные целевые средства не затрагиваются.
-     *
-     * При отмене одобренной заявки DAO сначала должно
-     * вызвать releaseReservation(requestId),
-     * а затем reassignAvailableTargetFunds(requestId).
-     */
     function reassignAvailableTargetFunds(
         uint256 requestId
     )
@@ -630,12 +613,11 @@ contract RescueTreasury is ITreasury {
             return 0;
         }
 
-        // Учитываем перевод целевых средств.
         requestTargetReassigned[requestId] += amount;
 
         totalTargetReassigned += amount;
 
-        // Переводим средства в общий фонд.
+        // Целевые средства переходят в общий фонд.
         totalDonated += amount;
 
         emit TargetFundsReassigned(
@@ -645,18 +627,14 @@ contract RescueTreasury is ITreasury {
     }
 
     // =========================================================
-    // 14. ЗАПРЕТ НЕКОНТРОЛИРУЕМОГО ПОЛУЧЕНИЯ ETH
+    // 15. ЗАПРЕТ НЕКОНТРОЛИРУЕМОГО ПОЛУЧЕНИЯ ETH
     // =========================================================
 
     receive() external payable {
-        revert(
-            "Use DAO donation functions"
-        );
+        revert("Use DAO donation functions");
     }
 
     fallback() external payable {
-        revert(
-            "Invalid function call"
-        );
+        revert("Invalid function call");
     }
 }

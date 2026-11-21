@@ -1,4 +1,3 @@
-
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
@@ -7,13 +6,10 @@ pragma solidity ^0.8.20;
 // =========================================================
 
 interface IRescueNFT {
-
     function mintPassport(
         address to,
         uint256 requestId
-    )
-        external
-        returns (uint256);
+    ) external returns (uint256);
 }
 
 // =========================================================
@@ -22,90 +18,46 @@ interface IRescueNFT {
 
 interface IRescueTreasury {
 
-    // -----------------------------------------------------
-    // Настройка
-    // -----------------------------------------------------
-
     function setMilestonesContract(
         address _milestones
     ) external;
 
-    // -----------------------------------------------------
     // Пожертвования
-    // -----------------------------------------------------
-
-    function donate(
-        address donor
-    ) external payable;
+    function donate(address donor) external payable;
 
     function donateToRequest(
         uint256 requestId,
         address donor
     ) external payable;
 
-    // -----------------------------------------------------
     // Доступные средства
-    // -----------------------------------------------------
-
     function getAvailableBalance()
-        external
-        view
-        returns (uint256);
+        external view returns (uint256);
 
     function getAvailableRequestDonations(
         uint256 requestId
-    )
-        external
-        view
-        returns (uint256);
+    ) external view returns (uint256);
 
     function getContractBalance()
-        external
-        view
-        returns (uint256);
+        external view returns (uint256);
 
     function getTotalSpentAllSources()
-        external
-        view
-        returns (uint256);
+        external view returns (uint256);
 
-    // -----------------------------------------------------
     // Проверка резервирования
-    // -----------------------------------------------------
-
     function requestReservationCreated(
         uint256 requestId
-    )
-        external
-        view
-        returns (bool);
+    ) external view returns (bool);
 
-    // -----------------------------------------------------
-    // Резервирование средств
-    // -----------------------------------------------------
-
-    function reserveFunds(
+    // Резервирование отдельного этапа
+    function reserveMilestoneFunds(
         uint256 requestId,
+        uint256 milestoneId,
         uint256 targetAmount,
         uint256 generalAmount
     ) external;
 
-    function releaseReservation(
-        uint256 requestId
-    )
-        external
-        returns (uint256 generalReleased);
-
-    function reassignAvailableTargetFunds(
-        uint256 requestId
-    )
-        external
-        returns (uint256 amount);
-
-    // -----------------------------------------------------
-    // Выплата средств по этапу
-    // -----------------------------------------------------
-
+    // Выплата по этапу
     function releaseMilestone(
         uint256 requestId,
         uint256 milestoneId,
@@ -115,95 +67,77 @@ interface IRescueTreasury {
         uint256 generalAmount
     ) external;
 
-    // -----------------------------------------------------
-    // Данные о пожертвованиях по заявкам
-    // -----------------------------------------------------
+    // Освобождение всех резервов заявки
+    function releaseReservation(
+        uint256 requestId
+    ) external returns (uint256 generalReleased);
 
+    // Перераспределение доступных целевых средств
+    function reassignAvailableTargetFunds(
+        uint256 requestId
+    ) external returns (uint256 amount);
+
+    // Пожертвования
     function requestDonations(
         uint256 requestId
-    )
-        external
-        view
-        returns (uint256);
+    ) external view returns (uint256);
 
     function userRequestDonations(
         uint256 requestId,
         address user
-    )
-        external
-        view
-        returns (uint256);
+    ) external view returns (uint256);
 
-    // -----------------------------------------------------
-    // Резервы и расходы по заявкам
-    // -----------------------------------------------------
-
+    // Общие резервы заявки
     function requestTargetReserved(
         uint256 requestId
-    )
-        external
-        view
-        returns (uint256);
+    ) external view returns (uint256);
 
     function requestGeneralReserved(
         uint256 requestId
-    )
-        external
-        view
-        returns (uint256);
+    ) external view returns (uint256);
 
     function requestTargetSpent(
         uint256 requestId
-    )
-        external
-        view
-        returns (uint256);
+    ) external view returns (uint256);
 
     function requestTargetReassigned(
         uint256 requestId
-    )
-        external
-        view
-        returns (uint256);
+    ) external view returns (uint256);
 
-    // -----------------------------------------------------
-    // Общая финансовая статистика
-    // -----------------------------------------------------
+    // Резервы отдельного этапа
+    function milestoneTargetReserved(
+        uint256 requestId,
+        uint256 milestoneId
+    ) external view returns (uint256);
 
-    function totalDonated()
-        external
-        view
-        returns (uint256);
+    function milestoneGeneralReserved(
+        uint256 requestId,
+        uint256 milestoneId
+    ) external view returns (uint256);
 
-    function totalReserved()
-        external
-        view
-        returns (uint256);
+    function milestoneReservationCreated(
+        uint256 requestId,
+        uint256 milestoneId
+    ) external view returns (bool);
 
-    function totalSpent()
-        external
-        view
-        returns (uint256);
+    // Общая статистика
+    function totalDonated() external view returns (uint256);
+
+    function totalReserved() external view returns (uint256);
+
+    function totalSpent() external view returns (uint256);
 
     function totalTargetDonations()
-        external
-        view
-        returns (uint256);
+        external view returns (uint256);
 
     function totalTargetReserved()
-        external
-        view
-        returns (uint256);
+        external view returns (uint256);
 
     function totalTargetSpent()
-        external
-        view
-        returns (uint256);
+        external view returns (uint256);
 
     function totalTargetReassigned()
-        external
-        view
-        returns (uint256);
+        external view returns (uint256);
 }
 
 // =========================================================
@@ -212,20 +146,9 @@ interface IRescueTreasury {
 
 interface IRescueDAOView {
 
-    // -----------------------------------------------------
-    // Проверка роли валидатора
-    // -----------------------------------------------------
-
     function isValidator(
         address account
-    )
-        external
-        view
-        returns (bool);
-
-    // -----------------------------------------------------
-    // Основные данные заявки
-    // -----------------------------------------------------
+    ) external view returns (bool);
 
     function getRequestCore(
         uint256 requestId
@@ -240,10 +163,6 @@ interface IRescueDAOView {
             bool exists
         );
 
-    // -----------------------------------------------------
-    // Сводная информация об этапах
-    // -----------------------------------------------------
-
     function getMilestoneSummary(
         uint256 requestId
     )
@@ -254,18 +173,10 @@ interface IRescueDAOView {
             uint256 count
         );
 
-    // -----------------------------------------------------
-    // Добавление этапа
-    // -----------------------------------------------------
-
     function onMilestoneAdded(
         uint256 requestId,
         uint256 amount
     ) external;
-
-    // -----------------------------------------------------
-    // Изменение суммы этапа
-    // -----------------------------------------------------
 
     function onMilestoneUpdated(
         uint256 requestId,
@@ -273,18 +184,10 @@ interface IRescueDAOView {
         uint256 newAmount
     ) external;
 
-    // -----------------------------------------------------
-    // Уведомление о выплате по этапу
-    // -----------------------------------------------------
-
     function onMilestoneReleased(
         uint256 requestId,
         uint256 amount
     ) external;
-
-    // -----------------------------------------------------
-    // Уведомление об одобрении валидатором
-    // -----------------------------------------------------
 
     function onValidatorApproved(
         address validator
