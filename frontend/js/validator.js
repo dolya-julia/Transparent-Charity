@@ -215,6 +215,21 @@ function getEventArg(args, name, index, fallback = undefined) {
 }
 
 
+// Получение поля из структуры Solidity.
+// Поддерживает как именованные поля ethers, так и индексы Result.
+function getStructField(value, name, index, fallback = undefined) {
+    if (value && value[name] !== undefined) {
+        return value[name];
+    }
+
+    if (value && value[index] !== undefined) {
+        return value[index];
+    }
+
+    return fallback;
+}
+
+
 function getContractEvents(iface) {
     if (!iface) return [];
 
@@ -225,7 +240,44 @@ function getContractEvents(iface) {
 
 
 // ======================================================
-// 3. РЕГИСТРАЦИЯ УЧАСТНИКА DAO
+// 3. ПОЛУЧЕНИЕ СОСТОЯНИЯ ФИНАНСИРОВАНИЯ ЭТАПА
+// ======================================================
+
+async function getMilestoneFunding(requestId, milestoneId) {
+    requireMethod(
+        milestonesContract,
+        "getMilestoneFundingStatus",
+        "RescueMilestones"
+    );
+
+    const result =
+        await milestonesContract.getMilestoneFundingStatus(
+            requestId,
+            milestoneId
+        );
+
+    return {
+        funded: Boolean(
+            getStructField(result, "funded", 0, false)
+        ),
+
+        targetReserved: BigInt(
+            getStructField(result, "targetReserved", 1, 0n)
+        ),
+
+        generalReserved: BigInt(
+            getStructField(result, "generalReserved", 2, 0n)
+        ),
+
+        released: Boolean(
+            getStructField(result, "released", 3, false)
+        )
+    };
+}
+
+
+// ======================================================
+// 4. РЕГИСТРАЦИЯ УЧАСТНИКА DAO
 // ======================================================
 
 async function registerMember() {
@@ -278,7 +330,7 @@ async function registerMember() {
 
 
 // ======================================================
-// 4. ПОЛУЧЕНИЕ ДАННЫХ ЗАЯВКИ ИЗ RESCUEDAO
+// 5. ПОЛУЧЕНИЕ ДАННЫХ ЗАЯВКИ ИЗ RESCUEDAO
 // ======================================================
 
 async function getDaoRequest(requestId) {
@@ -326,7 +378,7 @@ async function getDaoRequest(requestId) {
 
 
 // ======================================================
-// 5. ОЧЕРЕДЬ МОДЕРАЦИИ ЗАЯВОК
+// 6. ОЧЕРЕДЬ МОДЕРАЦИИ ЗАЯВОК
 // ======================================================
 
 async function loadAdminModerationQueue() {
@@ -422,7 +474,8 @@ async function loadAdminModerationQueue() {
                     "0x" + "0".repeat(64);
 
             const milestonesMatch =
-                request.milestoneTotal === request.requestedAmount;
+                BigInt(request.milestoneTotal) ===
+                BigInt(request.requestedAmount);
 
             const hasMilestones =
                 Number(request.milestoneCount) > 0;
@@ -634,7 +687,7 @@ async function loadAdminModerationQueue() {
 
 
 // ======================================================
-// 6. ПУБЛИКАЦИЯ ЗАЯВКИ
+// 7. ПУБЛИКАЦИЯ ЗАЯВКИ
 // ======================================================
 
 async function publishAdminRequest(requestId) {
@@ -670,7 +723,10 @@ async function publishAdminRequest(requestId) {
             );
         }
 
-        if (milestoneTotal !== request.requestedAmount) {
+        if (
+            BigInt(milestoneTotal) !==
+            BigInt(request.requestedAmount)
+        ) {
             throw new Error(
                 "Сумма этапов не совпадает с суммой заявки.\n" +
                 `Сумма заявки: ${formatEth(request.requestedAmount)} ETH.\n` +
@@ -762,7 +818,7 @@ async function publishAdminRequest(requestId) {
 
 
 // ======================================================
-// 7. ВОЗВРАТ ЗАЯВКИ НА ДОРАБОТКУ
+// 8. ВОЗВРАТ ЗАЯВКИ НА ДОРАБОТКУ
 // ======================================================
 
 async function requestAdminChanges(requestId) {
@@ -844,7 +900,7 @@ async function requestAdminChanges(requestId) {
 
 
 // ======================================================
-// 8. ОКОНЧАТЕЛЬНОЕ ОТКЛОНЕНИЕ ЗАЯВКИ
+// 9. ОКОНЧАТЕЛЬНОЕ ОТКЛОНЕНИЕ ЗАЯВКИ
 // ======================================================
 
 async function rejectAdminRequest(requestId) {
@@ -926,7 +982,132 @@ async function rejectAdminRequest(requestId) {
 
 
 // ======================================================
-// 9. ОЧЕРЕДЬ ЭТАПОВ ДЛЯ ВАЛИДАТОРОВ
+// 10. РЕЗЕРВИРОВАНИЕ СРЕДСТВ ДЛЯ ЭТАПА
+// ======================================================
+
+async function fundMilestone(reqId, msId) {
+    try {
+        ensureAdmin();
+
+        requireMethod(
+            milestonesContract,
+            "fundMilestone",
+            "RescueMilestones"
+        );
+
+        requireMethod(
+            milestonesContract,
+            "getMilestoneFundingStatus",
+            "RescueMilestones"
+        );
+
+        // Дополнительная проверка роли непосредственно по контракту.
+        const actualAdmin = await contract.admin();
+
+        if (
+            actualAdmin.toLowerCase() !==
+            userAddress.toLowerCase()
+        ) {
+            throw new Error(
+                "Подключённый адрес не является администратором DAO."
+            );
+        }
+
+        const request = await getDaoRequest(reqId);
+
+        if (!request.exists) {
+            throw new Error("Заявка не существует.");
+        }
+
+        if (
+            request.status !== ADMIN_REQUEST_STATUSES.APPROVED
+        ) {
+            throw new Error(
+                "Резервировать средства можно только для одобренной заявки."
+            );
+        }
+
+        const ms = await milestonesContract.getMilestone(
+            reqId,
+            msId
+        );
+
+        const amount = BigInt(
+            getStructField(ms, "amount", 2, 0n)
+        );
+
+        const released = Boolean(
+            getStructField(ms, "released", 5, false)
+        );
+
+        if (released) {
+            throw new Error("Этот этап уже оплачен.");
+        }
+
+        const funding = await getMilestoneFunding(reqId, msId);
+
+        if (funding.funded) {
+            throw new Error(
+                "Для этого этапа средства уже зарезервированы."
+            );
+        }
+
+        if (funding.released) {
+            throw new Error(
+                "Этот этап уже отмечен как оплаченный."
+            );
+        }
+
+        const confirmed = confirm(
+            `Зарезервировать средства для этапа #${msId} заявки #${reqId}?\n\n` +
+            `Сумма этапа: ${formatEth(amount)} ETH\n\n` +
+            `Средства будут распределены следующим образом:\n` +
+            `1. Сначала используются целевые пожертвования на заявку.\n` +
+            `2. Недостающая сумма покрывается из общего фонда.\n\n` +
+            `Если доступных средств недостаточно, транзакция будет отменена.`
+        );
+
+        if (!confirmed) return;
+
+        const tx = await milestonesContract.fundMilestone(
+            reqId,
+            msId
+        );
+
+        alert(
+            "Транзакция резервирования отправлена. Ожидаем подтверждения..."
+        );
+
+        const receipt = await tx.wait();
+
+        if (!receipt || Number(receipt.status) !== 1) {
+            throw new Error(
+                "Транзакция резервирования не была выполнена."
+            );
+        }
+
+        alert(
+            `Средства для этапа #${msId} заявки #${reqId} успешно зарезервированы.`
+        );
+
+        await Promise.all([
+            loadValidatorQueue(),
+            loadAuditHistory()
+        ]);
+
+    } catch (err) {
+        console.error("Ошибка резервирования средств этапа:", err);
+
+        alert(
+            "Не удалось зарезервировать средства:\n" +
+            getErrorMessage(err)
+        );
+    }
+}
+
+
+// ======================================================
+// 11. ОЧЕРЕДЬ ЭТАПОВ ДЛЯ АДМИНИСТРАТОРА И ВАЛИДАТОРОВ
 // ======================================================
 
 async function loadValidatorQueue() {
@@ -939,9 +1120,16 @@ async function loadValidatorQueue() {
 
     try {
         requireMethod(contract, "requestCount", "RescueDAO");
+
         requireMethod(
             milestonesContract,
             "getMilestone",
+            "RescueMilestones"
+        );
+
+        requireMethod(
+            milestonesContract,
+            "getMilestoneFundingStatus",
             "RescueMilestones"
         );
 
@@ -954,6 +1142,8 @@ async function loadValidatorQueue() {
         const count = Number(await contract.requestCount());
 
         let html = "";
+        let fundingCount = 0;
+        let evidenceCount = 0;
 
         for (let i = 1; i <= count; i++) {
             try {
@@ -971,151 +1161,407 @@ async function loadValidatorQueue() {
                     Number(request.milestoneCount);
 
                 for (let m = 1; m <= milestoneCount; m++) {
-                    const ms =
-                        await milestonesContract.getMilestone(i, m);
+                    try {
+                        const ms =
+                            await milestonesContract.getMilestone(i, m);
 
-                    const approvalCount = Number(ms.approvalCount);
-                    const isReleased = Boolean(ms.released);
-                    const evidenceSubmitted =
-                        Boolean(ms.evidenceSubmitted);
+                        const funding =
+                            await getMilestoneFunding(i, m);
 
-                    let alreadyApproved = false;
-
-                    if (
-                        userAddress &&
-                        userRoles?.isValidator &&
-                        !isReleased &&
-                        evidenceSubmitted
-                    ) {
-                        requireMethod(
-                            milestonesContract,
-                            "hasValidatorApproved",
-                            "RescueMilestones"
+                        const approvalCount = Number(
+                            getStructField(ms, "approvalCount", 6, 0)
                         );
 
-                        alreadyApproved =
-                            await milestonesContract.hasValidatorApproved(
-                                i,
-                                m,
-                                userAddress
-                            );
-                    }
+                        const isReleased =
+                            Boolean(
+                                getStructField(ms, "released", 5, false)
+                            ) || funding.released;
 
-                    let btnHtml = "";
+                        const evidenceSubmitted = Boolean(
+                            getStructField(
+                                ms,
+                                "evidenceSubmitted",
+                                7,
+                                false
+                            )
+                        );
 
-                    if (isReleased) {
-                        btnHtml = `
-                            <span class="badge badge-green">
-                                Выплачено (${formatApprovalCount(approvalCount)})
-                            </span>
-                        `;
+                        const description = getStructField(
+                            ms,
+                            "description",
+                            0,
+                            ""
+                        );
 
-                    } else if (!evidenceSubmitted) {
-                        btnHtml = `
-                            <span class="badge badge-yellow">
-                                Ожидается отчёт инициатора
-                            </span>
-                        `;
+                        const recipient = getStructField(
+                            ms,
+                            "recipient",
+                            1,
+                            ""
+                        );
 
-                    } else if (!userAddress) {
-                        btnHtml = `
-                            <span class="badge badge-gray">
-                                Подключите MetaMask
-                            </span>
-                        `;
+                        const amount = getStructField(
+                            ms,
+                            "amount",
+                            2,
+                            0n
+                        );
 
-                    } else if (!userRoles?.isValidator) {
-                        btnHtml = `
-                            <span class="badge badge-gray">
-                                Только для валидаторов
-                            </span>
-                        `;
+                        const evidenceURI = getStructField(
+                            ms,
+                            "evidenceURI",
+                            3,
+                            ""
+                        );
 
-                    } else if (alreadyApproved) {
-                        btnHtml = `
-                            <button class="btn btn-outline" disabled>
-                                Подтверждено вами
-                                (${formatApprovalCount(approvalCount)})
-                            </button>
-                        `;
+                        const evidenceHash = getStructField(
+                            ms,
+                            "evidenceHash",
+                            4,
+                            ""
+                        );
 
-                    } else if (approvalCount >= 2) {
-                        btnHtml = `
-                            <span class="badge badge-green">
-                                Ожидается завершение выплаты
-                            </span>
-                        `;
+                        // -------------------------------------------------
+                        // 11.1. ЭТАП УЖЕ ОПЛАЧЕН
+                        // -------------------------------------------------
 
-                    } else {
-                        btnHtml = `
-                            <button
-                                class="btn btn-primary"
-                                onclick="approveMs(${i}, ${m})"
-                            >
-                                Подтвердить выплату
-                                (${formatApprovalCount(approvalCount)})
-                            </button>
-                        `;
-                    }
+                        if (isReleased) {
+                            html += `
+                                <div class="list-item">
+                                    <div>
+                                        <span class="badge badge-blue">
+                                            Заявка #${i}
+                                            (${escapeHtml(request.animalName)})
+                                            · Этап #${m}
+                                        </span>
 
-                    html += `
-                        <div class="list-item">
-                            <div>
-                                <span
-                                    class="badge badge-blue"
-                                    style="margin-bottom:0.35rem;"
-                                >
-                                    Заявка #${i}
-                                    (${escapeHtml(request.animalName)})
-                                    · Этап #${m}
-                                </span>
+                                        <div>
+                                            <strong>
+                                                ${escapeHtml(description)}
+                                            </strong>
+                                            —
+                                            ${escapeHtml(formatEth(amount))} ETH
+                                        </div>
 
-                                <div>
-                                    <strong>
-                                        ${escapeHtml(ms.description)}
-                                    </strong>
-                                    —
-                                    <strong>
-                                        ${escapeHtml(formatEth(ms.amount))} ETH
-                                    </strong>
+                                        <div style="margin-top:0.4rem;">
+                                            <span class="badge badge-green">
+                                                Выплачено (${formatApprovalCount(approvalCount)})
+                                            </span>
+                                        </div>
+                                    </div>
                                 </div>
+                            `;
 
-                                <div class="mono" style="margin-top:0.2rem;">
-                                    Получатель:
-                                    ${escapeHtml(formatAddress(ms.recipient))}
-                                </div>
+                            continue;
+                        }
 
-                                ${
-                                    evidenceSubmitted
-                                        ? `
-                                            <div
-                                                class="mono"
-                                                style="
-                                                    margin-top:0.25rem;
-                                                    word-break:break-all;
-                                                "
-                                            >
-                                                Отчёт:
-                                                ${escapeHtml(ms.evidenceURI)}
-                                                <br>
-                                                Hash:
-                                                ${escapeHtml(shortAddr(ms.evidenceHash))}
-                                            </div>
-                                        `
-                                        : ""
-                                }
+                        // -------------------------------------------------
+                        // 11.2. ЭТАП ЕЩЁ НЕ ПРОФИНАНСИРОВАН
+                        // -------------------------------------------------
 
-                                <div style="margin-top:0.35rem;">
+                        if (!funding.funded) {
+                            fundingCount++;
+
+                            const adminAction = userRoles?.isAdmin
+                                ? `
+                                    <button
+                                        type="button"
+                                        class="btn btn-primary"
+                                        onclick="fundMilestone(${i}, ${m})"
+                                    >
+                                        Зарезервировать средства
+                                    </button>
+                                `
+                                : `
                                     <span class="badge badge-gray">
-                                        Подтверждения:
-                                        ${formatApprovalCount(approvalCount)}
+                                        Ожидает резервирования администратором
                                     </span>
+                                `;
+
+                            html += `
+                                <div class="list-item">
+                                    <div style="width:100%;">
+                                        <span
+                                            class="badge badge-blue"
+                                            style="margin-bottom:0.35rem;"
+                                        >
+                                            Заявка #${i}
+                                            (${escapeHtml(request.animalName)})
+                                            · Этап #${m}
+                                        </span>
+
+                                        <div>
+                                            <strong>
+                                                ${escapeHtml(description)}
+                                            </strong>
+                                            —
+                                            <strong>
+                                                ${escapeHtml(formatEth(amount))} ETH
+                                            </strong>
+                                        </div>
+
+                                        <div class="mono" style="margin-top:0.2rem;">
+                                            Получатель:
+                                            ${escapeHtml(formatAddress(recipient))}
+                                        </div>
+
+                                        <div style="margin-top:0.5rem;">
+                                            <span class="badge badge-yellow">
+                                                Ожидает финансирования
+                                            </span>
+                                        </div>
+
+                                        <p style="
+                                            color:var(--text-muted);
+                                            font-size:0.85rem;
+                                            margin-top:0.5rem;
+                                        ">
+                                            Средства для этого этапа ещё не зарезервированы.
+                                            После резервирования заявитель сможет
+                                            отправить отчёт о выполнении этапа.
+                                        </p>
+
+                                        <div style="margin-top:0.75rem;">
+                                            ${adminAction}
+                                        </div>
+                                    </div>
+                                </div>
+                            `;
+
+                            continue;
+                        }
+
+                        // -------------------------------------------------
+                        // 11.3. ЭТАП ПРОФИНАНСИРОВАН, НО ОТЧЁТА НЕТ
+                        // -------------------------------------------------
+
+                        if (!evidenceSubmitted) {
+                            html += `
+                                <div class="list-item">
+                                    <div>
+                                        <span class="badge badge-blue">
+                                            Заявка #${i}
+                                            (${escapeHtml(request.animalName)})
+                                            · Этап #${m}
+                                        </span>
+
+                                        <div>
+                                            <strong>
+                                                ${escapeHtml(description)}
+                                            </strong>
+                                            —
+                                            <strong>
+                                                ${escapeHtml(formatEth(amount))} ETH
+                                            </strong>
+                                        </div>
+
+                                        <div class="mono" style="margin-top:0.2rem;">
+                                            Получатель:
+                                            ${escapeHtml(formatAddress(recipient))}
+                                        </div>
+
+                                        <div style="margin-top:0.5rem;">
+                                            <span class="badge badge-green">
+                                                Средства зарезервированы
+                                            </span>
+
+                                            <span class="badge badge-yellow">
+                                                Ожидается отчёт инициатора
+                                            </span>
+                                        </div>
+
+                                        <div style="
+                                            margin-top:0.5rem;
+                                            font-size:0.85rem;
+                                            color:var(--text-muted);
+                                        ">
+                                            Целевые пожертвования:
+                                            ${escapeHtml(formatEth(funding.targetReserved))} ETH
+                                            <br>
+                                            Общий фонд:
+                                            ${escapeHtml(formatEth(funding.generalReserved))} ETH
+                                        </div>
+                                    </div>
+                                </div>
+                            `;
+
+                            continue;
+                        }
+
+                        // -------------------------------------------------
+                        // 11.4. ОТЧЁТ ЗАГРУЖЕН, ЭТАП ОЖИДАЕТ ВАЛИДАЦИИ
+                        // -------------------------------------------------
+
+                        evidenceCount++;
+
+                        let alreadyApproved = false;
+
+                        if (
+                            userAddress &&
+                            userRoles?.isValidator
+                        ) {
+                            requireMethod(
+                                milestonesContract,
+                                "hasValidatorApproved",
+                                "RescueMilestones"
+                            );
+
+                            alreadyApproved =
+                                await milestonesContract.hasValidatorApproved(
+                                    i,
+                                    m,
+                                    userAddress
+                                );
+                        }
+
+                        let btnHtml = "";
+
+                        if (!userAddress) {
+                            btnHtml = `
+                                <span class="badge badge-gray">
+                                    Подключите MetaMask
+                                </span>
+                            `;
+
+                        } else if (!userRoles?.isValidator) {
+                            btnHtml = `
+                                <span class="badge badge-gray">
+                                    Только для валидаторов
+                                </span>
+                            `;
+
+                        } else if (alreadyApproved) {
+                            btnHtml = `
+                                <button class="btn btn-outline" disabled>
+                                    Подтверждено вами
+                                    (${formatApprovalCount(approvalCount)})
+                                </button>
+                            `;
+
+                        } else if (approvalCount >= 2) {
+                            btnHtml = `
+                                <span class="badge badge-green">
+                                    Ожидается завершение выплаты
+                                </span>
+                            `;
+
+                        } else {
+                            btnHtml = `
+                                <button
+                                    class="btn btn-primary"
+                                    onclick="approveMs(${i}, ${m})"
+                                >
+                                    Подтвердить выплату
+                                    (${formatApprovalCount(approvalCount)})
+                                </button>
+                            `;
+                        }
+
+                        html += `
+                            <div class="list-item">
+                                <div style="width:100%;">
+                                    <span
+                                        class="badge badge-blue"
+                                        style="margin-bottom:0.35rem;"
+                                    >
+                                        Заявка #${i}
+                                        (${escapeHtml(request.animalName)})
+                                        · Этап #${m}
+                                    </span>
+
+                                    <div>
+                                        <strong>
+                                            ${escapeHtml(description)}
+                                        </strong>
+                                        —
+                                        <strong>
+                                            ${escapeHtml(formatEth(amount))} ETH
+                                        </strong>
+                                    </div>
+
+                                    <div class="mono" style="margin-top:0.2rem;">
+                                        Получатель:
+                                        ${escapeHtml(formatAddress(recipient))}
+                                    </div>
+
+                                    <div style="
+                                        margin-top:0.5rem;
+                                        display:flex;
+                                        gap:0.4rem;
+                                        flex-wrap:wrap;
+                                    ">
+                                        <span class="badge badge-green">
+                                            Средства зарезервированы
+                                        </span>
+
+                                        <span class="badge badge-blue">
+                                            Отчёт загружен
+                                        </span>
+
+                                        <span class="badge badge-gray">
+                                            Подтверждения:
+                                            ${formatApprovalCount(approvalCount)}
+                                        </span>
+                                    </div>
+
+                                    <div style="
+                                        margin-top:0.5rem;
+                                        font-size:0.85rem;
+                                        color:var(--text-muted);
+                                    ">
+                                        Целевые пожертвования:
+                                        ${escapeHtml(formatEth(funding.targetReserved))} ETH
+                                        <br>
+                                        Общий фонд:
+                                        ${escapeHtml(formatEth(funding.generalReserved))} ETH
+                                    </div>
+
+                                    ${
+                                        evidenceURI
+                                            ? `
+                                                <div style="margin-top:0.5rem;">
+                                                    <a
+                                                        href="${escapeHtml(evidenceURI)}"
+                                                        target="_blank"
+                                                        rel="noopener noreferrer"
+                                                    >
+                                                        Открыть отчёт
+                                                    </a>
+                                                </div>
+                                            `
+                                            : ""
+                                    }
+
+                                    ${
+                                        evidenceHash
+                                            ? `
+                                                <div
+                                                    class="mono"
+                                                    style="
+                                                        margin-top:0.25rem;
+                                                        word-break:break-all;
+                                                    "
+                                                >
+                                                    Hash:
+                                                    ${escapeHtml(evidenceHash)}
+                                                </div>
+                                            `
+                                            : ""
+                                    }
+
+                                    <div style="margin-top:0.75rem;">
+                                        ${btnHtml}
+                                    </div>
                                 </div>
                             </div>
+                        `;
 
-                            <div>${btnHtml}</div>
-                        </div>
-                    `;
+                    } catch (milestoneError) {
+                        console.error(
+                            `Ошибка загрузки этапа #${m} заявки #${i}:`,
+                            milestoneError
+                        );
+                    }
                 }
 
             } catch (requestError) {
@@ -1126,18 +1572,27 @@ async function loadValidatorQueue() {
             }
         }
 
-        container.innerHTML = html || `
-            <p style="color:var(--text-muted);">
-                Сейчас нет этапов, ожидающих проверки валидаторами.
-            </p>
-        `;
+        if (!html) {
+            container.innerHTML = `
+                <p style="color:var(--text-muted);">
+                    Одобренных заявок с этапами пока нет.
+                </p>
+            `;
+            return;
+        }
+
+        container.innerHTML = html;
+
+        console.log("Очередь этапов загружена.");
+        console.log("Ожидают финансирования:", fundingCount);
+        console.log("Ожидают проверки валидаторами:", evidenceCount);
 
     } catch (err) {
-        console.error("Ошибка загрузки очереди валидаторов:", err);
+        console.error("Ошибка загрузки очереди этапов:", err);
 
         container.innerHTML = `
             <p style="color:red;">
-                Ошибка загрузки очереди валидаторов:
+                Ошибка загрузки очереди:
                 ${escapeHtml(getErrorMessage(err))}
             </p>
         `;
@@ -1146,7 +1601,7 @@ async function loadValidatorQueue() {
 
 
 // ======================================================
-// 10. ПОДТВЕРЖДЕНИЕ ВЫПЛАТЫ ПО ЭТАПУ
+// 12. ПОДТВЕРЖДЕНИЕ ВЫПЛАТЫ ПО ЭТАПУ
 // ======================================================
 
 async function approveMs(reqId, msId) {
@@ -1156,6 +1611,12 @@ async function approveMs(reqId, msId) {
         requireMethod(
             milestonesContract,
             "approveMilestone",
+            "RescueMilestones"
+        );
+
+        requireMethod(
+            milestonesContract,
+            "getMilestoneFundingStatus",
             "RescueMilestones"
         );
 
@@ -1169,13 +1630,31 @@ async function approveMs(reqId, msId) {
             );
         }
 
-        const ms = await milestonesContract.getMilestone(reqId, msId);
+        const ms = await milestonesContract.getMilestone(
+            reqId,
+            msId
+        );
 
-        if (ms.released) {
+        const funding = await getMilestoneFunding(reqId, msId);
+
+        if (
+            Boolean(getStructField(ms, "released", 5, false)) ||
+            funding.released
+        ) {
             throw new Error("Этот этап уже оплачен.");
         }
 
-        if (!ms.evidenceSubmitted) {
+        if (!funding.funded) {
+            throw new Error(
+                "Нельзя подтверждать этап, для которого ещё не зарезервированы средства."
+            );
+        }
+
+        const evidenceSubmitted = Boolean(
+            getStructField(ms, "evidenceSubmitted", 7, false)
+        );
+
+        if (!evidenceSubmitted) {
             throw new Error(
                 "Инициатор ещё не загрузил отчёт по этому этапу."
             );
@@ -1192,15 +1671,24 @@ async function approveMs(reqId, msId) {
             throw new Error("Вы уже подтверждали этот этап.");
         }
 
-        if (Number(ms.approvalCount) >= 2) {
+        const approvalCount = Number(
+            getStructField(ms, "approvalCount", 6, 0)
+        );
+
+        if (approvalCount >= 2) {
             throw new Error(
                 "Этап уже получил необходимое количество подтверждений."
             );
         }
 
+        const amount = getStructField(ms, "amount", 2, 0n);
+
         const confirmed = confirm(
             `Подтвердить выполнение этапа #${msId} заявки #${reqId} ` +
-            `на сумму ${formatEth(ms.amount)} ETH?`
+            `на сумму ${formatEth(amount)} ETH?\n\n` +
+            `Средства для этапа уже зарезервированы. ` +
+            `После необходимого количества подтверждений ` +
+            `контракт выполнит выплату получателю.`
         );
 
         if (!confirmed) return;
@@ -1241,7 +1729,7 @@ async function approveMs(reqId, msId) {
 
 
 // ======================================================
-// 11. ЖУРНАЛ СОБЫТИЙ DAO
+// 13. ЖУРНАЛ СОБЫТИЙ DAO
 // ======================================================
 
 async function loadAuditHistory() {
@@ -1304,7 +1792,7 @@ async function loadAuditHistory() {
         );
 
         // -------------------------------------------------
-        // 11.1. ПРОВЕРКА BYTECODE
+        // 13.1. ПРОВЕРКА BYTECODE
         // -------------------------------------------------
 
         const codeResults = await Promise.all(
@@ -1347,7 +1835,7 @@ async function loadAuditHistory() {
         }
 
         // -------------------------------------------------
-        // 11.2. ПРОВЕРКА ABI
+        // 13.2. ПРОВЕРКА ABI
         // -------------------------------------------------
 
         for (const source of sources) {
@@ -1361,7 +1849,7 @@ async function loadAuditHistory() {
         }
 
         // -------------------------------------------------
-        // 11.3. ПОЛУЧЕНИЕ ЛОГОВ
+        // 13.3. ПОЛУЧЕНИЕ ЛОГОВ
         // -------------------------------------------------
 
         const allLogs = [];
@@ -1450,7 +1938,7 @@ async function loadAuditHistory() {
         }
 
         // -------------------------------------------------
-        // 11.4. ДЕКОДИРОВАНИЕ СОБЫТИЙ
+        // 13.4. ДЕКОДИРОВАНИЕ СОБЫТИЙ
         // -------------------------------------------------
 
         const records = [];
@@ -1674,7 +2162,6 @@ async function loadAuditHistory() {
                     case "AidRequestFinalized": {
                         const requestId = getEventArg(a, "requestId", 0);
                         const status = Number(getEventArg(a, "status", 1, -1));
-                        const reservedAmount = getEventArg(a, "reservedAmount", 2, 0n);
 
                         const approved =
                             status === ADMIN_REQUEST_STATUSES.APPROVED;
@@ -1685,7 +2172,7 @@ async function loadAuditHistory() {
                             approved ? "badge-green" : "badge-red",
                             approved
                                 ? `Заявка #${requestId} одобрена DAO. ` +
-                                  `Зарезервировано ${formatEth(reservedAmount)} ETH.`
+                                  `Теперь средства резервируются отдельно для каждого этапа.`
                                 : `Заявка #${requestId} не одобрена DAO.`,
                             "request-finalized"
                         );
@@ -1990,6 +2477,48 @@ async function loadAuditHistory() {
                         break;
                     }
 
+                    case "MilestoneFundsReserved": {
+                        const requestId = getEventArg(a, "requestId", 0);
+                        const milestoneId = getEventArg(a, "milestoneId", 1);
+                        const targetAmount = getEventArg(a, "targetAmount", 2, 0n);
+                        const generalAmount = getEventArg(a, "generalAmount", 3, 0n);
+
+                        addRecord(
+                            log,
+                            "Резервирование средств этапа",
+                            "badge-green",
+                            `Заявка #${requestId}, этап #${milestoneId}: ` +
+                            `зарезервировано ${formatEth(targetAmount)} ETH ` +
+                            `из целевых пожертвований и ` +
+                            `${formatEth(generalAmount)} ETH из общего фонда.`,
+                            "milestone-funded"
+                        );
+
+                        eventWasHandled = true;
+                        break;
+                    }
+
+                    case "MilestoneFunded": {
+                        const requestId = getEventArg(a, "requestId", 0);
+                        const milestoneId = getEventArg(a, "milestoneId", 1);
+                        const targetAmount = getEventArg(a, "targetAmount", 2, 0n);
+                        const generalAmount = getEventArg(a, "generalAmount", 3, 0n);
+
+                        addRecord(
+                            log,
+                            "Резервирование средств этапа",
+                            "badge-green",
+                            `Заявка #${requestId}, этап #${milestoneId}: ` +
+                            `зарезервировано ${formatEth(targetAmount)} ETH ` +
+                            `из целевых пожертвований и ` +
+                            `${formatEth(generalAmount)} ETH из общего фонда.`,
+                            "milestone-funded"
+                        );
+
+                        eventWasHandled = true;
+                        break;
+                    }
+
                     case "MilestoneFundsReleased": {
                         const requestId = getEventArg(a, "requestId", 0);
                         const milestoneId = getEventArg(a, "milestoneId", 1);
@@ -2027,7 +2556,7 @@ async function loadAuditHistory() {
         }
 
         // -------------------------------------------------
-        // 11.5. ДИАГНОСТИКА ДЕКОДИРОВАНИЯ
+        // 13.5. ДИАГНОСТИКА ДЕКОДИРОВАНИЯ
         // -------------------------------------------------
 
         console.log("========== РЕЗУЛЬТАТ ДЕКОДИРОВАНИЯ ==========");
@@ -2046,16 +2575,8 @@ async function loadAuditHistory() {
             console.table(ignoredEvents);
         }
 
-        console.table(
-            records.map(record => ({
-                block: record.block,
-                type: record.type,
-                txHash: record.txHash
-            }))
-        );
-
         // -------------------------------------------------
-        // 11.6. УДАЛЕНИЕ ДУБЛЕЙ ПОЖЕРТВОВАНИЙ
+        // 13.6. УДАЛЕНИЕ ДУБЛЕЙ ПОЖЕРТВОВАНИЙ
         // -------------------------------------------------
 
         const daoGeneralDonations = new Set(
@@ -2089,7 +2610,7 @@ async function loadAuditHistory() {
         });
 
         // -------------------------------------------------
-        // 11.7. ГРУППИРОВКА СОБЫТИЙ ПО ТРАНЗАКЦИЯМ
+        // 13.7. ГРУППИРОВКА СОБЫТИЙ ПО ТРАНЗАКЦИЯМ
         // -------------------------------------------------
 
         const grouped = new Map();
@@ -2122,6 +2643,7 @@ async function loadAuditHistory() {
             "passport-minted",
             "milestone-created",
             "milestone-updated",
+            "milestone-funded",
             "evidence-submitted",
             "milestone-approved",
             "funds-released",
@@ -2167,7 +2689,7 @@ async function loadAuditHistory() {
         allEvents.sort((a, b) => b.block - a.block);
 
         // -------------------------------------------------
-        // 11.8. ОТОБРАЖЕНИЕ ИСТОРИИ
+        // 13.8. ОТОБРАЖЕНИЕ ИСТОРИИ
         // -------------------------------------------------
 
         if (allEvents.length === 0) {
@@ -2270,7 +2792,7 @@ async function loadAuditHistory() {
 
 
 // ======================================================
-// 12. ГЛОБАЛЬНЫЕ ФУНКЦИИ ДЛЯ HTML onclick
+// 14. ГЛОБАЛЬНЫЕ ФУНКЦИИ ДЛЯ HTML onclick
 // ======================================================
 
 window.registerMember = registerMember;
@@ -2282,6 +2804,8 @@ window.publishAdminRequest = publishAdminRequest;
 window.requestAdminChanges = requestAdminChanges;
 
 window.rejectAdminRequest = rejectAdminRequest;
+
+window.fundMilestone = fundMilestone;
 
 window.loadValidatorQueue = loadValidatorQueue;
 

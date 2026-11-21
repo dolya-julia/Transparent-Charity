@@ -186,12 +186,25 @@ contract RescueMilestones {
     /**
      * Treasury можно заменить только до создания первого этапа.
      *
-     * Это предотвращает потерю доступа к резервам,
-     * которые были созданы в первоначальном Treasury.
+     * Вызов разрешён:
+     * 1. Администратору.
+     * 2. DAO-контракту.
+     *
+     * DAO вызывает эту функцию при настройке Milestones
+     * через RescueDAO.setMilestonesContract().
+     *
+     * Это предотвращает ошибку Only admin при первоначальной
+     * настройке связанных контрактов.
      */
     function setTreasury(
         address _treasury
-    ) external onlyAdmin {
+    ) external {
+
+        require(
+            msg.sender == admin ||
+            msg.sender == daoContract,
+            "Only admin or DAO"
+        );
 
         require(
             totalMilestonesCreated == 0,

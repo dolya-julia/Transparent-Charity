@@ -1,4 +1,3 @@
-
 const urlParams = new URLSearchParams(window.location.search);
 const requestId = Number(urlParams.get("id"));
 
@@ -6,6 +5,8 @@ const validRequestId =
     Number.isSafeInteger(requestId) && requestId > 0;
 
 let currentEvidenceHash = "";
+
+const SCROLL_STORAGE_KEY = "request_page_scroll_y";
 
 
 // =========================================================
@@ -31,6 +32,7 @@ window.addEventListener("DOMContentLoaded", async () => {
         if (!ready) return;
 
         await loadRequestDetails();
+        restoreScrollPosition();
 
     } catch (err) {
         console.error(
@@ -53,6 +55,72 @@ window.addEventListener("DOMContentLoaded", async () => {
 // =========================================================
 // 2. ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ
 // =========================================================
+
+function saveScrollPosition() {
+    try {
+        sessionStorage.setItem(
+            SCROLL_STORAGE_KEY,
+            String(window.scrollY || 0)
+        );
+    } catch (err) {
+        console.warn("Не удалось сохранить позицию прокрутки:", err);
+    }
+}
+
+
+function restoreScrollPosition() {
+    try {
+        const raw = sessionStorage.getItem(SCROLL_STORAGE_KEY);
+        if (raw === null) return;
+        sessionStorage.removeItem(SCROLL_STORAGE_KEY);
+
+        const y = Number(raw);
+        if (Number.isFinite(y) && y > 0) {
+            requestAnimationFrame(() => {
+                window.scrollTo({ top: y, behavior: "instant" });
+            });
+        }
+    } catch (err) {
+        console.warn("Не удалось восстановить позицию прокрутки:", err);
+    }
+}
+
+
+function reloadPreservingScroll() {
+    saveScrollPosition();
+    window.location.reload();
+}
+
+
+async function runWithButtonLock(buttonEl, busyText, actionFn) {
+    if (buttonEl?.dataset.busy === "1") {
+        return;
+    }
+
+    const originalText = buttonEl ? buttonEl.textContent : "";
+    const originalDisabled = buttonEl ? buttonEl.disabled : false;
+
+    if (buttonEl) {
+        buttonEl.dataset.busy = "1";
+        buttonEl.disabled = true;
+        if (busyText) {
+            buttonEl.textContent = busyText;
+        }
+    }
+
+    try {
+        return await actionFn();
+    } finally {
+        if (buttonEl) {
+            delete buttonEl.dataset.busy;
+            buttonEl.disabled = originalDisabled;
+            if (busyText) {
+                buttonEl.textContent = originalText;
+            }
+        }
+    }
+}
+
 
 function escapeHtml(value) {
     return String(value ?? "").replace(/[&<>"']/g, char => ({
@@ -137,6 +205,32 @@ function isDaoMember() {
 }
 
 
+/**
+ * Проверка, является ли текущий пользователь
+ * администратором основного контракта RescueDAO.
+ *
+ * Именно администратор резервирует средства этапов.
+ */
+async function isDaoAdmin() {
+    if (!isWalletConnected()) {
+        return false;
+    }
+
+    requireMethod(
+        contract,
+        "admin",
+        "RescueDAO"
+    );
+
+    const adminAddress = await contract.admin();
+
+    return (
+        String(adminAddress).toLowerCase() ===
+        String(userAddress).toLowerCase()
+    );
+}
+
+
 function isRequesterAddress(requester) {
     return (
         isWalletConnected() &&
@@ -181,13 +275,6 @@ function isPreparationStatus(status) {
 }
 
 
-// Проверка существования этапа.
-//
-// В актуальном ABI getMilestone() может возвращать структуру
-// без поля exists. В таком случае проверяем основные поля
-// самого этапа. Если поле exists присутствует в ABI,
-// учитываем его значение.
-
 function isValidMilestone(ms) {
     if (!ms) return false;
 
@@ -195,13 +282,19 @@ function isValidMilestone(ms) {
         return Boolean(ms.exists);
     }
 
-    const description = String(ms.description ?? "").trim();
-    const recipient = String(ms.recipient ?? "");
+    const description = String(
+        ms.description ?? ""
+    ).trim();
+
+    const recipient = String(
+        ms.recipient ?? ""
+    );
 
     return (
         description.length > 0 &&
         ethers.isAddress(recipient) &&
-        recipient.toLowerCase() !== ethers.ZeroAddress.toLowerCase()
+        recipient.toLowerCase() !==
+            ethers.ZeroAddress.toLowerCase()
     );
 }
 
@@ -212,6 +305,34 @@ function getTransactionError(err) {
     }
 
     return getErrorMessage(err);
+}
+
+
+/**
+ * Чтение результата getMilestoneFundingStatus().
+ *
+ * Поддерживает как именованные поля ethers,
+ * так и доступ по индексам возвращаемого tuple.
+ */
+function parseMilestoneFundingStatus(result) {
+    if (!result) {
+        throw new Error(
+            "Контракт не вернул информацию о финансировании этапа."
+        );
+    }
+
+    return {
+        funded: Boolean(result.funded ?? result[0]),
+        targetReserved: BigInt(
+            result.targetReserved ?? result[1] ?? 0n
+        ),
+        generalReserved: BigInt(
+            result.generalReserved ?? result[2] ?? 0n
+        ),
+        released: Boolean(
+            result.released ?? result[3]
+        )
+    };
 }
 
 
@@ -262,12 +383,26 @@ async function loadRequestDetails() {
         ]);
 
         const statusNum = Number(stats.status);
-
         const statusObj = getStatusInfo(statusNum);
 
         const isRequester = isRequesterAddress(
             info.requester
         );
+
+        // -------------------------------------------------
+        // Проверка администратора DAO
+        // -------------------------------------------------
+
+        let isAdmin = false;
+
+        try {
+            isAdmin = await isDaoAdmin();
+        } catch (adminErr) {
+            console.warn(
+                "Не удалось определить администратора DAO:",
+                adminErr
+            );
+        }
 
         // -------------------------------------------------
         // Дополнительные данные с backend
@@ -313,13 +448,16 @@ async function loadRequestDetails() {
         );
 
         const endsDate = votingEndsAt > 0
-            ? new Date(votingEndsAt * 1000).toLocaleString("ru-RU")
+            ? new Date(
+                votingEndsAt * 1000
+            ).toLocaleString("ru-RU")
             : "Ещё не назначено";
 
         const nowSec = Math.floor(Date.now() / 1000);
 
         const votingEnded =
-            votingEndsAt > 0 && nowSec >= votingEndsAt;
+            votingEndsAt > 0 &&
+            nowSec >= votingEndsAt;
 
         // -------------------------------------------------
         // Проверка голоса пользователя
@@ -369,6 +507,7 @@ async function loadRequestDetails() {
 
             targetDonations = BigInt(totalDonations);
             personalDonations = BigInt(myDonations);
+
             treasuryAvailable = true;
 
         } catch (err) {
@@ -381,7 +520,7 @@ async function loadRequestDetails() {
         }
 
         // -------------------------------------------------
-        // Расчёт прогресса финансирования
+        // Расчёт прогресса целевого финансирования
         // -------------------------------------------------
 
         const requestedAmount = BigInt(
@@ -398,15 +537,32 @@ async function loadRequestDetails() {
                 ? Number(
                     targetDonations >= requestedAmount
                         ? 100n
-                        : targetDonations * 100n / requestedAmount
+                        : targetDonations * 100n /
+                            requestedAmount
                 )
                 : 0;
 
-        // Целевые пожертвования принимаются только
-        // во время голосования.
+        // -------------------------------------------------
+        // Условия приёма целевых пожертвований
+        // -------------------------------------------------
+
+        const isVoting =
+            statusNum === REQUEST_STATUS.VOTING;
+
+        const isApproved =
+            statusNum === REQUEST_STATUS.APPROVED;
+
+        const votingDonationAllowed =
+            isVoting && !votingEnded;
+
+        const approvedDonationAllowed =
+            isApproved;
+
         const canDonateToRequest =
-            statusNum === REQUEST_STATUS.VOTING &&
-            !votingEnded &&
+            (
+                votingDonationAllowed ||
+                approvedDonationAllowed
+            ) &&
             remainingAmount > 0n &&
             treasuryAvailable &&
             isWalletConnected();
@@ -478,6 +634,7 @@ async function loadRequestDetails() {
             lifecycleMessage = `
                 <div class="box" style="margin-top:1rem;">
                     <strong>Заявка находится на проверке.</strong>
+
                     <p style="margin-top:0.4rem;color:var(--text-muted);">
                         Администратор проверяет материалы заявки.
                         Инициатор может дополнять описание и редактировать
@@ -490,6 +647,7 @@ async function loadRequestDetails() {
             lifecycleMessage = `
                 <div class="box" style="margin-top:1rem;border-left:4px solid var(--warning);">
                     <strong>По заявке требуются изменения.</strong>
+
                     <p style="margin-top:0.4rem;color:var(--text-muted);">
                         Инициатор может исправить материалы и этапы,
                         после чего повторно отправить заявку на проверку.
@@ -501,9 +659,11 @@ async function loadRequestDetails() {
             lifecycleMessage = `
                 <div class="box" style="margin-top:1rem;">
                     <strong>Заявка опубликована.</strong>
+
                     <p style="margin-top:0.4rem;color:var(--text-muted);">
                         Состав и суммы этапов зафиксированы.
-                        Изменение этапов на этой стадии недоступно.
+                        Участники DAO могут голосовать, а пользователи
+                        могут поддерживать заявку целевыми пожертвованиями.
                     </p>
                 </div>
             `;
@@ -512,10 +672,13 @@ async function loadRequestDetails() {
             lifecycleMessage = `
                 <div class="box" style="margin-top:1rem;">
                     <strong>Заявка одобрена.</strong>
+
                     <p style="margin-top:0.4rem;color:var(--text-muted);">
-                        Инициатор может отправлять подтверждающие документы
-                        по этапам. После проверки валидаторами средства
-                        перечисляются соответствующим получателям.
+                        Целевые пожертвования продолжают приниматься
+                        до достижения запрошенной суммы.
+                        Администратор DAO резервирует средства отдельно
+                        для каждого этапа. После резервирования инициатор
+                        может отправить отчёт по соответствующему этапу.
                     </p>
                 </div>
             `;
@@ -529,7 +692,12 @@ async function loadRequestDetails() {
 
         if (statusNum === REQUEST_STATUS.VOTING) {
 
-            if (!votingEnded && isDaoMember() && !voted && isWalletConnected()) {
+            if (
+                !votingEnded &&
+                isDaoMember() &&
+                !voted &&
+                isWalletConnected()
+            ) {
                 votingControls = `
                     <div style="
                         display:flex;
@@ -597,6 +765,130 @@ async function loadRequestDetails() {
         let targetFundingBlock = "";
 
         if (treasuryAvailable) {
+            let donationMessage = "";
+
+            if (canDonateToRequest) {
+                donationMessage = `
+                    <div style="
+                        margin-top:1rem;
+                        padding-top:0.85rem;
+                        border-top:1px solid var(--border);
+                    ">
+                        <h4 style="margin-bottom:0.5rem;">
+                            Поддержать эту заявку
+                        </h4>
+
+                        <p style="
+                            font-size:0.83rem;
+                            color:var(--text-muted);
+                            margin-bottom:0.65rem;
+                        ">
+                            Пожертвование будет учтено отдельно
+                            от общего фонда и привязано к заявке
+                            #${requestId}.
+                        </p>
+
+                        <div class="form-group">
+                            <label for="targetDonationAmount">
+                                Сумма пожертвования (ETH)
+                            </label>
+
+                            <input
+                                type="number"
+                                id="targetDonationAmount"
+                                class="input-field"
+                                step="0.001"
+                                min="0.000000000000000001"
+                                max="${formatEth(remainingAmount)}"
+                                placeholder="Например, 0.01"
+                                style="
+                                    width:100%;
+                                    padding:0.6rem;
+                                    margin-top:0.25rem;
+                                "
+                            >
+                        </div>
+
+                        <button
+                            class="btn btn-primary"
+                            style="width:100%;margin-top:0.75rem;"
+                            onclick="donateToCurrentRequest()"
+                        >
+                            ❤️ Пожертвовать на эту заявку
+                        </button>
+                    </div>
+                `;
+
+            } else if (remainingAmount === 0n) {
+                donationMessage = `
+                    <p style="
+                        margin-top:1rem;
+                        font-size:0.85rem;
+                        color:var(--primary);
+                        font-weight:600;
+                    ">
+                        Целевая сумма собрана полностью.
+                    </p>
+                `;
+
+            } else if (
+                statusNum === REQUEST_STATUS.VOTING &&
+                votingEnded
+            ) {
+                donationMessage = `
+                    <p style="
+                        margin-top:1rem;
+                        font-size:0.85rem;
+                        color:var(--text-muted);
+                    ">
+                        Срок голосования завершился.
+                        Дождитесь подведения итогов голосования.
+                    </p>
+                `;
+
+            } else if (
+                statusNum === REQUEST_STATUS.APPROVED &&
+                !isWalletConnected()
+            ) {
+                donationMessage = `
+                    <p style="
+                        margin-top:1rem;
+                        font-size:0.85rem;
+                        color:var(--text-muted);
+                    ">
+                        Подключите MetaMask, чтобы поддержать
+                        одобренную заявку.
+                    </p>
+                `;
+
+            } else if (
+                statusNum === REQUEST_STATUS.VOTING ||
+                statusNum === REQUEST_STATUS.APPROVED
+            ) {
+                donationMessage = `
+                    <p style="
+                        margin-top:1rem;
+                        font-size:0.85rem;
+                        color:var(--text-muted);
+                    ">
+                        Для этой заявки пока невозможно внести
+                        целевое пожертвование.
+                    </p>
+                `;
+
+            } else {
+                donationMessage = `
+                    <p style="
+                        margin-top:1rem;
+                        font-size:0.85rem;
+                        color:var(--text-muted);
+                    ">
+                        Целевые пожертвования доступны во время
+                        голосования и после одобрения заявки.
+                    </p>
+                `;
+            }
+
             targetFundingBlock = `
                 <div class="box" style="margin-top:1rem;border:1px solid var(--border);">
 
@@ -695,105 +987,8 @@ async function loadRequestDetails() {
                             `
                     }
 
-                    ${
-                        canDonateToRequest
-                            ? `
-                                <div style="
-                                    margin-top:1rem;
-                                    padding-top:0.85rem;
-                                    border-top:1px solid var(--border);
-                                ">
-                                    <h4 style="margin-bottom:0.5rem;">
-                                        Поддержать эту заявку
-                                    </h4>
+                    ${donationMessage}
 
-                                    <p style="
-                                        font-size:0.83rem;
-                                        color:var(--text-muted);
-                                        margin-bottom:0.65rem;
-                                    ">
-                                        Пожертвование будет учтено отдельно
-                                        от общего фонда и привязано к заявке
-                                        #${requestId}.
-                                    </p>
-
-                                    <div class="form-group">
-                                        <label for="targetDonationAmount">
-                                            Сумма пожертвования (ETH)
-                                        </label>
-
-                                        <input
-                                            type="number"
-                                            id="targetDonationAmount"
-                                            class="input-field"
-                                            step="0.001"
-                                            min="0.000000000000000001"
-                                            max="${formatEth(remainingAmount)}"
-                                            placeholder="Например, 0.01"
-                                            style="
-                                                width:100%;
-                                                padding:0.6rem;
-                                                margin-top:0.25rem;
-                                            "
-                                        >
-                                    </div>
-
-                                    <button
-                                        class="btn btn-primary"
-                                        style="width:100%;margin-top:0.75rem;"
-                                        onclick="donateToCurrentRequest()"
-                                    >
-                                        ❤️ Пожертвовать на эту заявку
-                                    </button>
-                                </div>
-                            `
-                            : statusNum !== REQUEST_STATUS.VOTING
-                                ? `
-                                    <p style="
-                                        margin-top:1rem;
-                                        font-size:0.85rem;
-                                        color:var(--text-muted);
-                                    ">
-                                        Приём целевых пожертвований откроется
-                                        после публикации заявки и завершится
-                                        вместе с голосованием.
-                                    </p>
-                                `
-                                : votingEnded
-                                    ? `
-                                        <p style="
-                                            margin-top:1rem;
-                                            font-size:0.85rem;
-                                            color:var(--text-muted);
-                                        ">
-                                            Время голосования завершилось.
-                                            Целевые пожертвования больше не принимаются.
-                                        </p>
-                                    `
-                                    : remainingAmount === 0n
-                                        ? `
-                                            <p style="
-                                                margin-top:1rem;
-                                                font-size:0.85rem;
-                                                color:var(--primary);
-                                                font-weight:600;
-                                            ">
-                                                Целевая сумма собрана полностью.
-                                            </p>
-                                        `
-                                        : !isWalletConnected()
-                                            ? `
-                                                <p style="
-                                                    margin-top:1rem;
-                                                    font-size:0.85rem;
-                                                    color:var(--text-muted);
-                                                ">
-                                                    Подключите MetaMask, чтобы
-                                                    поддержать эту заявку.
-                                                </p>
-                                            `
-                                            : ""
-                    }
                 </div>
             `;
 
@@ -900,7 +1095,7 @@ async function loadRequestDetails() {
                     <button
                         class="btn btn-primary"
                         style="width:100%;"
-                        onclick="createNewMilestone()"
+                        onclick="createNewMilestone(this)"
                     >
                         Добавить этап
                     </button>
@@ -1124,14 +1319,12 @@ async function loadRequestDetails() {
         await loadMilestonesList(
             Number(stats.milestoneCount),
             statusNum,
-            isRequester
+            isRequester,
+            isAdmin
         );
 
         // -------------------------------------------------
         // Загрузка NFT-паспорта
-        //
-        // Передаём статус заявки, чтобы не обращаться
-        // к NFT-контракту до публикации заявки.
         // -------------------------------------------------
 
         await loadNftPassport(
@@ -1209,28 +1402,38 @@ async function donateToCurrentRequest() {
 
         const statusNum = Number(stats.status);
 
-        if (statusNum !== REQUEST_STATUS.VOTING) {
-            throw new Error(
-                "Целевые пожертвования принимаются только " +
-                "для опубликованных заявок на этапе голосования."
-            );
-        }
-
         const votingEndsAt = Number(stats.votingEndsAt);
         const nowSec = Math.floor(Date.now() / 1000);
 
         if (
-            votingEndsAt <= 0 ||
-            nowSec >= votingEndsAt
+            statusNum !== REQUEST_STATUS.VOTING &&
+            statusNum !== REQUEST_STATUS.APPROVED
         ) {
             throw new Error(
-                "Время голосования завершилось. " +
-                "Целевые пожертвования больше не принимаются."
+                "Целевые пожертвования принимаются только " +
+                "во время голосования и после одобрения заявки."
             );
         }
 
-        const requestedAmount = BigInt(stats.requestedAmount);
-        const currentDonations = BigInt(targetDonations);
+        if (statusNum === REQUEST_STATUS.VOTING) {
+            if (
+                votingEndsAt <= 0 ||
+                nowSec >= votingEndsAt
+            ) {
+                throw new Error(
+                    "Срок голосования завершился. " +
+                    "Сначала необходимо подвести его итоги."
+                );
+            }
+        }
+
+        const requestedAmount = BigInt(
+            stats.requestedAmount
+        );
+
+        const currentDonations = BigInt(
+            targetDonations
+        );
 
         const remainingAmount =
             requestedAmount > currentDonations
@@ -1253,7 +1456,8 @@ async function donateToCurrentRequest() {
         }
 
         const confirmed = confirm(
-            `Вы действительно хотите пожертвовать ${amount} ETH на заявку #${requestId}?`
+            `Вы действительно хотите пожертвовать ${amount} ETH ` +
+            `на заявку #${requestId}?`
         );
 
         if (!confirmed) return;
@@ -1279,10 +1483,13 @@ async function donateToCurrentRequest() {
             "Спасибо! Ваше целевое пожертвование успешно учтено."
         );
 
-        window.location.reload();
+        reloadPreservingScroll();
 
     } catch (err) {
-        console.error("Ошибка целевого пожертвования:", err);
+        console.error(
+            "Ошибка целевого пожертвования:",
+            err
+        );
 
         alert(
             "Не удалось выполнить пожертвование:\n" +
@@ -1302,17 +1509,6 @@ async function loadNftPassport(requestId, statusNum) {
     );
 
     if (!nftContainer) return;
-
-    // -----------------------------------------------------
-    // До публикации заявки NFT-паспорт не существует.
-    //
-    // Статусы:
-    // 0 — UnderReview
-    // 1 — ChangesRequested
-    //
-    // В этих случаях не вызываем getTokenIdForRequest(),
-    // поскольку контракт может делать revert, если паспорта нет.
-    // -----------------------------------------------------
 
     if (
         Number(statusNum) === REQUEST_STATUS.UNDER_REVIEW ||
@@ -1364,10 +1560,6 @@ async function loadNftPassport(requestId, statusNum) {
             "RescueNFT"
         );
 
-        // -------------------------------------------------
-        // Получение ID токена
-        // -------------------------------------------------
-
         const tokenId =
             await nftContract.getTokenIdForRequest(requestId);
 
@@ -1382,10 +1574,6 @@ async function loadNftPassport(requestId, statusNum) {
 
             return;
         }
-
-        // -------------------------------------------------
-        // Получение владельца и метаданных
-        // -------------------------------------------------
 
         const [owner, uri] = await Promise.all([
             nftContract.ownerOf(tokenId),
@@ -1407,10 +1595,6 @@ async function loadNftPassport(requestId, statusNum) {
             return;
         }
 
-        // -------------------------------------------------
-        // Декодирование JSON metadata
-        // -------------------------------------------------
-
         const base64Json = String(uri).split(",")[1];
         const binaryString = window.atob(base64Json);
 
@@ -1421,10 +1605,6 @@ async function loadNftPassport(requestId, statusNum) {
 
         const jsonString = new TextDecoder().decode(bytes);
         const metadata = JSON.parse(jsonString);
-
-        // -------------------------------------------------
-        // Атрибуты NFT
-        // -------------------------------------------------
 
         const attributesHtml =
             (Array.isArray(metadata.attributes)
@@ -1445,10 +1625,6 @@ async function loadNftPassport(requestId, statusNum) {
                     </span>
                 `)
                 .join("");
-
-        // -------------------------------------------------
-        // Изображение NFT
-        // -------------------------------------------------
 
         const imageUrl = String(metadata.image || "");
 
@@ -1478,10 +1654,6 @@ async function loadNftPassport(requestId, statusNum) {
                 >
             `
             : "";
-
-        // -------------------------------------------------
-        // Отображение NFT-паспорта
-        // -------------------------------------------------
 
         nftContainer.innerHTML = `
             <div style="
@@ -1690,7 +1862,7 @@ async function castVote(support) {
             );
         }
 
-        window.location.reload();
+        reloadPreservingScroll();
 
     } catch (err) {
         console.error("Ошибка голосования:", err);
@@ -1757,7 +1929,7 @@ async function finalizeReq() {
             );
         }
 
-        window.location.reload();
+        reloadPreservingScroll();
 
     } catch (err) {
         console.error("Ошибка финализации:", err);
@@ -1774,112 +1946,130 @@ async function finalizeReq() {
 // 9. ДОБАВЛЕНИЕ ЭТАПА ФИНАНСИРОВАНИЯ
 // =========================================================
 
-async function createNewMilestone() {
-    const desc = document.getElementById("msDesc")?.value.trim();
-    const recipient = document.getElementById("msRecipient")?.value.trim();
-    const amount = document.getElementById("msAmount")?.value.trim();
+async function createNewMilestone(btnEl = null) {
+    const triggerBtn =
+        btnEl ||
+        (typeof event !== "undefined" ? event?.currentTarget : null);
 
-    try {
-        if (!isWalletConnected()) {
-            throw new Error("Сначала подключите MetaMask!");
+    return runWithButtonLock(
+        triggerBtn,
+        "Добавление...",
+        async () => {
+            const desc = document.getElementById(
+                "msDesc"
+            )?.value.trim();
+
+            const recipient = document.getElementById(
+                "msRecipient"
+            )?.value.trim();
+
+            const amount = document.getElementById(
+                "msAmount"
+            )?.value.trim();
+
+            try {
+                if (!isWalletConnected()) {
+                    throw new Error("Сначала подключите MetaMask!");
+                }
+
+                requireMethod(
+                    milestonesContract,
+                    "addMilestone",
+                    "RescueMilestones"
+                );
+
+                const stats =
+                    await daoViewContract.getAidRequestStats(requestId);
+
+                const statusNum = Number(stats.status);
+
+                if (!isPreparationStatus(statusNum)) {
+                    throw new Error(
+                        "Добавлять этапы можно только до публикации заявки."
+                    );
+                }
+
+                const info =
+                    await daoViewContract.getAidRequestInfo(requestId);
+
+                if (!isRequesterAddress(info.requester)) {
+                    throw new Error(
+                        "Добавлять этапы может только инициатор заявки."
+                    );
+                }
+
+                if (!desc || desc.length > 200) {
+                    throw new Error(
+                        "Введите название этапа длиной не более 200 символов."
+                    );
+                }
+
+                if (
+                    !recipient ||
+                    !ethers.isAddress(recipient) ||
+                    recipient.toLowerCase() === ethers.ZeroAddress.toLowerCase()
+                ) {
+                    throw new Error(
+                        "Укажите корректный адрес получателя."
+                    );
+                }
+
+                if (
+                    !amount ||
+                    !/^\d+(\.\d+)?$/.test(amount)
+                ) {
+                    throw new Error("Введите корректную сумму этапа.");
+                }
+
+                const amountWei = ethers.parseEther(amount);
+
+                if (amountWei <= 0n) {
+                    throw new Error(
+                        "Сумма этапа должна быть больше нуля."
+                    );
+                }
+
+                const currentTotal = BigInt(stats.milestoneTotal);
+                const requestedAmount = BigInt(stats.requestedAmount);
+
+                if (currentTotal + amountWei > requestedAmount) {
+                    throw new Error(
+                        "Сумма этапов превысит запрошенную сумму заявки. " +
+                        "Остаток для распределения: " +
+                        formatEth(requestedAmount - currentTotal) +
+                        " ETH."
+                    );
+                }
+
+                const tx = await milestonesContract.addMilestone(
+                    requestId,
+                    desc,
+                    recipient,
+                    amountWei
+                );
+
+                alert("Этап добавляется в блокчейн...");
+
+                const receipt = await tx.wait();
+
+                if (!receipt || Number(receipt.status) !== 1) {
+                    throw new Error(
+                        "Транзакция добавления этапа не подтверждена."
+                    );
+                }
+
+                reloadPreservingScroll();
+
+            } catch (err) {
+                console.error("Ошибка добавления этапа:", err);
+
+                alert(
+                    "Ошибка добавления этапа: " +
+                    getTransactionError(err)
+                );
+            }
         }
-
-        requireMethod(
-            milestonesContract,
-            "addMilestone",
-            "RescueMilestones"
-        );
-
-        const stats =
-            await daoViewContract.getAidRequestStats(requestId);
-
-        const statusNum = Number(stats.status);
-
-        if (!isPreparationStatus(statusNum)) {
-            throw new Error(
-                "Добавлять этапы можно только до публикации заявки."
-            );
-        }
-
-        const info =
-            await daoViewContract.getAidRequestInfo(requestId);
-
-        if (!isRequesterAddress(info.requester)) {
-            throw new Error(
-                "Добавлять этапы может только инициатор заявки."
-            );
-        }
-
-        if (!desc || desc.length > 200) {
-            throw new Error(
-                "Введите название этапа длиной не более 200 символов."
-            );
-        }
-
-        if (
-            !recipient ||
-            !ethers.isAddress(recipient) ||
-            recipient.toLowerCase() === ethers.ZeroAddress.toLowerCase()
-        ) {
-            throw new Error(
-                "Укажите корректный адрес получателя."
-            );
-        }
-
-        if (
-            !amount ||
-            !/^\d+(\.\d+)?$/.test(amount)
-        ) {
-            throw new Error("Введите корректную сумму этапа.");
-        }
-
-        const amountWei = ethers.parseEther(amount);
-
-        if (amountWei <= 0n) {
-            throw new Error(
-                "Сумма этапа должна быть больше нуля."
-            );
-        }
-
-        const currentTotal = BigInt(stats.milestoneTotal);
-        const requestedAmount = BigInt(stats.requestedAmount);
-
-        if (currentTotal + amountWei > requestedAmount) {
-            throw new Error(
-                "Сумма этапов превысит запрошенную сумму заявки. " +
-                "Остаток для распределения: " +
-                formatEth(requestedAmount - currentTotal) +
-                " ETH."
-            );
-        }
-
-        const tx = await milestonesContract.addMilestone(
-            requestId,
-            desc,
-            recipient,
-            amountWei
-        );
-
-        alert("Этап добавляется в блокчейн...");
-
-        const receipt = await tx.wait();
-
-        if (!receipt || Number(receipt.status) !== 1) {
-            throw new Error(
-                "Транзакция добавления этапа не подтверждена."
-            );
-        }
-
-        window.location.reload();
-
-    } catch (err) {
-        console.error("Ошибка добавления этапа:", err);
-
-        alert(
-            "Ошибка добавления этапа: " +
-            getTransactionError(err)
-        );
-    }
+    );
 }
 
 
@@ -1887,166 +2077,321 @@ async function createNewMilestone() {
 // 10. РЕДАКТИРОВАНИЕ ЭТАПА ДО ПУБЛИКАЦИИ
 // =========================================================
 
-async function updateMilestone(milestoneId) {
-    const desc = document.getElementById(
-        `editMsDesc_${milestoneId}`
-    )?.value.trim();
+async function updateMilestone(milestoneId, btnEl = null) {
+    const triggerBtn =
+        btnEl ||
+        (typeof event !== "undefined" ? event?.currentTarget : null);
 
-    const recipient = document.getElementById(
-        `editMsRecipient_${milestoneId}`
-    )?.value.trim();
+    return runWithButtonLock(
+        triggerBtn,
+        "Сохранение...",
+        async () => {
+            const desc = document.getElementById(
+                `editMsDesc_${milestoneId}`
+            )?.value.trim();
 
-    const amount = document.getElementById(
-        `editMsAmount_${milestoneId}`
-    )?.value.trim();
+            const recipient = document.getElementById(
+                `editMsRecipient_${milestoneId}`
+            )?.value.trim();
 
-    try {
-        if (!isWalletConnected()) {
-            throw new Error("Сначала подключите MetaMask.");
+            const amount = document.getElementById(
+                `editMsAmount_${milestoneId}`
+            )?.value.trim();
+
+            try {
+                if (!isWalletConnected()) {
+                    throw new Error("Сначала подключите MetaMask.");
+                }
+
+                requireMethod(
+                    milestonesContract,
+                    "updateMilestone",
+                    "RescueMilestones"
+                );
+
+                const stats =
+                    await daoViewContract.getAidRequestStats(requestId);
+
+                if (!isPreparationStatus(Number(stats.status))) {
+                    throw new Error(
+                        "Редактировать этапы можно только до публикации заявки."
+                    );
+                }
+
+                const info =
+                    await daoViewContract.getAidRequestInfo(requestId);
+
+                if (!isRequesterAddress(info.requester)) {
+                    throw new Error(
+                        "Редактировать этапы может только инициатор заявки."
+                    );
+                }
+
+                if (!desc || desc.length > 200) {
+                    throw new Error(
+                        "Введите название этапа длиной не более 200 символов."
+                    );
+                }
+
+                if (
+                    !recipient ||
+                    !ethers.isAddress(recipient) ||
+                    recipient.toLowerCase() === ethers.ZeroAddress.toLowerCase()
+                ) {
+                    throw new Error(
+                        "Укажите корректный адрес получателя."
+                    );
+                }
+
+                if (
+                    !amount ||
+                    !/^\d+(\.\d+)?$/.test(amount)
+                ) {
+                    throw new Error("Введите корректную сумму этапа.");
+                }
+
+                const newAmountWei = ethers.parseEther(amount);
+
+                if (newAmountWei <= 0n) {
+                    throw new Error(
+                        "Сумма этапа должна быть больше нуля."
+                    );
+                }
+
+                const oldMilestone =
+                    await milestonesContract.getMilestone(
+                        requestId,
+                        milestoneId
+                    );
+
+                if (!isValidMilestone(oldMilestone)) {
+                    throw new Error(
+                        "Указанный этап не существует."
+                    );
+                }
+
+                if (oldMilestone.released) {
+                    throw new Error(
+                        "Нельзя изменить уже оплаченный этап."
+                    );
+                }
+
+                const oldAmountWei = BigInt(oldMilestone.amount);
+                const currentTotal = BigInt(stats.milestoneTotal);
+                const requestedAmount = BigInt(stats.requestedAmount);
+
+                const updatedTotal =
+                    currentTotal - oldAmountWei + newAmountWei;
+
+                if (updatedTotal > requestedAmount) {
+                    throw new Error(
+                        "После изменения сумма этапов превысит запрошенную сумму. " +
+                        "Максимально доступная сумма для этого этапа: " +
+                        formatEth(
+                            requestedAmount - (currentTotal - oldAmountWei)
+                        ) +
+                        " ETH."
+                    );
+                }
+
+                const confirmed = confirm(
+                    `Сохранить изменения этапа #${milestoneId}?\n\n` +
+                    `Новое название: ${desc}\n` +
+                    `Новая сумма: ${amount} ETH`
+                );
+
+                if (!confirmed) return;
+
+                const tx = await milestonesContract.updateMilestone(
+                    requestId,
+                    milestoneId,
+                    desc,
+                    recipient,
+                    newAmountWei
+                );
+
+                alert("Изменение этапа отправлено в блокчейн...");
+
+                const receipt = await tx.wait();
+
+                if (!receipt || Number(receipt.status) !== 1) {
+                    throw new Error(
+                        "Транзакция изменения этапа не подтверждена."
+                    );
+                }
+
+                reloadPreservingScroll();
+
+            } catch (err) {
+                console.error(
+                    `Ошибка изменения этапа #${milestoneId}:`,
+                    err
+                );
+
+                alert(
+                    "Не удалось изменить этап:\n" +
+                    getTransactionError(err)
+                );
+            }
         }
-
-        requireMethod(
-            milestonesContract,
-            "updateMilestone",
-            "RescueMilestones"
-        );
-
-        const stats =
-            await daoViewContract.getAidRequestStats(requestId);
-
-        if (!isPreparationStatus(Number(stats.status))) {
-            throw new Error(
-                "Редактировать этапы можно только до публикации заявки."
-            );
-        }
-
-        const info =
-            await daoViewContract.getAidRequestInfo(requestId);
-
-        if (!isRequesterAddress(info.requester)) {
-            throw new Error(
-                "Редактировать этапы может только инициатор заявки."
-            );
-        }
-
-        if (!desc || desc.length > 200) {
-            throw new Error(
-                "Введите название этапа длиной не более 200 символов."
-            );
-        }
-
-        if (
-            !recipient ||
-            !ethers.isAddress(recipient) ||
-            recipient.toLowerCase() === ethers.ZeroAddress.toLowerCase()
-        ) {
-            throw new Error(
-                "Укажите корректный адрес получателя."
-            );
-        }
-
-        if (
-            !amount ||
-            !/^\d+(\.\d+)?$/.test(amount)
-        ) {
-            throw new Error("Введите корректную сумму этапа.");
-        }
-
-        const newAmountWei = ethers.parseEther(amount);
-
-        if (newAmountWei <= 0n) {
-            throw new Error(
-                "Сумма этапа должна быть больше нуля."
-            );
-        }
-
-        const oldMilestone =
-            await milestonesContract.getMilestone(
-                requestId,
-                milestoneId
-            );
-
-        if (!isValidMilestone(oldMilestone)) {
-            throw new Error(
-                "Указанный этап не существует."
-            );
-        }
-
-        if (oldMilestone.released) {
-            throw new Error(
-                "Нельзя изменить уже оплаченный этап."
-            );
-        }
-
-        const oldAmountWei = BigInt(oldMilestone.amount);
-        const currentTotal = BigInt(stats.milestoneTotal);
-        const requestedAmount = BigInt(stats.requestedAmount);
-
-        const updatedTotal =
-            currentTotal - oldAmountWei + newAmountWei;
-
-        if (updatedTotal > requestedAmount) {
-            throw new Error(
-                "После изменения сумма этапов превысит запрошенную сумму. " +
-                "Максимально доступная сумма для этого этапа: " +
-                formatEth(
-                    requestedAmount - (currentTotal - oldAmountWei)
-                ) +
-                " ETH."
-            );
-        }
-
-        const confirmed = confirm(
-            `Сохранить изменения этапа #${milestoneId}?\n\n` +
-            `Новое название: ${desc}\n` +
-            `Новая сумма: ${amount} ETH\n\n` +
-            "После изменения ранее загруженный отчёт этапа будет сброшен."
-        );
-
-        if (!confirmed) return;
-
-        const tx = await milestonesContract.updateMilestone(
-            requestId,
-            milestoneId,
-            desc,
-            recipient,
-            newAmountWei
-        );
-
-        alert("Изменение этапа отправлено в блокчейн...");
-
-        const receipt = await tx.wait();
-
-        if (!receipt || Number(receipt.status) !== 1) {
-            throw new Error(
-                "Транзакция изменения этапа не подтверждена."
-            );
-        }
-
-        window.location.reload();
-
-    } catch (err) {
-        console.error(
-            `Ошибка изменения этапа #${milestoneId}:`,
-            err
-        );
-
-        alert(
-            "Не удалось изменить этап:\n" +
-            getTransactionError(err)
-        );
-    }
+    );
 }
 
 
 // =========================================================
-// 11. ЗАГРУЗКА СПИСКА ЭТАПОВ
+// 11. РЕЗЕРВИРОВАНИЕ СРЕДСТВ ДЛЯ ЭТАПА
+// =========================================================
+
+async function fundMilestone(milestoneId, btnEl = null) {
+    const triggerBtn =
+        btnEl ||
+        (typeof event !== "undefined" ? event?.currentTarget : null);
+
+    return runWithButtonLock(
+        triggerBtn,
+        "Резервирование...",
+        async () => {
+            try {
+                if (!isWalletConnected()) {
+                    throw new Error(
+                        "Сначала подключите MetaMask."
+                    );
+                }
+
+                requireMethod(
+                    milestonesContract,
+                    "fundMilestone",
+                    "RescueMilestones"
+                );
+
+                requireMethod(
+                    milestonesContract,
+                    "getMilestone",
+                    "RescueMilestones"
+                );
+
+                requireMethod(
+                    milestonesContract,
+                    "getMilestoneFundingStatus",
+                    "RescueMilestones"
+                );
+
+                const admin = await isDaoAdmin();
+
+                if (!admin) {
+                    throw new Error(
+                        "Резервировать средства этапов может только администратор DAO."
+                    );
+                }
+
+                const stats =
+                    await daoViewContract.getAidRequestStats(requestId);
+
+                if (
+                    Number(stats.status) !== REQUEST_STATUS.APPROVED
+                ) {
+                    throw new Error(
+                        "Резервировать средства можно только для одобренной заявки."
+                    );
+                }
+
+                const milestone =
+                    await milestonesContract.getMilestone(
+                        requestId,
+                        milestoneId
+                    );
+
+                if (!isValidMilestone(milestone)) {
+                    throw new Error(
+                        "Указанный этап не существует."
+                    );
+                }
+
+                const fundingResult =
+                    await milestonesContract.getMilestoneFundingStatus(
+                        requestId,
+                        milestoneId
+                    );
+
+                const funding =
+                    parseMilestoneFundingStatus(fundingResult);
+
+                if (funding.released || milestone.released) {
+                    throw new Error(
+                        "Этот этап уже оплачен."
+                    );
+                }
+
+                if (funding.funded) {
+                    throw new Error(
+                        "Средства для этого этапа уже зарезервированы."
+                    );
+                }
+
+                const milestoneAmount = BigInt(
+                    milestone.amount
+                );
+
+                const confirmed = confirm(
+                    `Зарезервировать средства для этапа #${milestoneId}?\n\n` +
+                    `Этап: ${milestone.description}\n` +
+                    `Сумма: ${formatEth(milestoneAmount)} ETH\n\n` +
+                    "Сначала будут использованы доступные целевые пожертвования " +
+                    "этой заявки, а недостающая сумма — из общего фонда.\n\n" +
+                    "Если доступных средств недостаточно, транзакция не выполнится."
+                );
+
+                if (!confirmed) return;
+
+                const tx = await milestonesContract.fundMilestone(
+                    requestId,
+                    milestoneId
+                );
+
+                alert(
+                    "Резервирование средств отправлено. " +
+                    "Ожидаем подтверждения транзакции..."
+                );
+
+                const receipt = await tx.wait();
+
+                if (!receipt || Number(receipt.status) !== 1) {
+                    throw new Error(
+                        "Транзакция резервирования средств не подтверждена."
+                    );
+                }
+
+                alert(
+                    `Средства для этапа #${milestoneId} успешно зарезервированы.`
+                );
+
+                reloadPreservingScroll();
+
+            } catch (err) {
+                console.error(
+                    `Ошибка резервирования средств этапа #${milestoneId}:`,
+                    err
+                );
+
+                alert(
+                    "Не удалось зарезервировать средства:\n" +
+                    getTransactionError(err)
+                );
+            }
+        }
+    );
+}
+
+
+// =========================================================
+// 12. ЗАГРУЗКА СПИСКА ЭТАПОВ
 // =========================================================
 
 async function loadMilestonesList(
     mCount,
     reqStatus,
-    isRequester
+    isRequester,
+    isAdmin
 ) {
     const box = document.getElementById(
         "milestonesContainer"
@@ -2067,6 +2412,12 @@ async function loadMilestonesList(
         requireMethod(
             milestonesContract,
             "getMilestone",
+            "RescueMilestones"
+        );
+
+        requireMethod(
+            milestonesContract,
+            "getMilestoneFundingStatus",
             "RescueMilestones"
         );
 
@@ -2093,20 +2444,50 @@ async function loadMilestonesList(
                 continue;
             }
 
-            // ---------------------------------------------
-            // Статус этапа
-            // ---------------------------------------------
+            const fundingResult =
+                await milestonesContract.getMilestoneFundingStatus(
+                    requestId,
+                    m
+                );
 
-            let statusBadge = `
-                <span class="badge badge-gray">
-                    Ожидает публикации заявки
-                </span>
-            `;
+            const funding =
+                parseMilestoneFundingStatus(fundingResult);
 
-            if (ms.released) {
+            const funded = funding.funded;
+            const released =
+                funding.released || Boolean(ms.released);
+
+            const targetReserved =
+                funding.targetReserved;
+
+            const generalReserved =
+                funding.generalReserved;
+
+            const totalReserved =
+                targetReserved + generalReserved;
+
+            let statusBadge = "";
+
+            if (released) {
                 statusBadge = `
                     <span class="badge badge-green">
                         Оплачено (${ms.approvalCount}/2)
+                    </span>
+                `;
+
+            } else if (
+                Number(reqStatus) !== REQUEST_STATUS.APPROVED
+            ) {
+                statusBadge = `
+                    <span class="badge badge-gray">
+                        Ожидает одобрения заявки
+                    </span>
+                `;
+
+            } else if (!funded) {
+                statusBadge = `
+                    <span class="badge badge-yellow">
+                        Ожидает финансирования
                     </span>
                 `;
 
@@ -2117,28 +2498,112 @@ async function loadMilestonesList(
                     </span>
                 `;
 
-            } else if (Number(reqStatus) === REQUEST_STATUS.APPROVED) {
-                statusBadge = `
-                    <span class="badge badge-yellow">
-                        Ожидает отчёт инициатора
-                    </span>
-                `;
-
-            } else if (Number(reqStatus) === REQUEST_STATUS.VOTING) {
+            } else {
                 statusBadge = `
                     <span class="badge badge-blue">
-                        Этап зафиксирован
+                        Средства зарезервированы · ожидает отчёт
                     </span>
                 `;
             }
 
-            // ---------------------------------------------
-            // Форма редактирования этапа
-            // ---------------------------------------------
+            let fundingDetails = "";
+
+            if (funded || released) {
+                fundingDetails = `
+                    <div style="
+                        margin-top:0.65rem;
+                        padding:0.65rem;
+                        background:#f8fafc;
+                        border-radius:0.5rem;
+                        font-size:0.84rem;
+                    ">
+                        <div style="
+                            display:flex;
+                            justify-content:space-between;
+                            gap:0.5rem;
+                        ">
+                            <span>Всего зарезервировано:</span>
+                            <strong>
+                                ${formatEth(totalReserved)} ETH
+                            </strong>
+                        </div>
+
+                        <div style="
+                            display:flex;
+                            justify-content:space-between;
+                            gap:0.5rem;
+                            margin-top:0.3rem;
+                        ">
+                            <span>Из целевых пожертвований:</span>
+                            <strong>
+                                ${formatEth(targetReserved)} ETH
+                            </strong>
+                        </div>
+
+                        <div style="
+                            display:flex;
+                            justify-content:space-between;
+                            gap:0.5rem;
+                            margin-top:0.3rem;
+                        ">
+                            <span>Из общего фонда:</span>
+                            <strong>
+                                ${formatEth(generalReserved)} ETH
+                            </strong>
+                        </div>
+                    </div>
+                `;
+
+            } else if (
+                Number(reqStatus) === REQUEST_STATUS.APPROVED
+            ) {
+                fundingDetails = `
+                    <p style="
+                        margin-top:0.55rem;
+                        font-size:0.83rem;
+                        color:var(--text-muted);
+                    ">
+                        Средства для этапа ещё не зарезервированы.
+                        После резервирования инициатор сможет отправить отчёт.
+                    </p>
+                `;
+            }
+
+            const fundButton = (
+                Number(reqStatus) === REQUEST_STATUS.APPROVED &&
+                isAdmin &&
+                !funded &&
+                !released
+            )
+                ? `
+                    <div style="
+                        margin-top:0.75rem;
+                        padding-top:0.65rem;
+                        border-top:1px dashed var(--border);
+                    ">
+                        <p style="
+                            font-size:0.82rem;
+                            color:var(--text-muted);
+                            margin-bottom:0.55rem;
+                        ">
+                            Администратор DAO может зарезервировать
+                            полную сумму этого этапа.
+                        </p>
+
+                        <button
+                            class="btn btn-primary"
+                            style="width:100%;"
+                            onclick="fundMilestone(${m}, this)"
+                        >
+                            Зарезервировать средства этапа
+                        </button>
+                    </div>
+                `
+                : "";
 
             const editForm = (
                 canEdit &&
-                !ms.released
+                !released
             )
                 ? `
                     <details style="
@@ -2205,17 +2670,9 @@ async function loadMilestonesList(
                                 >
                             </div>
 
-                            <p style="
-                                font-size:0.8rem;
-                                color:var(--text-muted);
-                            ">
-                                Изменение этапа сбросит ранее загруженный
-                                отчёт, если он был добавлен.
-                            </p>
-
                             <button
                                 class="btn btn-outline"
-                                onclick="updateMilestone(${m})"
+                                onclick="updateMilestone(${m}, this)"
                             >
                                 Сохранить изменения
                             </button>
@@ -2224,16 +2681,15 @@ async function loadMilestonesList(
                 `
                 : "";
 
-            // ---------------------------------------------
-            // Форма отправки отчёта
-            // ---------------------------------------------
+            let evidenceForm = "";
 
-            const evidenceForm = (
+            if (
                 canSubmitEvidence &&
-                !ms.released &&
-                !ms.evidenceSubmitted
-            )
-                ? `
+                !released &&
+                !ms.evidenceSubmitted &&
+                funded
+            ) {
+                evidenceForm = `
                     <div style="
                         width:100%;
                         margin-top:0.75rem;
@@ -2261,17 +2717,34 @@ async function loadMilestonesList(
 
                         <button
                             class="btn btn-primary"
-                            onclick="submitEvidence(${m})"
+                            onclick="submitEvidence(${m}, this)"
                         >
                             Отправить отчёт
                         </button>
                     </div>
-                `
-                : "";
+                `;
 
-            // ---------------------------------------------
-            // Отображение этапа
-            // ---------------------------------------------
+            } else if (
+                canSubmitEvidence &&
+                !released &&
+                !ms.evidenceSubmitted &&
+                !funded
+            ) {
+                evidenceForm = `
+                    <p style="
+                        margin-top:0.75rem;
+                        padding:0.65rem;
+                        background:#fffbeb;
+                        border-radius:0.5rem;
+                        color:#92400e;
+                        font-size:0.84rem;
+                    ">
+                        Отправка отчёта пока недоступна.
+                        Сначала администратор DAO должен зарезервировать
+                        средства для этого этапа.
+                    </p>
+                `;
+            }
 
             const item = document.createElement("div");
 
@@ -2315,13 +2788,15 @@ async function loadMilestonesList(
                         </span>
                     </div>
 
+                    ${fundingDetails}
+
                     ${
                         ms.evidenceSubmitted
                             ? `
                                 <div
                                     class="mono"
                                     style="
-                                        margin-top:0.25rem;
+                                        margin-top:0.5rem;
                                         font-size:0.8rem;
                                         word-break:break-all;
                                     "
@@ -2335,6 +2810,7 @@ async function loadMilestonesList(
                             : ""
                     }
 
+                    ${fundButton}
                     ${editForm}
                     ${evidenceForm}
 
@@ -2358,164 +2834,190 @@ async function loadMilestonesList(
 
 
 // =========================================================
-// 12. ОТПРАВКА ОТЧЁТА ПО ЭТАПУ
+// 13. ОТПРАВКА ОТЧЁТА ПО ЭТАПУ
 // =========================================================
 
-async function submitEvidence(milestoneId) {
-    const uriInput = document.getElementById(
-        `evUri_${milestoneId}`
-    );
+async function submitEvidence(milestoneId, btnEl = null) {
+    const triggerBtn =
+        btnEl ||
+        (typeof event !== "undefined" ? event?.currentTarget : null);
 
-    const fileInput = document.getElementById(
-        `evFile_${milestoneId}`
-    );
-
-    const uri = uriInput?.value.trim();
-    const file = fileInput?.files?.[0];
-
-    try {
-        if (!isWalletConnected()) {
-            throw new Error("Сначала подключите MetaMask.");
-        }
-
-        requireMethod(
-            milestonesContract,
-            "submitMilestoneEvidence",
-            "RescueMilestones"
-        );
-
-        const stats =
-            await daoViewContract.getAidRequestStats(requestId);
-
-        if (Number(stats.status) !== REQUEST_STATUS.APPROVED) {
-            throw new Error(
-                "Отчёты по этапам можно отправлять только после одобрения заявки."
-            );
-        }
-
-        const info =
-            await daoViewContract.getAidRequestInfo(requestId);
-
-        if (!isRequesterAddress(info.requester)) {
-            throw new Error(
-                "Отправлять отчёты может только инициатор заявки."
-            );
-        }
-
-        if (!file) {
-            throw new Error("Выберите файл отчёта.");
-        }
-
-        const milestone =
-            await milestonesContract.getMilestone(
-                requestId,
-                milestoneId
+    return runWithButtonLock(
+        triggerBtn,
+        "Отправка...",
+        async () => {
+            const uriInput = document.getElementById(
+                `evUri_${milestoneId}`
             );
 
-        if (!isValidMilestone(milestone)) {
-            throw new Error(
-                "Указанный этап не существует или содержит некорректные данные."
+            const fileInput = document.getElementById(
+                `evFile_${milestoneId}`
             );
-        }
 
-        if (milestone.released) {
-            throw new Error("Этот этап уже оплачен.");
-        }
+            const uri = uriInput?.value.trim();
+            const file = fileInput?.files?.[0];
 
-        if (milestone.evidenceSubmitted) {
-            throw new Error(
-                "Отчёт по этому этапу уже отправлен."
-            );
-        }
+            try {
+                if (!isWalletConnected()) {
+                    throw new Error("Сначала подключите MetaMask.");
+                }
 
-        // -------------------------------------------------
-        // ШАГ 1. Вычисление хэша исходного файла
-        // -------------------------------------------------
+                requireMethod(
+                    milestonesContract,
+                    "submitMilestoneEvidence",
+                    "RescueMilestones"
+                );
 
-        const buffer = await file.arrayBuffer();
+                requireMethod(
+                    milestonesContract,
+                    "getMilestoneFundingStatus",
+                    "RescueMilestones"
+                );
 
-        const hash = ethers.keccak256(
-            new Uint8Array(buffer)
-        );
+                const stats =
+                    await daoViewContract.getAidRequestStats(requestId);
 
-        // -------------------------------------------------
-        // ШАГ 2. Загрузка файла на backend
-        // -------------------------------------------------
+                if (Number(stats.status) !== REQUEST_STATUS.APPROVED) {
+                    throw new Error(
+                        "Отчёты по этапам можно отправлять только после одобрения заявки."
+                    );
+                }
 
-        const formData = new FormData();
+                const info =
+                    await daoViewContract.getAidRequestInfo(requestId);
 
-        formData.append("milestoneDoc", file);
+                if (!isRequesterAddress(info.requester)) {
+                    throw new Error(
+                        "Отправлять отчёты может только инициатор заявки."
+                    );
+                }
 
-        const response = await fetch(
-            `${API_URL}/requests/${requestId}/milestones/${milestoneId}`,
-            {
-                method: "POST",
-                body: formData
+                const milestone =
+                    await milestonesContract.getMilestone(
+                        requestId,
+                        milestoneId
+                    );
+
+                if (!isValidMilestone(milestone)) {
+                    throw new Error(
+                        "Указанный этап не существует или содержит некорректные данные."
+                    );
+                }
+
+                if (milestone.released) {
+                    throw new Error("Этот этап уже оплачен.");
+                }
+
+                if (milestone.evidenceSubmitted) {
+                    throw new Error(
+                        "Отчёт по этому этапу уже отправлен."
+                    );
+                }
+
+                const fundingResult =
+                    await milestonesContract.getMilestoneFundingStatus(
+                        requestId,
+                        milestoneId
+                    );
+
+                const funding =
+                    parseMilestoneFundingStatus(fundingResult);
+
+                if (!funding.funded) {
+                    throw new Error(
+                        "Сначала администратор DAO должен зарезервировать " +
+                        "средства для этого этапа."
+                    );
+                }
+
+                if (funding.released) {
+                    throw new Error(
+                        "Средства по этому этапу уже выплачены."
+                    );
+                }
+
+                if (!file) {
+                    throw new Error("Выберите файл отчёта.");
+                }
+
+                const buffer = await file.arrayBuffer();
+
+                const hash = ethers.keccak256(
+                    new Uint8Array(buffer)
+                );
+
+                const formData = new FormData();
+
+                formData.append("milestoneDoc", file);
+
+                const response = await fetch(
+                    `${API_URL}/requests/${requestId}/milestones/${milestoneId}`,
+                    {
+                        method: "POST",
+                        body: formData
+                    }
+                );
+
+                if (!response.ok) {
+                    const errorText = await response.text();
+
+                    throw new Error(
+                        `Ошибка сервера (${response.status}): ${errorText}`
+                    );
+                }
+
+                const saved = await response.json();
+
+                const serverDocUrl =
+                    saved.data?.docUrl ||
+                    saved.docUrl ||
+                    saved.data?.documentUrl ||
+                    saved.documentUrl;
+
+                const finalUri = uri || serverDocUrl;
+
+                if (!finalUri) {
+                    throw new Error(
+                        "Сервер не вернул ссылку на документ. " +
+                        "Укажите URI вручную."
+                    );
+                }
+
+                const tx =
+                    await milestonesContract.submitMilestoneEvidence(
+                        requestId,
+                        milestoneId,
+                        finalUri,
+                        hash
+                    );
+
+                alert(
+                    "Транзакция отправлена. " +
+                    "Ожидаем подтверждения в блокчейне..."
+                );
+
+                const receipt = await tx.wait();
+
+                if (!receipt || Number(receipt.status) !== 1) {
+                    throw new Error(
+                        "Транзакция не была успешно подтверждена."
+                    );
+                }
+
+                alert(
+                    "Отчёт успешно отправлен и записан в блокчейн!"
+                );
+
+                reloadPreservingScroll();
+
+            } catch (err) {
+                console.error("Ошибка отправки отчёта:", err);
+
+                alert(
+                    "Не удалось отправить отчёт:\n" +
+                    getTransactionError(err)
+                );
             }
-        );
-
-        if (!response.ok) {
-            const errorText = await response.text();
-
-            throw new Error(
-                `Ошибка сервера (${response.status}): ${errorText}`
-            );
         }
-
-        const saved = await response.json();
-
-        const serverDocUrl =
-            saved.data?.docUrl ||
-            saved.docUrl ||
-            saved.data?.documentUrl ||
-            saved.documentUrl;
-
-        const finalUri = uri || serverDocUrl;
-
-        if (!finalUri) {
-            throw new Error(
-                "Сервер не вернул ссылку на документ. " +
-                "Укажите URI вручную."
-            );
-        }
-
-        // -------------------------------------------------
-        // ШАГ 3. Запись URI и хэша в RescueMilestones
-        // -------------------------------------------------
-
-        const tx =
-            await milestonesContract.submitMilestoneEvidence(
-                requestId,
-                milestoneId,
-                finalUri,
-                hash
-            );
-
-        alert(
-            "Транзакция отправлена. " +
-            "Ожидаем подтверждения в блокчейне..."
-        );
-
-        const receipt = await tx.wait();
-
-        if (!receipt || Number(receipt.status) !== 1) {
-            throw new Error(
-                "Транзакция не была успешно подтверждена."
-            );
-        }
-
-        alert(
-            "Отчёт успешно отправлен и записан в блокчейн!"
-        );
-
-        window.location.reload();
-
-    } catch (err) {
-        console.error("Ошибка отправки отчёта:", err);
-
-        alert(
-            "Не удалось отправить отчёт:\n" +
-            getTransactionError(err)
-        );
-    }
+    );
 }

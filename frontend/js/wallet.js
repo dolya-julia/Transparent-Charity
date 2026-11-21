@@ -48,6 +48,19 @@ function resetWalletState() {
 
 
 // ======================================================
+// ПРОВЕРКА ПОДКЛЮЧЕНИЯ КОШЕЛЬКА
+// ======================================================
+
+function isWalletConnected() {
+    return Boolean(
+        provider &&
+        signer &&
+        userAddress
+    );
+}
+
+
+// ======================================================
 // ПРОВЕРКА ДОСТУПНОСТИ КОНТРАКТА И МЕТОДОВ
 // ======================================================
 
@@ -67,6 +80,40 @@ function requireMethod(instance, methodName, contractName) {
         throw new Error(
             `В ABI ${contractName} отсутствует функция ${methodName}().`
         );
+    }
+}
+
+
+// ======================================================
+// ПРОВЕРКА АДМИНИСТРАТОРА DAO
+// ======================================================
+
+async function isCurrentUserAdmin() {
+    if (!isWalletConnected() || !contract) {
+        return false;
+    }
+
+    try {
+        requireMethod(
+            contract,
+            "admin",
+            "RescueDAO"
+        );
+
+        const adminAddress = await contract.admin();
+
+        return (
+            String(adminAddress).toLowerCase() ===
+            String(userAddress).toLowerCase()
+        );
+
+    } catch (err) {
+        console.error(
+            "Ошибка проверки администратора DAO:",
+            err
+        );
+
+        return false;
     }
 }
 
@@ -102,7 +149,8 @@ function initializeContracts(connection) {
      * - пожертвований;
      * - голосования;
      * - публикации и финализации заявок;
-     * - проверки ролей.
+     * - проверки ролей;
+     * - определения администратора DAO.
      *
      * При подключённом кошельке использует signer.
      * Без подключённого кошелька работает через provider.
@@ -167,11 +215,14 @@ function initializeContracts(connection) {
      * Используется для:
      * - создания этапов;
      * - редактирования этапов до публикации;
+     * - резервирования средств для этапов;
      * - отправки отчётов;
      * - подтверждения этапов валидаторами;
-     * - получения информации о выплатах.
+     * - получения информации о выплатах;
+     * - проверки состояния финансирования этапа.
      *
-     * При подключённом кошельке использует signer.
+     * При подключённом кошельке использует signer,
+     * поскольку через него выполняются транзакции.
      */
 
     milestonesContract = new ethers.Contract(
@@ -208,7 +259,8 @@ function initializeContracts(connection) {
             RescueDAOView: DAO_VIEW_ADDRESS,
             RescueTreasury: TREASURY_ADDRESS,
             RescueMilestones: MILESTONES_ADDRESS,
-            RescueNFT: NFT_ADDRESS
+            RescueNFT: NFT_ADDRESS,
+            walletConnected: isWalletConnected()
         }
     );
 }
@@ -469,9 +521,7 @@ async function handleAccountsChanged(accounts) {
             updateConnectButton();
             updateRoleBadge();
 
-            // Убираем с интерфейса действия,
-            // требующие подключённого кошелька.
-
+            // Обновляем интерфейс страницы.
             window.location.reload();
 
             return;
@@ -518,6 +568,8 @@ async function handleChainChanged() {
      * Перезагрузка страницы позволяет избежать
      * использования старых экземпляров контрактов.
      */
+
+    resetWalletState();
 
     window.location.reload();
 }
@@ -730,12 +782,13 @@ async function setupSigner(accountAddress = null) {
     // --------------------------------------------------
 
     /*
-     * Определяем каждую роль отдельно.
+     * Каждую роль проверяем отдельно.
      *
      * Если один метод отсутствует в ABI или вызывает
-     * ошибку, это не должно автоматически сбрасывать
-     * результаты остальных проверок.
+     * ошибку, это не должно сбрасывать результаты
+     * остальных проверок.
      */
+
 
     // --------------------------------------------------
     // Проверка администратора

@@ -1,3 +1,4 @@
+
 window.addEventListener("DOMContentLoaded", async () => {
     try {
         const ready = await initWeb3();
@@ -69,12 +70,7 @@ function escapeHtml(value) {
 /**
  * Проверка URL перед использованием в HTML.
  *
- * Разрешаются:
- * - HTTP;
- * - HTTPS;
- * - относительные пути к файлам backend.
- *
- * Запрещаются javascript: и другие потенциально опасные схемы.
+ * Разрешаются HTTP, HTTPS и относительные пути.
  */
 function safeMediaUrl(value) {
     if (!value) return "";
@@ -101,8 +97,6 @@ function safeMediaUrl(value) {
 /**
  * Получение статуса заявки.
  *
- * Актуальные значения RescueDAO:
- *
  * 0 — UnderReview
  * 1 — ChangesRequested
  * 2 — Voting
@@ -110,8 +104,6 @@ function safeMediaUrl(value) {
  * 4 — Rejected
  * 5 — Completed
  * 6 — Cancelled
- *
- * Старое соответствие статусов больше не используется.
  */
 function getRequestStatus(status) {
     const statusNum = Number(status);
@@ -207,12 +199,6 @@ function checkTransactionReceipt(receipt, errorMessage) {
 
 /**
  * Вычисление хэша файла или текстового значения.
- *
- * Если пользователь прикрепил документ:
- * хэшируется содержимое файла.
- *
- * Если файл не прикреплён:
- * хэшируется переданная строка.
  */
 async function calculateRequestHash(file, fallbackText) {
     if (file) {
@@ -242,6 +228,43 @@ function isValidPositiveAmount(value) {
     return (
         Number.isFinite(number) &&
         number > 0
+    );
+}
+
+
+/**
+ * Безопасное преобразование значения в BigInt.
+ */
+function toBigIntSafe(value) {
+    try {
+        return BigInt(value ?? 0);
+    } catch {
+        return 0n;
+    }
+}
+
+
+/**
+ * Расчёт процента финансирования.
+ */
+function calculateFundingPercent(collected, requested) {
+    const collectedNumber = Number(formatEth(collected));
+    const requestedNumber = Number(formatEth(requested));
+
+    if (
+        !Number.isFinite(collectedNumber) ||
+        !Number.isFinite(requestedNumber) ||
+        requestedNumber <= 0
+    ) {
+        return 0;
+    }
+
+    return Math.min(
+        100,
+        Math.max(
+            0,
+            (collectedNumber / requestedNumber) * 100
+        )
     );
 }
 
@@ -355,17 +378,11 @@ async function loadTargetDonationStats() {
             "RescueTreasury"
         );
 
-        if (
-            typeof treasuryContract.totalTargetDonations !== "function"
-        ) {
-            targetElement.textContent = "Недоступно";
-
-            console.warn(
-                "В ABI RescueTreasury отсутствует totalTargetDonations()."
-            );
-
-            return;
-        }
+        requireMethod(
+            treasuryContract,
+            "totalTargetDonations",
+            "RescueTreasury"
+        );
 
         const total =
             await treasuryContract.totalTargetDonations();
@@ -380,7 +397,7 @@ async function loadTargetDonationStats() {
         );
 
         targetElement.textContent =
-            "Не удалось загрузить";
+            "Недоступно";
     }
 }
 
@@ -391,18 +408,10 @@ async function loadTargetDonationStats() {
 
 async function donateToPool() {
 
-    // -----------------------------------------------------
-    // Проверка подключения кошелька
-    // -----------------------------------------------------
-
     if (!isWalletConnected()) {
         alert("Сначала подключите MetaMask!");
         return;
     }
-
-    // -----------------------------------------------------
-    // Проверка RescueDAO
-    // -----------------------------------------------------
 
     try {
         requireMethod(
@@ -414,10 +423,6 @@ async function donateToPool() {
         alert(err.message);
         return;
     }
-
-    // -----------------------------------------------------
-    // Получение суммы пожертвования
-    // -----------------------------------------------------
 
     const amountInput = document.getElementById(
         "donateAmount"
@@ -438,8 +443,10 @@ async function donateToPool() {
     try {
         const amountWei = ethers.parseEther(val);
 
-        // Пожертвование отправляется в RescueDAO.
-        // Контракт перенаправляет средства в RescueTreasury.
+        /*
+         * Пожертвование отправляется в RescueDAO.
+         * Контракт перенаправляет средства в RescueTreasury.
+         */
 
         const tx = await contract.donate({
             value: amountWei
@@ -462,8 +469,6 @@ async function donateToPool() {
         );
 
         amountInput.value = "";
-
-        // Обновляем статистику после подтверждения.
 
         await Promise.all([
             loadPoolStats(),
@@ -490,18 +495,10 @@ async function donateToPool() {
 
 async function submitAidRequest() {
 
-    // -----------------------------------------------------
-    // Проверка подключения кошелька
-    // -----------------------------------------------------
-
     if (!isWalletConnected()) {
         alert("Подключите MetaMask!");
         return;
     }
-
-    // -----------------------------------------------------
-    // Проверка основного DAO
-    // -----------------------------------------------------
 
     try {
         requireMethod(
@@ -514,9 +511,10 @@ async function submitAidRequest() {
         return;
     }
 
-    // -----------------------------------------------------
-    // Проверка роли участника
-    // -----------------------------------------------------
+    /*
+     * Создавать заявки могут только зарегистрированные
+     * участники DAO.
+     */
 
     if (
         typeof userRoles === "undefined" ||
@@ -530,10 +528,6 @@ async function submitAidRequest() {
 
         return;
     }
-
-    // -----------------------------------------------------
-    // Получение данных формы
-    // -----------------------------------------------------
 
     const name = getElement("reqAnimalName").value.trim();
 
@@ -554,10 +548,6 @@ async function submitAidRequest() {
     const evidenceFile = fileInput?.files?.[0];
 
     const photoFile = photoInput?.files?.[0];
-
-    // -----------------------------------------------------
-    // Проверка обязательных полей
-    // -----------------------------------------------------
 
     if (!name) {
         alert("Укажите имя животного.");
@@ -611,15 +601,11 @@ async function submitAidRequest() {
         // -------------------------------------------------
 
         /*
-         * ВАЖНО:
-         *
          * Новая заявка получает статус UnderReview.
          *
          * Голосование не начинается в момент создания.
-         * Продолжительность голосования будет установлена
-         * администратором при вызове publishRequest().
-         *
-         * Поэтому votingDuration здесь больше не передаётся.
+         * Продолжительность голосования устанавливается
+         * администратором при публикации заявки.
          */
 
         const tx = await contract.createAidRequest(
@@ -668,12 +654,6 @@ async function submitAidRequest() {
         // -------------------------------------------------
         // ШАГ 5. Сохранение дополнительных данных на backend
         // -------------------------------------------------
-
-        /*
-         * В блокчейне хранятся основные данные заявки,
-         * а фотографии и дополнительные материалы
-         * сохраняются на backend.
-         */
 
         const formData = new FormData();
 
@@ -845,7 +825,7 @@ async function loadAllRequests() {
         for (let i = count; i >= 1; i--) {
 
             // ---------------------------------------------
-            // Получение данных через RescueDAOView
+            // Получение данных из RescueDAOView
             // ---------------------------------------------
 
             const [info, stats] = await Promise.all([
@@ -946,122 +926,212 @@ async function loadAllRequests() {
             // Получение целевых пожертвований
             // ---------------------------------------------
 
+            /*
+             * В новой модели важно различать:
+             *
+             * requestDonations:
+             * общая сумма целевых пожертвований, поступивших
+             * на заявку за всё время.
+             *
+             * getAvailableRequestDonations:
+             * целевые средства, которые ещё доступны
+             * для резервирования по этапам.
+             *
+             * После резервирования сумма доступных средств
+             * уменьшается, но общая сумма пожертвований
+             * остаётся прежней.
+             */
+
             let targetDonatedWei = 0n;
+
+            let availableTargetWei = 0n;
 
             let targetFundingAvailable = false;
 
+            let availableTargetFundingAvailable = false;
+
             try {
+                requireContract(
+                    treasuryContract,
+                    "RescueTreasury"
+                );
+
                 if (
-                    treasuryContract &&
                     typeof treasuryContract.requestDonations === "function"
                 ) {
                     targetDonatedWei =
-                        await treasuryContract.requestDonations(i);
+                        toBigIntSafe(
+                            await treasuryContract.requestDonations(i)
+                        );
 
                     targetFundingAvailable = true;
                 }
 
             } catch (targetErr) {
                 console.warn(
-                    `Не удалось получить целевые пожертвования заявки #${i}:`,
+                    `Не удалось получить общую сумму целевых пожертвований заявки #${i}:`,
                     targetErr
                 );
             }
+
+            try {
+                if (
+                    treasuryContract &&
+                    typeof treasuryContract.getAvailableRequestDonations === "function"
+                ) {
+                    availableTargetWei =
+                        toBigIntSafe(
+                            await treasuryContract.getAvailableRequestDonations(i)
+                        );
+
+                    availableTargetFundingAvailable = true;
+                }
+
+            } catch (availableErr) {
+                console.warn(
+                    `Не удалось получить доступные целевые средства заявки #${i}:`,
+                    availableErr
+                );
+            }
+
+            /*
+             * Если метод общей суммы отсутствует в ABI,
+             * но доступен метод остатка, отображаем хотя бы
+             * доступную сумму.
+             *
+             * При этом не выдаём остаток за полную сумму
+             * собранных пожертвований.
+             */
 
             // ---------------------------------------------
             // Расчёт прогресса целевого финансирования
             // ---------------------------------------------
 
-            const targetDonatedEth = Number(
-                formatEth(targetDonatedWei)
-            );
-
-            const requestedEthNumber = Number(reqEth);
-
             const targetFundingPercent =
-                targetFundingAvailable && requestedEthNumber > 0
-                    ? Math.min(
-                        100,
-                        (
-                            targetDonatedEth /
-                            requestedEthNumber
-                        ) * 100
+                targetFundingAvailable
+                    ? calculateFundingPercent(
+                        targetDonatedWei,
+                        stats.requestedAmount
                     )
                     : 0;
 
-            const targetFundingHtml =
-                targetFundingAvailable
-                    ? `
-                        <div style="margin-top:0.85rem;">
+            // ---------------------------------------------
+            // Формирование блока целевого финансирования
+            // ---------------------------------------------
 
-                            <div
-                                class="row-between"
-                                style="
-                                    gap:0.5rem;
-                                    margin-bottom:0.35rem;
-                                "
-                            >
-                                <span>
-                                    Целевые пожертвования:
-                                </span>
+            let targetFundingHtml = "";
 
-                                <strong style="color:var(--text-main);">
-                                    ${formatEth(targetDonatedWei)}
-                                    /
-                                    ${reqEth} ETH
-                                </strong>
+            if (
+                targetFundingAvailable ||
+                availableTargetFundingAvailable
+            ) {
 
-                            </div>
+                let collectedHtml = "";
 
-                            <div
-                                role="progressbar"
-                                aria-label="Прогресс целевого финансирования заявки"
-                                aria-valuemin="0"
-                                aria-valuemax="100"
-                                aria-valuenow="${targetFundingPercent.toFixed(1)}"
-                                style="
-                                    width:100%;
-                                    height:8px;
-                                    overflow:hidden;
-                                    background:#e2e8f0;
-                                    border-radius:999px;
-                                "
-                            >
-                                <div
-                                    style="
-                                        width:${targetFundingPercent.toFixed(2)}%;
-                                        height:100%;
-                                        background:var(--primary);
-                                        border-radius:999px;
-                                        transition:width 0.25s ease;
-                                    "
-                                ></div>
-                            </div>
-
-                            <div
-                                style="
-                                    font-size:0.78rem;
-                                    color:var(--text-muted);
-                                    margin-top:0.3rem;
-                                "
-                            >
-                                Собрано адресно:
-                                ${targetFundingPercent.toFixed(1)}%
-                            </div>
-
-                        </div>
-                    `
-                    : `
+                if (targetFundingAvailable) {
+                    collectedHtml = `
                         <div
+                            class="row-between"
                             style="
-                                margin-top:0.75rem;
-                                font-size:0.82rem;
-                                color:var(--text-muted);
+                                gap:0.5rem;
+                                margin-bottom:0.35rem;
                             "
                         >
-                            Статистика целевых пожертвований временно недоступна.
+                            <span>
+                                Всего собрано адресно:
+                            </span>
+
+                            <strong style="color:var(--text-main);">
+                                ${formatEth(targetDonatedWei)}
+                                /
+                                ${reqEth} ETH
+                            </strong>
+                        </div>
+
+                        <div
+                            role="progressbar"
+                            aria-label="Прогресс целевого финансирования заявки"
+                            aria-valuemin="0"
+                            aria-valuemax="100"
+                            aria-valuenow="${targetFundingPercent.toFixed(1)}"
+                            style="
+                                width:100%;
+                                height:8px;
+                                overflow:hidden;
+                                background:#e2e8f0;
+                                border-radius:999px;
+                            "
+                        >
+                            <div
+                                style="
+                                    width:${targetFundingPercent.toFixed(2)}%;
+                                    height:100%;
+                                    background:var(--primary);
+                                    border-radius:999px;
+                                    transition:width 0.25s ease;
+                                "
+                            ></div>
+                        </div>
+
+                        <div
+                            style="
+                                font-size:0.78rem;
+                                color:var(--text-muted);
+                                margin-top:0.3rem;
+                            "
+                        >
+                            Собрано:
+                            ${targetFundingPercent.toFixed(1)}%
+                            от запрошенной суммы
                         </div>
                     `;
+                }
+
+                let availableHtml = "";
+
+                if (availableTargetFundingAvailable) {
+                    availableHtml = `
+                        <div
+                            class="row-between"
+                            style="
+                                gap:0.5rem;
+                                margin-top:0.55rem;
+                            "
+                        >
+                            <span>
+                                Доступно для резервирования:
+                            </span>
+
+                            <strong style="color:var(--text-main);">
+                                ${formatEth(availableTargetWei)} ETH
+                            </strong>
+                        </div>
+                    `;
+                }
+
+                targetFundingHtml = `
+                    <div style="margin-top:0.85rem;">
+
+                        ${collectedHtml}
+
+                        ${availableHtml}
+
+                    </div>
+                `;
+
+            } else {
+                targetFundingHtml = `
+                    <div
+                        style="
+                            margin-top:0.75rem;
+                            font-size:0.82rem;
+                            color:var(--text-muted);
+                        "
+                    >
+                        Статистика целевых пожертвований временно недоступна.
+                    </div>
+                `;
+            }
 
             // ---------------------------------------------
             // Дополнительное пояснение статуса
@@ -1139,7 +1209,12 @@ async function loadAllRequests() {
                             "
                         >
                             Заявка одобрена.
-                            Средства могут направляться на выполнение этапов.
+                            Это означает, что DAO разрешило её финансирование,
+                            но не означает, что вся запрошенная сумма уже собрана.
+
+                            Целевые пожертвования могут продолжать поступать.
+                            Администратор DAO резервирует средства отдельно
+                            для каждого этапа по мере их доступности.
                         </div>
                     `;
                     break;
@@ -1175,6 +1250,7 @@ async function loadAllRequests() {
                             "
                         >
                             Все этапы заявки завершены.
+                            Выплаты по предусмотренным этапам произведены.
                         </div>
                     `;
                     break;

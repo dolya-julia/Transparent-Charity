@@ -91,7 +91,9 @@
         </div>
 
 
-        <!-- Заголовок -->
+        <!-- ================================================= -->
+        <!-- ЗАГОЛОВОК -->
+        <!-- ================================================= -->
 
         <div class="page-header">
 
@@ -100,9 +102,10 @@
             </h1>
 
             <p>
-                Здесь представлена информация о заявке,
-                её текущем статусе, финансировании, этапах помощи,
-                подтверждающих документах и NFT-паспорте животного.
+                Здесь представлена подробная информация о заявке,
+                её текущем статусе, сборе пожертвований, финансировании
+                отдельных этапов помощи, подтверждающих документах,
+                проверке валидаторами и NFT-паспорте животного.
             </p>
 
         </div>
@@ -147,6 +150,62 @@
                 </span>
 
             </div>
+
+        </section>
+
+
+        <!-- ================================================= -->
+        <!-- ИНФОРМАЦИОННОЕ ПОЯСНЕНИЕ О ФИНАНСИРОВАНИИ -->
+        <!-- ================================================= -->
+
+        <section
+            class="box"
+            style="margin-bottom: 1.5rem;"
+        >
+
+            <h3 style="margin-bottom: 0.6rem;">
+                Как осуществляется финансирование заявки?
+            </h3>
+
+            <p
+                style="
+                    font-size: 0.9rem;
+                    color: var(--text-muted);
+                    margin-bottom: 0.75rem;
+                "
+            >
+                После положительного голосования заявка получает статус
+                «Одобрена». Это означает, что участники DAO поддержали
+                её финансирование, но не означает, что вся необходимая
+                сумма уже собрана или зарезервирована.
+            </p>
+
+            <p
+                style="
+                    font-size: 0.9rem;
+                    color: var(--text-muted);
+                    margin-bottom: 0.75rem;
+                "
+            >
+                Целевые пожертвования продолжают поступать на заявку
+                после её одобрения, пока необходимая сумма не будет собрана.
+                Дополнительно для финансирования этапов может использоваться
+                свободный остаток общего фонда.
+            </p>
+
+            <p
+                style="
+                    font-size: 0.9rem;
+                    color: var(--text-muted);
+                    margin-bottom: 0;
+                "
+            >
+                Администратор выделяет средства на каждый этап отдельно.
+                После резервирования необходимой суммы заявитель может
+                представить подтверждение выполнения этапа. Два разных
+                валидатора проверяют представленные материалы, после чего
+                зарезервированные средства перечисляются получателю.
+            </p>
 
         </section>
 
@@ -228,7 +287,7 @@
 
     <script>
 
-        window.addEventListener("DOMContentLoaded", () => {
+        async function updateConnectionInfo() {
 
             const connectionStatus =
                 document.getElementById("connectionStatus");
@@ -236,111 +295,105 @@
             const networkBadge =
                 document.getElementById("networkBadge");
 
+            if (!connectionStatus || !networkBadge) {
+                return;
+            }
 
-            window.updateConnectionInfo = function (connected) {
+            try {
 
-                if (!connectionStatus || !networkBadge) {
-                    return;
-                }
-
-
-                if (connected) {
-
-                    const hasWallet =
-                        typeof userAddress !== "undefined" &&
-                        Boolean(userAddress);
-
-
-                    connectionStatus.textContent = hasWallet
-                        ? "Кошелёк подключён. Доступны операции с блокчейном."
-                        : "Сеть Geth доступна. Для выполнения транзакций подключите MetaMask.";
-
-
-                    networkBadge.textContent =
-                        "Geth · 1337";
-
-                    networkBadge.className =
-                        "badge badge-green";
-
-                } else {
+                if (
+                    typeof provider === "undefined" ||
+                    !provider
+                ) {
 
                     connectionStatus.textContent =
-                        "Нет подключения к локальной сети Geth. Проверьте работу узла и настройки MetaMask.";
+                        "Нет подключения к локальной сети Geth. Проверьте работу узла.";
 
                     networkBadge.textContent =
                         "Нет подключения";
 
                     networkBadge.className =
                         "badge badge-red";
+
+                    return;
                 }
 
-            };
+
+                const network =
+                    await provider.getNetwork();
 
 
-            async function checkConnection() {
+                if (network.chainId !== 1337n) {
 
-                try {
+                    connectionStatus.textContent =
+                        "Подключена другая сеть. Выберите локальную сеть Geth с Chain ID 1337.";
 
-                    if (
-                        typeof provider === "undefined" ||
-                        !provider
-                    ) {
+                    networkBadge.textContent =
+                        "Неверная сеть";
 
-                        window.updateConnectionInfo(false);
-                        return;
-                    }
+                    networkBadge.className =
+                        "badge badge-red";
 
-
-                    const network =
-                        await provider.getNetwork();
-
-
-                    window.updateConnectionInfo(
-                        network.chainId === 1337n
-                    );
-
-
-                } catch (error) {
-
-                    console.error(
-                        "Ошибка проверки сети:",
-                        error
-                    );
-
-                    window.updateConnectionInfo(false);
-
+                    return;
                 }
+
+
+                const hasWallet =
+                    typeof userAddress !== "undefined" &&
+                    Boolean(userAddress);
+
+
+                connectionStatus.textContent = hasWallet
+                    ? "Кошелёк подключён. Доступны операции с блокчейном."
+                    : "Сеть Geth доступна. Для выполнения транзакций подключите MetaMask.";
+
+
+                networkBadge.textContent =
+                    "Geth · 1337";
+
+                networkBadge.className =
+                    "badge badge-green";
+
+
+            } catch (error) {
+
+                console.error(
+                    "Ошибка проверки сети:",
+                    error
+                );
+
+                connectionStatus.textContent =
+                    "Не удалось проверить подключение к локальной сети Geth.";
+
+                networkBadge.textContent =
+                    "Нет подключения";
+
+                networkBadge.className =
+                    "badge badge-red";
 
             }
 
+        }
 
-            checkConnection();
 
+        window.addEventListener(
+            "DOMContentLoaded",
+            async () => {
 
-            // Обновление информации после смены сети
+                await updateConnectionInfo();
 
-            if (window.ethereum) {
-
-                window.ethereum.on(
-                    "chainChanged",
-                    () => {
-                        setTimeout(checkConnection, 300);
-                    }
+                setTimeout(
+                    updateConnectionInfo,
+                    500
                 );
 
-
-                // Обновление информации после смены аккаунта
-
-                window.ethereum.on(
-                    "accountsChanged",
-                    () => {
-                        setTimeout(checkConnection, 300);
-                    }
+                setTimeout(
+                    updateConnectionInfo,
+                    1500
                 );
 
             }
-
-        });
+        );
 
     </script>
 

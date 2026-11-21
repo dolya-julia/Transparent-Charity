@@ -4,45 +4,45 @@
     "1": {
       "chainRequestId": "1",
       "draftId": null,
-      "photoUrl": "http://localhost:3001/uploads/photo-1795184965587-231c1530004b1828.jpg",
+      "photoUrl": "http://localhost:3001/uploads/photo-1795268266524-e64619bfd32b535c.jpg",
       "shelterName": "Приют-партнёр",
       "animalName": "",
       "fullStory": "Лечение в клинике",
-      "docUrl": "http://localhost:3001/uploads/doc-1795184965602-5e61c2b69b1b8d6b.jpg",
+      "docUrl": "http://localhost:3001/uploads/doc-1795268266530-7779b9ebe07febae.jpg",
       "milestones": {
         "1": {
           "docUrl": "http://localhost:3001/uploads/ms-1795117365308-705250.jpg",
           "uploadedAt": "2026-11-19T19:42:45.316Z"
         }
       },
-      "updatedAt": "2026-11-20T14:29:25.639Z"
+      "updatedAt": "2026-11-21T13:37:46.543Z"
     },
     "2": {
       "chainRequestId": "2",
       "draftId": null,
-      "photoUrl": "http://localhost:3001/uploads/photo-1795175500950-8680.jpg",
+      "photoUrl": "http://localhost:3001/uploads/photo-1795268321021-908fea982682a24d.jpg",
       "shelterName": "Приют-партнёр",
       "animalName": "",
-      "fullStory": "Покупка  лекарств",
-      "docUrl": "http://localhost:3001/uploads/doc-1795175500951-991881.jpg",
+      "fullStory": "Покупка лекарств",
+      "docUrl": "http://localhost:3001/uploads/doc-1795268321022-6ef93518e948922a.jpg",
       "milestones": {
         "1": {
           "docUrl": "http://localhost:3001/uploads/ms-1795175953412-352615.jpg",
           "uploadedAt": "2026-11-20T11:59:13.491Z"
         }
       },
-      "updatedAt": "2026-11-20T14:29:25.632Z"
+      "updatedAt": "2026-11-21T13:38:41.028Z"
     },
     "3": {
       "chainRequestId": "3",
       "draftId": null,
-      "photoUrl": "http://localhost:3001/uploads/photo-1795123343811-41869.jpg",
+      "photoUrl": "http://localhost:3001/uploads/photo-1795268438795-f39510a9ffc78ca6.jpg",
       "shelterName": "Приют-партнёр",
       "animalName": "",
-      "fullStory": "покупка лекарств",
-      "docUrl": "http://localhost:3001/uploads/doc-1795123343828-979937.jpg",
+      "fullStory": "Лечение в клинике",
+      "docUrl": "http://localhost:3001/uploads/doc-1795268438796-d3fd22c111ad8411.jpg",
       "milestones": {},
-      "updatedAt": "2026-11-20T14:29:25.632Z"
+      "updatedAt": "2026-11-21T13:40:38.807Z"
     }
   }
 }
