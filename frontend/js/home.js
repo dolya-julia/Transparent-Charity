@@ -1,8 +1,19 @@
-window.addEventListener("DOMContentLoaded", async () => {
+
+async function startHomePage() {
     try {
+        console.log("Запуск главной страницы...");
+
         const ready = await initWeb3();
 
-        if (!ready) return;
+        if (!ready) {
+            console.error("Web3 не инициализирован. Загрузка заявок невозможна.");
+
+            const grid = document.getElementById("requestsGrid");
+            if (grid) {
+                grid.innerHTML = "<p>Не удалось подключиться к блокчейну.</p>";
+            }
+            return;
+        }
 
         await Promise.all([
             loadPoolStats(),
@@ -11,13 +22,23 @@ window.addEventListener("DOMContentLoaded", async () => {
 
         await loadAllRequests();
 
+        console.log("Загрузка заявок завершена.");
+
     } catch (err) {
-        console.error(
-            "Ошибка запуска главной страницы:",
-            err
-        );
+        console.error("Ошибка запуска главной страницы:", err);
+
+        const grid = document.getElementById("requestsGrid");
+        if (grid) {
+            grid.innerHTML = "<p>Не удалось загрузить заявки. Проверьте консоль.</p>";
+        }
     }
-});
+}
+
+if (document.readyState === "loading") {
+    window.addEventListener("DOMContentLoaded", startHomePage, { once: true });
+} else {
+    startHomePage();
+}
 
 
 // =========================================================
@@ -837,29 +858,31 @@ async function loadAllRequests() {
             // Получение дополнительных данных с backend
             // ---------------------------------------------
 
+            
             let meta = {
                 photoUrl: ""
             };
 
             try {
                 const res = await fetch(
-                    `${API_URL}/requests/${i}`
+                    `${API_URL}/requests/${i}`,
+                    {
+                        signal: AbortSignal.timeout(3000)
+                    }
                 );
 
                 if (res.ok) {
-                    const responseData =
-                        await res.json();
-
-                    meta =
-                        responseData.data || responseData;
+                    const responseData = await res.json();
+                    meta = responseData.data || responseData;
                 }
 
             } catch (apiErr) {
                 console.warn(
-                    `Не удалось загрузить медиафайлы заявки #${i}:`,
+                    `Backend недоступен для заявки #${i}.`,
                     apiErr
                 );
             }
+
 
             // ---------------------------------------------
             // Подготовка изображения
@@ -1417,3 +1440,5 @@ async function loadAllRequests() {
         `;
     }
 }
+
+window.loadAllRequests = loadAllRequests;

@@ -14,6 +14,7 @@ let daoViewContract = null;
 let treasuryContract = null;
 let milestonesContract = null;
 let nftContract = null;
+let heroCardsReadContract = null;
 
 // Роли пользователя
 let userRoles = {
@@ -279,6 +280,19 @@ function initializeContracts(connection) {
         provider
     );
 
+    if (
+        typeof HERO_CARDS_ADDRESS !== "undefined" &&
+        isConfiguredAddress(HERO_CARDS_ADDRESS)
+    ) {
+        heroCardsReadContract = new ethers.Contract(
+            HERO_CARDS_ADDRESS,
+            HERO_CARDS_ABI,
+            provider
+        );
+    } else {
+        heroCardsReadContract = null;
+    }
+
 
     console.log(
         "Контракты инициализированы:",
@@ -358,7 +372,7 @@ async function checkNetwork() {
     if (network.chainId !== EXPECTED_CHAIN_ID) {
 
         alert(
-            "Вы подключены к неправильной сети MetaMask.\n\n" +
+            "Вы подключены к неправильной сети MetaMask." +
             "Для работы RescueDAO выберите локальную сеть Geth " +
             "с Chain ID 1337."
         );
@@ -520,7 +534,7 @@ async function initWeb3() {
         );
 
         alert(
-            "Не удалось подключиться к блокчейну.\n\n" +
+            "Не удалось подключиться к блокчейну." +
             getErrorMessage(err)
         );
 
@@ -586,7 +600,7 @@ async function handleAccountsChanged(accounts) {
         );
 
         alert(
-            "Не удалось переключить аккаунт MetaMask.\n\n" +
+            "Не удалось переключить аккаунт MetaMask." +
             getErrorMessage(err)
         );
     }

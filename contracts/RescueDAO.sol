@@ -41,6 +41,14 @@ interface IRescueMilestonesConfig {
     function setTreasury(address treasury) external;
 }
 
+interface IRescueHeroCards {
+    function recordDonation(
+        address donor,
+        uint256 requestId,
+        uint256 amount
+    ) external;
+}
+
 // =========================================================
 // ОСНОВНОЙ КОНТРАКТ RESCUEDAO
 // =========================================================
@@ -54,6 +62,7 @@ contract RescueDAO {
     address public treasuryContract;
     address public milestonesContract;
     address public badgesContract;
+    address public heroCardsContract;
 
     mapping(address => bool) public isValidator;
     mapping(address => bool) public isMember;
@@ -214,6 +223,7 @@ contract RescueDAO {
     event NftContractUpdated(address indexed nftContract);
     event MilestonesUpdated(address indexed milestones);
     event BadgesContractUpdated(address indexed badges);
+    event HeroCardsContractUpdated(address indexed heroCardsContract);
 
     event BadgeDonationRecorded(
         address indexed donor,
@@ -418,6 +428,16 @@ contract RescueDAO {
         badgesContract = badges;
 
         emit BadgesContractUpdated(badges);
+    }
+
+    function setHeroCardsContract(address heroCards)
+        external
+        onlyAdmin
+    {
+        require(heroCards != address(0), "Invalid Hero Cards");
+        require(heroCards.code.length > 0, "Hero Cards is not a contract");
+        heroCardsContract = heroCards;
+        emit HeroCardsContractUpdated(heroCards);
     }
 
     function setMember(
@@ -1148,21 +1168,34 @@ contract RescueDAO {
         uint256 requestId,
         uint256 amount
     ) internal {
-        if (badgesContract == address(0)) {
-            return;
+        if (badgesContract != address(0)) {
+            IRescueBadges(badgesContract).recordDonation(
+                donor,
+                requestId,
+                amount
+            );
+
+            emit BadgeDonationRecorded(
+                donor,
+                requestId,
+                amount
+            );
         }
 
-        IRescueBadges(badgesContract).recordDonation(
-            donor,
-            requestId,
-            amount
-        );
-
-        emit BadgeDonationRecorded(
-            donor,
-            requestId,
-            amount
-        );
+        // Карточка героя выпускается только для целевого пожертвования,
+        // когда у заявки уже существует NFT-паспорт животного.
+        if (heroCardsContract != address(0) && requestId > 0) {
+            try IRescueHeroCards(heroCardsContract).recordDonation(
+                donor,
+                requestId,
+                amount
+            ) {
+                // Выпуск карточки не должен блокировать само пожертвование.
+            } catch {
+                // При отсутствии паспорта или иной ошибке карточку можно
+                // будет выдать повторно отдельной административной процедурой.
+            }
+        }
     }
 
     function _notifyBadgeCompletion(

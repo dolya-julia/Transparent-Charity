@@ -3,32 +3,27 @@
 // 1. АДРЕСА КОНТРАКТОВ
 // =========================================================
 
-// Новый RescueDAO
 const DAO_ADDRESS =
-    "0x440321A6caAcAFf7798bA19B78B6f358d70dd6CA";
+    "0xA4c2C8C006668BEACe01244Aca8926E5B09F5DAd";
 
-// ВНИМАНИЕ:
-// Эти адреса относятся к предыдущим развёртываниям.
-// Перед использованием проверь, что контракты связаны
-// с новым DAO. RescueTreasury обязательно нужно развернуть
-// заново, поскольку его адрес DAO является immutable.
 
 const NFT_ADDRESS =
-    "0x1DfDda2486Ce7a694039707f8Ed4A23c15e32D45";
+    "0x5163Afa2DFB317ce1181A3bc284750E58CC9528d";
 
 const MILESTONES_ADDRESS =
-    "0xFDb0c0eCbe03788c44F71EB88354f6153aE455bD";
+    "0x443cEd9D189439B18fBB0352e8610196b5F5EF17";
 
 const DAO_VIEW_ADDRESS =
-    "0xb9b4EE8A4CF4EBAF3546c93060F0F5c196B458e8";
+    "0xE7f6bCf3f6d6457BA935E3fd398aBe1E3eEF92f4";
 
-// Заменить на адрес НОВОГО RescueTreasury после развёртывания.
 const TREASURY_ADDRESS =
-    "0x917a4ACc807505Fb1e7e32992a8D271fD7a5A997";
+    "0xDa84175D001ad066e76269017f8F101E0a73E9Aa";
 
-// Заменить на адрес RescueBadges, связанного с новым DAO.
 const BADGES_ADDRESS =
-    "0xA2b96553d751aD24B17457f1144424a8Fdc5a8B6";
+    "0x927fDd82dc78D2956ABA5C9bfd1868354375D005";
+
+const HERO_CARDS_ADDRESS =
+    "0x10DEb68dEb074EF261c29a4f36aC8F2BC82e1731";
 
 
 // =========================================================
@@ -36,13 +31,13 @@ const BADGES_ADDRESS =
 // =========================================================
 
 const PORTRAIT_RENDERER_ADDRESS =
-    "0xc8E00A76c94D0460c0F38723bE03367701d6f7eD";
+    "0x3016eB09c38437D639097870D204dA338d4D2f64";
 
 const LAYOUT_RENDERER_ADDRESS =
     "0xA038620a7353dE6790CAfDe0e14E4182f2b2AbBE";
 
 const PASSPORT_RENDERER_ADDRESS =
-    "0x6e9BD15dC96e3A4e17c720Ceaf3b0A570f34dAC0";
+    "0xFC80A0C8c84AcE809659A5428272E379e9c054F1";
 
 
 // =========================================================
@@ -111,6 +106,8 @@ const DAO_ABI = [
 
     "function badgesContract() view returns (address)",
 
+    "function heroCardsContract() view returns (address)",
+
     "function pendingBadgeCompletion(uint256 requestId) view returns (bool)",
 
     "function requestCount() view returns (uint256)",
@@ -128,6 +125,8 @@ const DAO_ABI = [
     "function setMilestonesContract(address milestones)",
 
     "function setBadgesContract(address badges)",
+
+    "function setHeroCardsContract(address heroCards)",
 
     "function setMember(address member, bool registered)",
 
@@ -266,6 +265,7 @@ const DAO_ABI = [
     // -----------------------------------------------------
 
     "event BadgesContractUpdated(address indexed badgesContract)",
+    "event HeroCardsContractUpdated(address indexed heroCardsContract)",
 
     "event BadgeDonationRecorded(address indexed donor, uint256 indexed requestId, uint256 amount)",
 
@@ -708,3 +708,68 @@ function isConfiguredAddress(address) {
         address !== "0x0000000000000000000000000000000000000000"
     );
 }
+
+
+// =========================================================
+// ABI RESCUEHEROCARDS
+// =========================================================
+
+
+// =========================================================
+// ABI RESCUEHEROCARDS
+// =========================================================
+
+const HERO_CARDS_ABI = [
+
+    // -----------------------------------------------------
+    // Общая статистика
+    // -----------------------------------------------------
+
+    "function totalSupply() view returns (uint256)",
+    "function totalCardsIssued() view returns (uint256)",
+
+    // -----------------------------------------------------
+    // ERC721
+    // -----------------------------------------------------
+
+    "function balanceOf(address owner) view returns (uint256)",
+    "function tokenOfOwnerByIndex(address owner, uint256 index) view returns (uint256)",
+    "function ownerOf(uint256 tokenId) view returns (address)",
+    "function tokenURI(uint256 tokenId) view returns (string)",
+
+    // -----------------------------------------------------
+    // Информация о карточке
+    // -----------------------------------------------------
+
+    "function getCard(uint256 tokenId) view returns ((uint256 serialNumber,uint256 requestId,uint256 passportTokenId,uint256 totalContribution,uint256 issuedAt))",
+
+    // -----------------------------------------------------
+    // История пожертвований
+    // -----------------------------------------------------
+
+    "function getHistory(uint256 tokenId) view returns ((uint256 timestamp,uint256 amount,uint256 totalAfter)[])",
+    "function getParticipation(uint256 tokenId, uint256 index) view returns (uint256 timestamp, uint256 amount, uint256 totalAfter)",
+    "function getParticipationCount(uint256 tokenId) view returns (uint256)",
+
+    // -----------------------------------------------------
+    // Связь донор — заявка — карточка
+    // -----------------------------------------------------
+
+    "function donorRequestCard(address donor, uint256 requestId) view returns (uint256)",
+
+    // -----------------------------------------------------
+    // Связанные контракты
+    // -----------------------------------------------------
+
+    "function daoContract() view returns (address)",
+    "function passportContract() view returns (address)",
+
+    // -----------------------------------------------------
+    // События
+    // -----------------------------------------------------
+
+    "event HeroCardIssued(address indexed donor,uint256 indexed tokenId,uint256 indexed requestId,uint256 passportTokenId,uint256 serialNumber)",
+
+    "event ParticipationRecorded(uint256 indexed tokenId,address indexed donor,uint256 indexed requestId,uint256 amount,uint256 totalContribution,uint256 timestamp)"
+];
+
