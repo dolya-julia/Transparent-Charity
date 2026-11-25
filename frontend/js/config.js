@@ -605,9 +605,21 @@ const MILESTONES_ABI = [
 
 const NFT_ABI = [
 
+    // -----------------------------------------------------
+    // ERC721
+    // -----------------------------------------------------
+
     "function ownerOf(uint256 tokenId) view returns (address)",
 
     "function tokenURI(uint256 tokenId) view returns (string)",
+
+    "function balanceOf(address owner) view returns (uint256)",
+
+    // -----------------------------------------------------
+    // Связь NFT с заявкой
+    // -----------------------------------------------------
+
+    "function requestToToken(uint256 requestId) view returns (uint256)",
 
     "function getTokenIdForRequest(uint256 requestId) view returns (uint256)",
 

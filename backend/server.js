@@ -331,6 +331,15 @@ const upload = multer({
 // 1. РАБОТА С ЧЕРНОВИКАМИ
 // =========================================================
 
+app.get('/api/health', (req, res) => {
+    console.log('Получен запрос health');
+
+    res.json({
+        success: true,
+        message: 'Backend работает'
+    });
+});
+
 /*
 GET /api/drafts
 

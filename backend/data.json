@@ -4,11 +4,11 @@
     "1": {
       "chainRequestId": "1",
       "draftId": null,
-      "photoUrl": "http://localhost:3001/uploads/photo-1795286944690-9ecf87ab697d02e0.jpg",
+      "photoUrl": "http://localhost:3001/uploads/photo-1795644336555-cd53b3b4279932f9.jpg",
       "shelterName": "Приют-партнёр",
       "animalName": "",
-      "fullStory": "Лечение в клинике",
-      "docUrl": "http://localhost:3001/uploads/doc-1795286944699-78d6fdc4f33ac113.jpg",
+      "fullStory": "Проблема",
+      "docUrl": "http://localhost:3001/uploads/doc-1795644336569-cb7f1691f6b207f7.jpg",
       "milestones": {
         "1": {
           "docUrl": "http://localhost:3001/uploads/ms-1795287473579-2a3625c66a9c0577.jpg",
@@ -19,23 +19,23 @@
           "uploadedAt": "2026-11-21T19:01:06.064Z"
         }
       },
-      "updatedAt": "2026-11-21T19:01:06.064Z"
+      "updatedAt": "2026-11-25T22:05:36.606Z"
     },
     "2": {
       "chainRequestId": "2",
       "draftId": null,
-      "photoUrl": "http://localhost:3001/uploads/photo-1795287214970-20a42da452cc08b9.jpg",
+      "photoUrl": "http://localhost:3001/uploads/photo-1795644336623-138c751106341bcb.jpg",
       "shelterName": "Приют-партнёр",
       "animalName": "",
-      "fullStory": "Проведение операции",
-      "docUrl": "http://localhost:3001/uploads/doc-1795287214971-87f8b89a2a02a7f6.jpg",
+      "fullStory": "Проблема",
+      "docUrl": "http://localhost:3001/uploads/doc-1795644336624-3963712585271223.jpg",
       "milestones": {
         "1": {
           "docUrl": "http://localhost:3001/uploads/ms-1795175953412-352615.jpg",
           "uploadedAt": "2026-11-20T11:59:13.491Z"
         }
       },
-      "updatedAt": "2026-11-21T18:53:34.981Z"
+      "updatedAt": "2026-11-25T22:05:36.641Z"
     },
     "3": {
       "chainRequestId": "3",
@@ -45,8 +45,13 @@
       "animalName": "",
       "fullStory": "Лечение в клинике",
       "docUrl": "http://localhost:3001/uploads/doc-1795268438796-d3fd22c111ad8411.jpg",
-      "milestones": {},
-      "updatedAt": "2026-11-21T13:40:38.807Z"
+      "milestones": {
+        "1": {
+          "docUrl": "http://localhost:3001/uploads/ms-1795646066278-94772f07175318da.jpg",
+          "uploadedAt": "2026-11-25T22:34:26.290Z"
+        }
+      },
+      "updatedAt": "2026-11-25T22:34:26.290Z"
     }
   }
 }

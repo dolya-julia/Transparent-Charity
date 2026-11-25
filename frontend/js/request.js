@@ -1967,6 +1967,7 @@ async function donateToCurrentRequest() {
 // 7. ЗАГРУЗКА NFT-ПАСПОРТА
 // =========================================================
 
+
 async function loadNftPassport(requestId, statusNum) {
     const nftContainer = document.getElementById(
         "nftPassportSection"
@@ -1974,9 +1975,13 @@ async function loadNftPassport(requestId, statusNum) {
 
     if (!nftContainer) return;
 
+    const status = Number(statusNum);
+
+    // Заявка ещё проверяется или требует исправлений.
+    // NFT выпускается только после одобрения.
     if (
-        Number(statusNum) === REQUEST_STATUS.UNDER_REVIEW ||
-        Number(statusNum) === REQUEST_STATUS.CHANGES_REQUESTED
+        status === REQUEST_STATUS.UNDER_REVIEW ||
+        status === REQUEST_STATUS.CHANGES_REQUESTED
     ) {
         nftContainer.innerHTML = `
             <div style="
@@ -1995,7 +2000,7 @@ async function loadNftPassport(requestId, statusNum) {
                     color:var(--text-muted);
                 ">
                     NFT-паспорт будет автоматически создан
-                    после публикации заявки администратором.
+                    после одобрения заявки администратором.
                 </p>
             </div>
         `;
@@ -2004,9 +2009,10 @@ async function loadNftPassport(requestId, statusNum) {
     }
 
     try {
+        // Проверяем наличие необходимых методов в ABI.
         requireMethod(
             nftContract,
-            "getTokenIdForRequest",
+            "requestToToken",
             "RescueNFT"
         );
 
@@ -2022,40 +2028,85 @@ async function loadNftPassport(requestId, statusNum) {
             "RescueNFT"
         );
 
-        const tokenId =
-            await nftContract.getTokenIdForRequest(requestId);
+        // Получаем Token ID через публичный mapping.
+        // Если паспорт отсутствует, контракт вернёт 0.
+        const tokenId = await nftContract.requestToToken(
+            requestId
+        );
 
+        // NFT ещё не выпускался.
         if (BigInt(tokenId) === 0n) {
             nftContainer.innerHTML = `
-                <p style="color:var(--text-muted);">
-                    NFT-паспорт для заявки #${requestId}
-                    ещё не выпущен.
-                </p>
+                <div style="
+                    padding:0.85rem 1rem;
+                    border:1px dashed var(--border);
+                    border-radius:0.6rem;
+                    background:var(--surface);
+                ">
+                    <strong>
+                        🐾 NFT-паспорт ещё не выпущен
+                    </strong>
+
+                    <p style="
+                        margin-top:0.4rem;
+                        font-size:0.88rem;
+                        color:var(--text-muted);
+                    ">
+                        Для заявки #${escapeHtml(requestId)}
+                        пока не найден выпущенный NFT-паспорт.
+                        Он будет доступен после одобрения заявки.
+                    </p>
+                </div>
             `;
 
             return;
         }
 
+        // Получаем владельца и metadata NFT.
         const [owner, uri] = await Promise.all([
             nftContract.ownerOf(tokenId),
             nftContract.tokenURI(tokenId)
         ]);
 
+        // Если URI не содержит JSON Base64,
+        // показываем информацию о токене без разбора metadata.
         if (
             !String(uri).startsWith(
                 "data:application/json;base64,"
             )
         ) {
             nftContainer.innerHTML = `
-                <p class="mono">
-                    NFT #${escapeHtml(tokenId)} выпущен.
-                    URI: ${escapeHtml(uri)}
-                </p>
+                <div style="
+                    padding:1rem;
+                    border:1px solid var(--border);
+                    border-radius:0.75rem;
+                    background:var(--surface);
+                ">
+                    <strong>
+                        🐾 NFT-паспорт #${escapeHtml(tokenId)} выпущен
+                    </strong>
+
+                    <p class="mono" style="
+                        margin-top:0.6rem;
+                        font-size:0.78rem;
+                        word-break:break-all;
+                    ">
+                        URI: ${escapeHtml(uri)}
+                    </p>
+
+                    <p class="mono" style="
+                        font-size:0.78rem;
+                        word-break:break-all;
+                    ">
+                        Владелец: ${escapeHtml(owner)}
+                    </p>
+                </div>
             `;
 
             return;
         }
 
+        // Декодируем Base64 JSON.
         const base64Json = String(uri).split(",")[1];
 
         const binaryString = window.atob(base64Json);
@@ -2069,6 +2120,7 @@ async function loadNftPassport(requestId, statusNum) {
 
         const metadata = JSON.parse(jsonString);
 
+        // Формируем список атрибутов NFT.
         const attributesHtml = (
             Array.isArray(metadata.attributes)
                 ? metadata.attributes
@@ -2089,9 +2141,8 @@ async function loadNftPassport(requestId, statusNum) {
             `)
             .join("");
 
-        const imageUrl = String(
-            metadata.image || ""
-        );
+        // Получаем изображение из metadata.
+        const imageUrl = String(metadata.image || "");
 
         const isDataImage =
             /^data:image\/(svg\+xml|png|jpeg|jpg|webp);base64,/i
@@ -2122,6 +2173,7 @@ async function loadNftPassport(requestId, statusNum) {
             `
             : "";
 
+        // Отображаем готовую карточку NFT.
         nftContainer.innerHTML = `
             <div style="
                 border:1px solid #cbd5e1;
@@ -2129,7 +2181,9 @@ async function loadNftPassport(requestId, statusNum) {
                 padding:1rem;
                 background:#ffffff;
             ">
-                <div class="row-between" style="margin-bottom:0.75rem;">
+                <div class="row-between" style="
+                    margin-bottom:0.75rem;
+                ">
                     <h4 style="margin:0;">
                         🐾 Цифровой NFT-паспорт #${escapeHtml(tokenId)}
                     </h4>
@@ -2198,8 +2252,8 @@ async function loadNftPassport(requestId, statusNum) {
                 padding:0.5rem 0;
             ">
                 Не удалось загрузить NFT-паспорт.
-                Проверьте состояние публикации заявки,
-                привязку NFT-контракта и его ABI.
+                Проверьте подключение к блокчейну,
+                адрес RescueNFT и ABI контракта.
             </div>
         `;
     }
