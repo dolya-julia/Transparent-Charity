@@ -1,13 +1,13 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
-import "@openzeppelin/contracts@4.9.6/token/ERC721/ERC721.sol";
+import "@openzeppelin/contracts@4.9.6/token/ERC1155/ERC1155.sol";
 import "@openzeppelin/contracts@4.9.6/utils/Strings.sol";
 import "@openzeppelin/contracts@4.9.6/utils/Base64.sol";
 
 /**
  * @title RescueBadges
- * @dev Soulbound NFT-бейджи достижений пользователей RescueDAO.
+ * @dev Soulbound ERC-1155 бейджи достижений пользователей RescueDAO.
  *
  * Достижения:
  * 1. FirstGoodDeed  — первое успешное пожертвование.
@@ -15,13 +15,22 @@ import "@openzeppelin/contracts@4.9.6/utils/Base64.sol";
  * 3. AnimalFriend   — поддержка трех разных заявок.
  * 4. RescueHero     — пожертвование в заявку со статусом Completed.
  *
- * Изображения бейджей генерируются непосредственно в Solidity
- * в формате SVG. Внешние API и хранилища не используются.
+ * Каждый тип достижения имеет постоянный ID:
+ * 1 — FirstGoodDeed
+ * 2 — RegularSupport
+ * 3 — AnimalFriend
+ * 4 — RescueHero
+ *
+ * Один тип бейджа может быть выпущен многим пользователям.
+ * Один пользователь может получить каждый тип только один раз.
+ *
+ * Изображения и JSON-метаданные генерируются непосредственно
+ * в Solidity. Внешние API и IPFS не используются.
  *
  * Контракт получает информацию о пожертвованиях и завершении
  * заявок от RescueDAO.
  */
-contract RescueBadges is ERC721 {
+contract RescueBadges is ERC1155 {
 
     using Strings for uint256;
 
@@ -41,8 +50,6 @@ contract RescueBadges is ERC721 {
     // =========================================================
 
     address public immutable daoContract;
-
-    uint256 private nextTokenId = 1;
 
     // Количество успешных пожертвований пользователя.
     mapping(address => uint256) public donationCount;
@@ -65,14 +72,16 @@ contract RescueBadges is ERC721 {
     mapping(address => mapping(BadgeType => bool))
         public hasBadge;
 
-    // ID NFT для каждого пользователя и типа достижения.
+    // ID ERC-1155 для каждого пользователя и типа достижения.
+    // Значение 0 означает, что бейдж еще не получен.
+    // Реальные ID бейджей: от 1 до 4.
     mapping(address => mapping(BadgeType => uint256))
         public badgeTokenId;
 
-    // Тип достижения для каждого NFT.
+    // Тип достижения для каждого ID ERC-1155.
     mapping(uint256 => BadgeType) public tokenBadgeType;
 
-    // Общее количество выпущенных бейджей.
+    // Общее количество выпущенных экземпляров бейджей.
     uint256 public totalBadgesIssued;
 
     // =========================================================
@@ -113,7 +122,7 @@ contract RescueBadges is ERC721 {
     // =========================================================
 
     constructor(address dao)
-        ERC721("RescueDAO Achievement Badges", "RDBADGE")
+        ERC1155("")
     {
         require(
             dao != address(0),
@@ -126,6 +135,17 @@ contract RescueBadges is ERC721 {
         );
 
         daoContract = dao;
+
+        // Закрепляем соответствие между ID и типами бейджей.
+        // ID 1 — FirstGoodDeed.
+        // ID 2 — RegularSupport.
+        // ID 3 — AnimalFriend.
+        // ID 4 — RescueHero.
+
+        tokenBadgeType[1] = BadgeType.FirstGoodDeed;
+        tokenBadgeType[2] = BadgeType.RegularSupport;
+        tokenBadgeType[3] = BadgeType.AnimalFriend;
+        tokenBadgeType[4] = BadgeType.RescueHero;
     }
 
     // =========================================================
@@ -326,9 +346,16 @@ contract RescueBadges is ERC721 {
     // =========================================================
 
     /**
-     * @dev Выпускает NFT-бейдж пользователю.
+     * @dev Выпускает ERC-1155 бейдж пользователю.
      *
-     * Каждый тип достижения можно получить только один раз.
+     * ID определяется типом достижения:
+     * FirstGoodDeed  = 1;
+     * RegularSupport = 2;
+     * AnimalFriend   = 3;
+     * RescueHero     = 4.
+     *
+     * Каждый пользователь может получить только один
+     * экземпляр каждого типа бейджа.
      */
     function _awardBadge(
         address recipient,
@@ -346,18 +373,25 @@ contract RescueBadges is ERC721 {
             "Badge already issued"
         );
 
-        uint256 tokenId = nextTokenId++;
+        // ID ERC-1155 соответствует типу достижения + 1.
+        uint256 tokenId = uint256(badgeType) + 1;
 
+        // Отмечаем получение достижения.
         hasBadge[recipient][badgeType] = true;
 
         badgeTokenId[recipient][badgeType] = tokenId;
 
-        tokenBadgeType[tokenId] = badgeType;
-
         totalBadgesIssued++;
 
-        // Используем _mint, поскольку бейджи не передаются.
-        _mint(recipient, tokenId);
+        // Выпускаем один экземпляр соответствующего бейджа.
+        // Используется _mint, а не _safeMint:
+        // это исключает вызов onERC1155Received у получателя.
+        _mint(
+            recipient,
+            tokenId,
+            1,
+            ""
+        );
 
         emit BadgeAwarded(
             recipient,
@@ -367,16 +401,19 @@ contract RescueBadges is ERC721 {
     }
 
     // =========================================================
-    // METADATA NFT
+    // METADATA ERC-1155
     // =========================================================
 
     /**
-     * @dev Формирует JSON-метаданные NFT непосредственно
+     * @dev Формирует JSON-метаданные ERC-1155 непосредственно
      * в контракте.
      *
-     * Изображение SVG кодируется в Base64.
+     * Для каждого ID генерируется соответствующее изображение SVG.
+     * Изображение кодируется в Base64.
+     *
+     * В отличие от ERC-721, в ERC-1155 используется функция uri().
      */
-    function tokenURI(
+    function uri(
         uint256 tokenId
     )
         public
@@ -385,8 +422,8 @@ contract RescueBadges is ERC721 {
         returns (string memory)
     {
         require(
-            _exists(tokenId),
-            "Badge does not exist"
+            tokenId >= 1 && tokenId <= 4,
+            "Invalid badge ID"
         );
 
         BadgeType badgeType = tokenBadgeType[tokenId];
@@ -634,7 +671,7 @@ contract RescueBadges is ERC721 {
     }
 
     /**
-     * @dev Возвращает ID NFT конкретного достижения.
+     * @dev Возвращает ID ERC-1155 конкретного достижения.
      * Если бейдж еще не получен, возвращает 0.
      */
     function getBadgeTokenId(
@@ -648,21 +685,43 @@ contract RescueBadges is ERC721 {
         return badgeTokenId[donor][badgeType];
     }
 
+    /**
+     * @dev Возвращает количество экземпляров конкретного
+     * бейджа у пользователя.
+     *
+     * Для данной системы значение может быть только 0 или 1.
+     */
+    function getBadgeBalance(
+        address donor,
+        BadgeType badgeType
+    )
+        external
+        view
+        returns (uint256)
+    {
+        uint256 tokenId = uint256(badgeType) + 1;
+
+        return balanceOf(donor, tokenId);
+    }
+
     // =========================================================
-    // ЗАПРЕТ ПЕРЕДАЧИ NFT (SOULBOUND)
+    // ЗАПРЕТ ПЕРЕДАЧИ БЕЙДЖЕЙ (SOULBOUND)
     // =========================================================
 
     /**
-     * @dev Разрешаем только выпуск и сжигание.
+     * @dev Разрешаем только выпуск и сжигание токенов.
      *
      * Любая передача между адресами запрещена.
-     * Переопределение соответствует OpenZeppelin 4.9.6.
+     *
+     * Переопределение соответствует OpenZeppelin 4.9.6 ERC-1155.
      */
     function _beforeTokenTransfer(
+        address operator,
         address from,
         address to,
-        uint256 firstTokenId,
-        uint256 batchSize
+        uint256[] memory ids,
+        uint256[] memory amounts,
+        bytes memory data
     )
         internal
         override
@@ -673,29 +732,19 @@ contract RescueBadges is ERC721 {
         );
 
         super._beforeTokenTransfer(
+            operator,
             from,
             to,
-            firstTokenId,
-            batchSize
+            ids,
+            amounts,
+            data
         );
     }
 
     /**
-     * @dev Запрещаем выдачу разрешений на передачу.
-     */
-    function approve(
-        address,
-        uint256
-    )
-        public
-        pure
-        override
-    {
-        revert("Soulbound: approval disabled");
-    }
-
-    /**
-     * @dev Запрещаем массовую выдачу разрешений.
+     * @dev Запрещаем выдачу разрешений на массовую передачу.
+     *
+     * Это дополнительная мера для soulbound-модели.
      */
     function setApprovalForAll(
         address,

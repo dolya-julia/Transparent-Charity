@@ -1,3 +1,4 @@
+<<<<<<< Updated upstream
 
 // =========================================================
 // 1. АДРЕСА КОНТРАКТОВ
@@ -785,3 +786,708 @@ const HERO_CARDS_ABI = [
     "event ParticipationRecorded(uint256 indexed tokenId,address indexed donor,uint256 indexed requestId,uint256 amount,uint256 totalContribution,uint256 timestamp)"
 ];
 
+=======
+
+// =========================================================
+// 1. АДРЕСА КОНТРАКТОВ
+// =========================================================
+
+// Новый RescueDAO
+const DAO_ADDRESS =
+    "0xdA5cA57283bD3d85e5fBb952DB11363547B6EA99";
+
+// RescueNFT — ERC-721 паспорта животных
+const NFT_ADDRESS =
+    "0xFEDe76D0c1546F06366A8A9F79613224769B26f6";
+
+// RescueMilestones
+const MILESTONES_ADDRESS =
+    "0x6948b427657eB1136e2079bf83E060B93952C42B";
+
+// RescueDAOView
+const DAO_VIEW_ADDRESS =
+    "0xf55C75269Bdbdf976397a417A5332957003DCd1f";
+
+// RescueTreasury
+// Проверь, что контракт действительно связан с новым DAO.
+const TREASURY_ADDRESS =
+    "0x839A8eB725021133fb4e51a871324de7D2116F8d";
+
+// RescueBadges — НОВАЯ ВЕРСИЯ ERC-1155
+// Адрес должен соответствовать новому развертыванию RescueBadges.
+const BADGES_ADDRESS =
+    "0xA6FD7fe4aEF54ABA71d647E5Cc0a1dC8005423EF";
+
+
+// =========================================================
+// 2. АДРЕСА РЕНДЕРЕРОВ NFT
+// =========================================================
+
+const PORTRAIT_RENDERER_ADDRESS =
+    "0x9cd5153397ccb61BcE2DE0edb1C20b42a1A830d7";
+
+const LAYOUT_RENDERER_ADDRESS =
+    "0x89243585A4DA1dee22d4824d9058aB740319C19a";
+
+const PASSPORT_RENDERER_ADDRESS =
+    "0x89243585A4DA1dee22d4824d9058aB740319C19a";
+
+
+// =========================================================
+// 3. BACKEND И EXPLORER
+// =========================================================
+
+const API_URL = "http://localhost:3001/api";
+const EXPLORER_URL = "";
+
+
+// =========================================================
+// 4. СТАТУСЫ ЗАЯВОК
+// =========================================================
+
+// 0 — UnderReview
+// 1 — ChangesRequested
+// 2 — Approved
+// 3 — Rejected
+// 4 — Completed
+// 5 — Cancelled
+
+const STATUS_LABELS = [
+    { text: "На проверке", cls: "badge-blue" },
+    { text: "Требуются изменения", cls: "badge-orange" },
+    { text: "Одобрена (финансирование этапов)", cls: "badge-green" },
+    { text: "Отклонена", cls: "badge-red" },
+    { text: "Завершена", cls: "badge-gray" },
+    { text: "Отменена", cls: "badge-gray" }
+];
+
+const REQUEST_STATUS = {
+    UNDER_REVIEW: 0,
+    CHANGES_REQUESTED: 1,
+    APPROVED: 2,
+    REJECTED: 3,
+    COMPLETED: 4,
+    CANCELLED: 5
+};
+
+
+// =========================================================
+// 5. ABI RESCUEDAO
+// =========================================================
+
+const DAO_ABI = [
+
+    // Основные параметры
+
+    "function admin() view returns (address)",
+
+    "function validators(uint256) view returns (address)",
+
+    "function isValidator(address account) view returns (bool)",
+
+    "function isMember(address account) view returns (bool)",
+
+    "function rescueNftContract() view returns (address)",
+
+    "function treasuryContract() view returns (address)",
+
+    "function milestonesContract() view returns (address)",
+
+    "function badgesContract() view returns (address)",
+
+    "function pendingBadgeCompletion(uint256 requestId) view returns (bool)",
+
+    "function requestCount() view returns (uint256)",
+
+    "function getRequestChangeReason(uint256 requestId) view returns (string)",
+
+
+    // Настройка контрактов и участников
+
+    "function setTreasuryContract(address treasury)",
+
+    "function setRescueNftContract(address nft)",
+
+    "function setMilestonesContract(address milestones)",
+
+    "function setBadgesContract(address badges)",
+
+    "function setMember(address member, bool registered)",
+
+
+    // Пожертвования
+
+    "function donate() payable",
+
+    "function donateToRequest(uint256 requestId) payable",
+
+
+    // Создание заявки
+
+    "function createAidRequest(string animalName, string description, string evidenceURI, bytes32 evidenceHash, uint256 requestedAmount) returns (uint256)",
+
+
+    // Редактирование заявки
+
+    "function updateRequestDetails(uint256 requestId, string animalName, string description, string evidenceURI, bytes32 evidenceHash, uint256 requestedAmount)",
+
+    "function requestChanges(uint256 requestId, string reason)",
+
+    "function resubmitForReview(uint256 requestId)",
+
+    "function rejectRequest(uint256 requestId, string reason)",
+
+
+    // Публикация заявки — без голосования
+
+    "function publishRequest(uint256 requestId)",
+
+    "function cancelRequest(uint256 requestId)",
+
+    "function retryBadgeCompletion(uint256 requestId)",
+
+
+    // Данные заявки
+
+    "function getRequestCore(uint256 requestId) view returns (address requester, uint256 requestedAmount, uint8 status, bool exists)",
+
+    "function getRequestTextAndMeta(uint256 requestId) view returns (string animalName, string description, string evidenceURI, bytes32 evidenceHash, address requester, bool exists)",
+
+    "function getRequestFinancialData(uint256 requestId) view returns (uint256 requestedAmount, uint256 milestoneTotal, uint256 releasedAmount, uint256 milestoneCount, uint256 completedMilestones, uint8 status)",
+
+    "function getRequestFinancialStats(uint256 requestId) view returns (uint256 requestedAmount, uint256 milestoneTotal, uint256 releasedAmount, uint256 milestoneCount, uint256 completedMilestones, uint8 status)",
+
+    // Совместимость со старым интерфейсом.
+    // Голосование в текущей версии не проводится.
+
+    "function getRequestFinancialAndVoting(uint256 requestId) view returns (uint256 requestedAmount, uint256 yesVotes, uint256 noVotes, uint256 votingEndsAt, uint256 milestoneTotal, uint256 releasedAmount, uint256 milestoneCount, uint256 completedMilestones, uint8 status)",
+
+    "function getMilestoneSummary(uint256 requestId) view returns (uint256 total, uint256 count)",
+
+
+    // Обратные вызовы от RescueMilestones
+
+    "function onMilestoneAdded(uint256 requestId, uint256 amount)",
+
+    "function onMilestoneUpdated(uint256 requestId, uint256 oldAmount, uint256 newAmount)",
+
+    "function onValidatorApproved(address validator)",
+
+    "function onMilestoneReleased(uint256 requestId, uint256 amount)",
+
+
+    // Репутация валидаторов
+
+    "function validatorReputation(address validator) view returns (uint256)",
+
+    "function validatorApprovedTotal(address validator) view returns (uint256)",
+
+
+    // События пожертвований
+
+    "event DonationReceived(address indexed donor, uint256 amount)",
+
+    "event RequestDonationReceived(uint256 indexed requestId, address indexed donor, uint256 amount)",
+
+
+    // События заявок
+
+    "event AidRequestCreated(uint256 indexed requestId, address indexed requester, string animalName, uint256 requestedAmount, uint256 submittedAt)",
+
+    "event AidRequestUpdated(uint256 indexed requestId, uint256 requestedAmount)",
+
+    "event AidRequestChangesRequested(uint256 indexed requestId, string reason)",
+
+    "event AidRequestResubmitted(uint256 indexed requestId)",
+
+    // Оставлены для совместимости со старым интерфейсом.
+
+    "event AidRequestPublished(uint256 indexed requestId, uint256 votingEndsAt, uint256 votingDuration)",
+
+    "event VoteCast(uint256 indexed requestId, address indexed voter, bool support, uint256 yesVotes, uint256 noVotes)",
+
+    "event AidRequestFinalized(uint256 indexed requestId, uint8 status, uint256 reservedAmount)",
+
+    "event AidRequestCancelled(uint256 indexed requestId, uint256 returnedToAvailableBalance)",
+
+
+    // NFT и настройки связанных контрактов
+
+    "event PassportMinted(uint256 indexed requestId, uint256 indexed tokenId, address indexed owner)",
+
+    "event TreasuryUpdated(address indexed treasury)",
+
+    "event NftContractUpdated(address indexed nftContract)",
+
+    "event MilestonesUpdated(address indexed milestones)",
+
+
+    // RescueBadges
+
+    "event BadgesContractUpdated(address indexed badgesContract)",
+
+    "event BadgeDonationRecorded(address indexed donor, uint256 indexed requestId, uint256 amount)",
+
+    "event BadgeCompletionNotified(uint256 indexed requestId)",
+
+    "event BadgeCompletionQueued(uint256 indexed requestId)",
+
+    "event BadgeCompletionRetried(uint256 indexed requestId)"
+];
+
+
+// =========================================================
+// 6. ABI RESCUEDAO VIEW
+// =========================================================
+
+const DAO_VIEW_ABI = [
+
+    "function daoContract() view returns (address)",
+
+    "function treasuryContract() view returns (address)",
+
+
+    // Основная информация о заявках
+
+    "function getRequestCount() view returns (uint256)",
+
+    "function requestExists(uint256 requestId) view returns (bool)",
+
+    "function getRequestCore(uint256 requestId) view returns (address requester, uint256 requestedAmount, uint8 status, bool exists)",
+
+    "function getAidRequestInfo(uint256 requestId) view returns (string animalName, string description, string evidenceURI, bytes32 evidenceHash, address requester)",
+
+    "function getAidRequestStats(uint256 requestId) view returns (uint256 requestedAmount, uint256 milestoneTotal, uint256 releasedAmount, uint256 milestoneCount, uint256 completedMilestones, uint8 status)",
+
+    "function getMilestoneSummary(uint256 requestId) view returns (uint256 total, uint256 count)",
+
+
+    // Финансовая информация заявки
+
+    "function getAidRequestFundingStats(uint256 requestId) view returns (uint256 fundingGoal, uint256 targetRaised, uint256 fundingProgress, uint256 targetReserved, uint256 generalReserved, uint256 targetSpent, uint256 targetReassigned)",
+
+    "function getUserRequestDonation(uint256 requestId, address user) view returns (uint256)",
+
+    "function getAvailableRequestDonations(uint256 requestId) view returns (uint256)",
+
+
+    // Общая финансовая информация
+
+    "function getAvailableBalance() view returns (uint256)",
+
+    "function getContractBalance() view returns (uint256)",
+
+    "function getTotalSpentAllSources() view returns (uint256)",
+
+    "function getTreasuryTotals() view returns (uint256 generalDonated, uint256 generalReserved, uint256 generalSpent, uint256 targetDonations, uint256 targetReserved, uint256 targetSpent, uint256 targetReassigned)",
+
+
+    // Роли
+
+    "function isValidator(address account) view returns (bool)",
+
+
+    // Информация об этапах
+
+    "function getMilestoneCount(uint256 requestId) view returns (uint256)",
+
+    "function getMilestoneDetails(uint256 requestId, uint256 milestoneId) view returns (string description, address recipient, uint256 amount, string evidenceURI, bytes32 evidenceHash, uint256 approvalCount, bool evidenceSubmitted, bool released)",
+
+
+    // Финансирование отдельного этапа
+
+    "function getMilestoneFundingStatus(uint256 requestId, uint256 milestoneId) view returns (bool funded, uint256 targetReserved, uint256 generalReserved, bool released)",
+
+
+    // Подтверждение валидатора
+
+    "function hasValidatorApprovedMilestone(uint256 requestId, uint256 milestoneId, address validator) view returns (bool)",
+
+
+    // Сводная информация по финансированию этапов
+
+    "function getMilestonesFundingSummary(uint256 requestId) view returns (uint256 totalMilestones, uint256 fundedCount, uint256 releasedCount, uint256 targetReserved, uint256 generalReserved)",
+
+
+    // Дополнительные статусы заявки
+
+    "function isRequestCompleted(uint256 requestId) view returns (bool)",
+
+    "function isRequestCancelled(uint256 requestId) view returns (bool)"
+];
+
+
+// =========================================================
+// 7. ABI RESCUETREASURY
+// =========================================================
+
+const TREASURY_ABI = [
+
+    "function dao() view returns (address)",
+
+    "function milestonesContract() view returns (address)",
+
+    "function requestReservationCreated(uint256 requestId) view returns (bool)",
+
+
+    // Общие средства
+
+    "function totalDonated() view returns (uint256)",
+
+    "function totalReserved() view returns (uint256)",
+
+    "function totalSpent() view returns (uint256)",
+
+    "function getAvailableBalance() view returns (uint256)",
+
+    "function getContractBalance() view returns (uint256)",
+
+    "function getTotalSpentAllSources() view returns (uint256)",
+
+
+    // Целевые пожертвования
+
+    "function totalTargetDonations() view returns (uint256)",
+
+    "function totalTargetReserved() view returns (uint256)",
+
+    "function totalTargetSpent() view returns (uint256)",
+
+    "function totalTargetReassigned() view returns (uint256)",
+
+
+    // Финансы отдельных заявок
+
+    "function requestDonations(uint256 requestId) view returns (uint256)",
+
+    "function userRequestDonations(uint256 requestId, address user) view returns (uint256)",
+
+    "function requestTargetReserved(uint256 requestId) view returns (uint256)",
+
+    "function requestGeneralReserved(uint256 requestId) view returns (uint256)",
+
+    "function requestTargetSpent(uint256 requestId) view returns (uint256)",
+
+    "function requestTargetReassigned(uint256 requestId) view returns (uint256)",
+
+    "function getAvailableRequestDonations(uint256 requestId) view returns (uint256)",
+
+
+    // Резервирование средств по этапам
+
+    "function milestoneTargetReserved(uint256 requestId, uint256 milestoneId) view returns (uint256)",
+
+    "function milestoneGeneralReserved(uint256 requestId, uint256 milestoneId) view returns (uint256)",
+
+    "function milestoneReservationCreated(uint256 requestId, uint256 milestoneId) view returns (bool)",
+
+
+    // Операции резервирования и выплаты
+
+    "function reserveMilestoneFunds(uint256 requestId, uint256 milestoneId, uint256 targetAmount, uint256 generalAmount)",
+
+    "function releaseMilestone(uint256 requestId, uint256 milestoneId, address payable recipient, uint256 amount, uint256 targetAmount, uint256 generalAmount)",
+
+    "function releaseReservation(uint256 requestId) returns (uint256 generalReleased)",
+
+    "function reassignAvailableTargetFunds(uint256 requestId) returns (uint256 amount)",
+
+
+    // События
+
+    "event DonationReceived(address indexed donor, uint256 amount, uint256 totalDonated)",
+
+    "event RequestDonationReceived(uint256 indexed requestId, address indexed donor, uint256 amount, uint256 totalRequestDonations)",
+
+    "event TargetFundsReserved(uint256 indexed requestId, uint256 amount)",
+
+    "event GeneralFundsReserved(uint256 indexed requestId, uint256 amount)",
+
+    "event TargetFundsReassigned(uint256 indexed requestId, uint256 amount)",
+
+    "event FundsReleased(uint256 indexed requestId, uint256 indexed milestoneId, address recipient, uint256 amount)",
+
+    "event FundsReleasedBySource(uint256 indexed requestId, uint256 indexed milestoneId, uint256 targetAmount, uint256 generalAmount)",
+
+    "event ReservationReleased(uint256 indexed requestId, uint256 generalAmount, uint256 targetAmount)",
+
+    "event MilestonesContractUpdated(address indexed milestones)"
+];
+
+
+// =========================================================
+// 8. ABI RESCUEMILESTONES
+// =========================================================
+
+const MILESTONES_ABI = [
+
+    "function admin() view returns (address)",
+
+    "function daoContract() view returns (address)",
+
+    "function treasuryContract() view returns (address)",
+
+
+    // Настройка
+
+    "function setDAO(address dao)",
+
+    "function setTreasury(address treasury)",
+
+
+    // Счётчики
+
+    "function milestoneCount(uint256 requestId) view returns (uint256)",
+
+    "function milestoneTotal(uint256 requestId) view returns (uint256)",
+
+
+    // Создание и редактирование этапов
+
+    "function addMilestone(uint256 requestId, string description, address recipient, uint256 amount)",
+
+    "function updateMilestone(uint256 requestId, uint256 milestoneId, string description, address recipient, uint256 newAmount)",
+
+
+    // Финансирование отдельного этапа
+
+    "function fundMilestone(uint256 requestId, uint256 milestoneId)",
+
+
+    // Доказательства выполнения
+
+    "function submitMilestoneEvidence(uint256 requestId, uint256 milestoneId, string evidenceURI, bytes32 evidenceHash)",
+
+
+    // Подтверждение выполнения
+
+    "function approveMilestone(uint256 requestId, uint256 milestoneId)",
+
+
+    // Данные этапа
+
+    "function getMilestone(uint256 requestId, uint256 milestoneId) view returns (string description, address recipient, uint256 amount, string evidenceURI, bytes32 evidenceHash, uint256 approvalCount, bool evidenceSubmitted, bool released)",
+
+    "function getMilestoneSummary(uint256 requestId) view returns (uint256 total, uint256 count)",
+
+
+    // Статус финансирования этапа
+
+    "function getMilestoneFundingStatus(uint256 requestId, uint256 milestoneId) view returns (bool funded, uint256 targetReserved, uint256 generalReserved, bool released)",
+
+
+    // Проверка подтверждений валидаторов
+
+    "function hasApprovedMilestone(uint256 requestId, uint256 milestoneId, address validator) view returns (bool)",
+
+    "function hasValidatorApproved(uint256 requestId, uint256 milestoneId, address validator) view returns (bool)",
+
+
+    // События настройки контрактов
+
+    "event DAOUpdated(address indexed newAddress)",
+
+    "event TreasuryUpdated(address indexed newAddress)",
+
+
+    // События этапов
+
+    "event MilestoneCreated(uint256 indexed requestId, uint256 indexed milestoneId, string description, address recipient, uint256 amount)",
+
+    "event MilestoneUpdated(uint256 indexed requestId, uint256 indexed milestoneId, string description, address recipient, uint256 oldAmount, uint256 newAmount)",
+
+    "event MilestoneEvidenceSubmitted(uint256 indexed requestId, uint256 indexed milestoneId, string evidenceURI, bytes32 evidenceHash)",
+
+    "event MilestoneApproved(uint256 indexed requestId, uint256 indexed milestoneId, address indexed validator, uint256 approvalCount)",
+
+    "event MilestoneFundsReleased(uint256 indexed requestId, uint256 indexed milestoneId, address recipient, uint256 amount, uint256 targetAmount, uint256 generalAmount)"
+];
+
+
+// =========================================================
+// 9. ABI RESCUENFT
+// =========================================================
+
+// RescueNFT остаётся ERC-721.
+// Это отдельные уникальные паспорта животных.
+
+const NFT_ABI = [
+
+    "function ownerOf(uint256 tokenId) view returns (address)",
+
+    "function tokenURI(uint256 tokenId) view returns (string)",
+
+    "function getTokenIdForRequest(uint256 requestId) view returns (uint256)",
+
+    "function getRequestId(uint256 tokenId) view returns (uint256)"
+];
+
+
+// =========================================================
+// 10. ABI RESCUEBADGES — ERC-1155
+// =========================================================
+
+// ВАЖНО:
+// RescueBadges теперь использует ERC-1155.
+// Поэтому здесь больше нет ERC-721 методов:
+// ownerOf(), tokenURI(), balanceOf(address), name(), symbol().
+//
+// ID бейджей:
+// 1 — FirstGoodDeed
+// 2 — RegularSupport
+// 3 — AnimalFriend
+// 4 — RescueHero
+
+const BADGES_ABI = [
+
+    // -----------------------------------------------------
+    // Основные параметры
+    // -----------------------------------------------------
+
+    "function daoContract() view returns (address)",
+
+    "function totalBadgesIssued() view returns (uint256)",
+
+
+    // -----------------------------------------------------
+    // Статистика пользователя
+    // -----------------------------------------------------
+
+    "function donationCount(address donor) view returns (uint256)",
+
+    "function uniqueRequestsSupported(address donor) view returns (uint256)",
+
+    "function getDonorStats(address donor) view returns (uint256 donations, uint256 uniqueRequests, uint256 badgesReceived)",
+
+
+    // -----------------------------------------------------
+    // Информация о пожертвованиях
+    // -----------------------------------------------------
+
+    "function donatedToRequest(address donor, uint256 requestId) view returns (bool)",
+
+    "function contributionToRequest(address donor, uint256 requestId) view returns (uint256)",
+
+
+    // -----------------------------------------------------
+    // Завершение заявок
+    // -----------------------------------------------------
+
+    "function completedRequests(uint256 requestId) view returns (bool)",
+
+
+    // -----------------------------------------------------
+    // Достижения
+    // -----------------------------------------------------
+
+    "function hasBadge(address donor, uint8 badgeType) view returns (bool)",
+
+    "function badgeTokenId(address donor, uint8 badgeType) view returns (uint256)",
+
+    "function tokenBadgeType(uint256 tokenId) view returns (uint8)",
+
+    "function checkBadge(address donor, uint8 badgeType) view returns (bool)",
+
+    "function getBadgeTokenId(address donor, uint8 badgeType) view returns (uint256)",
+
+    "function getBadgeBalance(address donor, uint8 badgeType) view returns (uint256)",
+
+    "function claimRescueHeroBadge(uint256 requestId)",
+
+
+    // -----------------------------------------------------
+    // Стандарт ERC-1155
+    // -----------------------------------------------------
+
+    // Баланс конкретного типа бейджа у пользователя.
+    // Для нашей системы результат будет 0 или 1.
+
+    "function balanceOf(address account, uint256 id) view returns (uint256)",
+
+    // Балансы нескольких типов бейджей.
+    "function balanceOfBatch(address[] accounts, uint256[] ids) view returns (uint256[])",
+
+    // Метаданные конкретного типа бейджа.
+    "function uri(uint256 tokenId) view returns (string)",
+
+    // Проверка поддержки интерфейсов ERC-1155.
+    "function supportsInterface(bytes4 interfaceId) view returns (bool)",
+
+    // Разрешения на передачу запрещены в soulbound-контракте.
+    "function setApprovalForAll(address operator, bool approved)",
+
+    "function isApprovedForAll(address account, address operator) view returns (bool)",
+
+
+    // -----------------------------------------------------
+    // События RescueBadges
+    // -----------------------------------------------------
+
+    "event DonationRecorded(address indexed donor, uint256 indexed requestId, uint256 amount, uint256 donationCount)",
+
+    "event BadgeAwarded(address indexed recipient, uint8 indexed badgeType, uint256 indexed tokenId)",
+
+    "event RequestMarkedCompleted(uint256 indexed requestId)",
+
+
+    // -----------------------------------------------------
+    // Стандартные события ERC-1155
+    // -----------------------------------------------------
+
+    "event TransferSingle(address indexed operator, address indexed from, address indexed to, uint256 id, uint256 value)",
+
+    "event TransferBatch(address indexed operator, address indexed from, address indexed to, uint256[] ids, uint256[] values)",
+
+    "event ApprovalForAll(address indexed account, address indexed operator, bool approved)",
+
+    "event URI(string value, uint256 indexed id)"
+];
+
+
+// =========================================================
+// 11. ПРОВЕРКА АДРЕСОВ КОНТРАКТОВ
+// =========================================================
+
+function isConfiguredAddress(address) {
+    return (
+        typeof address === "string" &&
+        /^0x[a-fA-F0-9]{40}$/.test(address) &&
+        address !== "0x0000000000000000000000000000000000000000"
+    );
+}
+
+
+// =========================================================
+// 12. ТИПЫ БЕЙДЖЕЙ RESCUEBADGES
+// =========================================================
+
+// Значения соответствуют enum BadgeType в Solidity.
+// В Solidity enum начинается с нуля,
+// но ERC-1155 tokenId начинается с единицы.
+
+const BADGE_TYPES = {
+    FIRST_GOOD_DEED: 0,
+    REGULAR_SUPPORT: 1,
+    ANIMAL_FRIEND: 2,
+    RESCUE_HERO: 3
+};
+
+// ID токенов ERC-1155.
+// Используются при вызовах balanceOf() и uri().
+
+const BADGE_TOKEN_IDS = {
+    FIRST_GOOD_DEED: 1,
+    REGULAR_SUPPORT: 2,
+    ANIMAL_FRIEND: 3,
+    RESCUE_HERO: 4
+};
+
+// Подписи для отображения в интерфейсе.
+
+const BADGE_LABELS = {
+    [BADGE_TOKEN_IDS.FIRST_GOOD_DEED]: "Первое доброе дело",
+    [BADGE_TOKEN_IDS.REGULAR_SUPPORT]: "Постоянная поддержка",
+    [BADGE_TOKEN_IDS.ANIMAL_FRIEND]: "Друг животных",
+    [BADGE_TOKEN_IDS.RESCUE_HERO]: "Герой спасения"
+};
+>>>>>>> Stashed changes

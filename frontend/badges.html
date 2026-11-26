@@ -8,7 +8,7 @@
 
     <meta
         name="description"
-        content="Профиль участника и NFT-бейджи достижений в RescueDAO."
+        content="Профиль участника и ERC-1155 NFT-бейджи достижений в RescueDAO."
     >
 
     <title>Мои достижения — RescueDAO</title>
@@ -19,7 +19,7 @@
 <body>
 
     <!-- =================================================
-         ШАПКА САЙТА
+         1. ШАПКА САЙТА
     ================================================== -->
 
     <header>
@@ -70,7 +70,7 @@
 
 
     <!-- =================================================
-         ОСНОВНОЕ СОДЕРЖИМОЕ
+         2. ОСНОВНОЕ СОДЕРЖИМОЕ
     ================================================== -->
 
     <main>
@@ -92,7 +92,7 @@
 
 
         <!-- =================================================
-             СТАТУС ПОДКЛЮЧЕНИЯ
+             3. СТАТУС ПОДКЛЮЧЕНИЯ
         ================================================== -->
 
         <section
@@ -135,7 +135,7 @@
 
 
         <!-- =================================================
-             СТАТИСТИКА ПОЛЬЗОВАТЕЛЯ
+             4. СТАТИСТИКА ПОЛЬЗОВАТЕЛЯ
         ================================================== -->
 
         <section class="stats-grid">
@@ -190,7 +190,7 @@
 
 
         <!-- =================================================
-             КОЛЛЕКЦИЯ БЕЙДЖЕЙ
+             5. КОЛЛЕКЦИЯ БЕЙДЖЕЙ
         ================================================== -->
 
         <section class="box">
@@ -213,7 +213,7 @@
                             margin: 0;
                         "
                     >
-                        NFT-бейджи, подтверждающие ваш вклад
+                        ERC-1155 NFT-бейджи, подтверждающие ваш вклад
                         в помощь животным.
                     </p>
 
@@ -249,6 +249,7 @@
 
 
         <!-- =================================================
+<<<<<<< Updated upstream
              КОЛЛЕКЦИЯ КАРТОЧЕК ГЕРОЯ
         ================================================== -->
 
@@ -275,6 +276,9 @@
 
         <!-- =================================================
              ПОЛУЧЕНИЕ БЕЙДЖА «ГЕРОЙ СПАСЕНИЯ»
+=======
+             6. ПОЛУЧЕНИЕ БЕЙДЖА «ГЕРОЙ СПАСЕНИЯ»
+>>>>>>> Stashed changes
         ================================================== -->
 
         <section class="box">
@@ -317,7 +321,7 @@
 
                 <input
                     type="number"
-                    min="0"
+                    min="1"
                     step="1"
                     id="claimRequestId"
                     placeholder="Номер заявки, например: 1"
@@ -347,7 +351,7 @@
 
 
         <!-- =================================================
-             ТЕХНИЧЕСКАЯ ИНФОРМАЦИЯ
+             7. ТЕХНИЧЕСКАЯ ИНФОРМАЦИЯ
         ================================================== -->
 
         <section class="box">
@@ -389,7 +393,7 @@
             <div class="info-row">
 
                 <span class="stat-label">
-                    Контракт бейджей
+                    Контракт бейджей ERC-1155
                 </span>
 
                 <span
@@ -420,7 +424,7 @@
             <div class="info-row">
 
                 <span class="stat-label">
-                    Всего выпущено бейджей
+                    Всего выдано бейджей
                 </span>
 
                 <span
@@ -439,14 +443,14 @@
 
 
     <!-- =================================================
-         ПОДВАЛ
+         8. ПОДВАЛ
     ================================================== -->
 
     <footer>
 
         <p>
-            RescueDAO — децентрализованная платформа
-            прозрачной благотворительности на базе Ethereum.
+            RescueDAO — платформа прозрачной благотворительности
+            на базе Ethereum.
         </p>
 
         <p
@@ -463,7 +467,7 @@
 
 
     <!-- =================================================
-         JAVASCRIPT
+         9. JAVASCRIPT
     ================================================== -->
 
     <script src="https://cdnjs.cloudflare.com/ajax/libs/ethers/6.13.1/ethers.umd.min.js"></script>
@@ -473,18 +477,32 @@
     <script>
 
         // =================================================
-        // СОСТОЯНИЕ СТРАНИЦЫ
+        // 9.1. СОСТОЯНИЕ СТРАНИЦЫ
         // =================================================
 
         let badgesContract = null;
         let badgesReadContract = null;
+
         let currentUser = null;
         let badgesLoading = false;
         
 
         // =================================================
-        // ОПИСАНИЕ БЕЙДЖЕЙ
+        // 9.2. ТИПЫ ERC-1155 БЕЙДЖЕЙ
         // =================================================
+
+        /*
+         * В ERC-1155 каждый тип бейджа имеет постоянный ID.
+         *
+         * 0 — FirstGoodDeed
+         * 1 — RegularSupport
+         * 2 — AnimalFriend
+         * 3 — RescueHero
+         *
+         * Один и тот же ID может принадлежать разным пользователям.
+         * Поэтому здесь больше нет индивидуальных Token ID,
+         * как это было в ERC-721.
+         */
 
         const BADGE_INFO = [
 
@@ -528,7 +546,7 @@
 
 
         // =================================================
-        // ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ
+        // 9.3. ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ
         // =================================================
 
         function showNotice(elementId, message, type) {
@@ -538,8 +556,11 @@
 
             if (!element) return;
 
-            element.className = "notice notice-" + type;
-            element.textContent = message;
+            element.className =
+                "notice notice-" + type;
+
+            element.textContent =
+                message;
 
         }
 
@@ -553,6 +574,21 @@
 
             element.className = "notice";
             element.textContent = "";
+
+        }
+
+
+        function shortAddress(address) {
+
+            if (!address || address.length < 12) {
+                return address || "—";
+            }
+
+            return (
+                address.slice(0, 6) +
+                "..." +
+                address.slice(-4)
+            );
 
         }
 
@@ -571,35 +607,44 @@
         }
 
 
-        function decodeTokenMetadata(tokenURI) {
+        /*
+         * ERC-1155 использует uri(uint256),
+         * а не tokenURI(uint256), как ERC-721.
+         *
+         * В нашем контракте uri() должен возвращать
+         * Base64 data URI с JSON-метаданными.
+         */
+
+        function decodeBadgeMetadata(uri) {
 
             if (
-                !tokenURI ||
-                !tokenURI.startsWith("data:")
+                !uri ||
+                typeof uri !== "string" ||
+                !uri.startsWith("data:")
             ) {
 
                 throw new Error(
-                    "Неизвестный формат NFT metadata."
+                    "Неизвестный формат метаданных ERC-1155."
                 );
 
             }
 
             const commaIndex =
-                tokenURI.indexOf(",");
+                uri.indexOf(",");
 
             if (commaIndex === -1) {
 
                 throw new Error(
-                    "Некорректный tokenURI."
+                    "Некорректный URI метаданных."
                 );
 
             }
 
             const metadataPart =
-                tokenURI.slice(0, commaIndex);
+                uri.slice(0, commaIndex);
 
             const dataPart =
-                tokenURI.slice(commaIndex + 1);
+                uri.slice(commaIndex + 1);
 
             if (metadataPart.includes(";base64")) {
 
@@ -617,7 +662,46 @@
 
 
         // =================================================
-        // ПРОГРЕСС ПОЛУЧЕНИЯ БЕЙДЖЕЙ
+        // 9.4. ПРОВЕРКА НАЛИЧИЯ ERC-1155 БЕЙДЖА
+        // =================================================
+
+        async function userHasBadge(badgeId) {
+
+            /*
+             * Основная проверка — пользовательская функция
+             * hasBadge(), сохранённая в RescueBadges.
+             */
+
+            if (
+                typeof badgesReadContract.hasBadge === "function"
+            ) {
+
+                return await badgesReadContract.hasBadge(
+                    currentUser,
+                    badgeId
+                );
+
+            }
+
+            /*
+             * Запасной вариант — стандартный метод ERC-1155.
+             *
+             * balanceOf(address account, uint256 id)
+             */
+
+            const balance =
+                await badgesReadContract.balanceOf(
+                    currentUser,
+                    badgeId
+                );
+
+            return balance > 0n;
+
+        }
+
+
+        // =================================================
+        // 9.5. ПРОГРЕСС ПОЛУЧЕНИЯ БЕЙДЖЕЙ
         // =================================================
 
         function getBadgeProgress(
@@ -706,7 +790,7 @@
 
 
         // =================================================
-        // УПРАВЛЕНИЕ КНОПКАМИ
+        // 9.6. УПРАВЛЕНИЕ КНОПКАМИ
         // =================================================
 
         function setWalletButtonsEnabled(enabled) {
@@ -729,7 +813,7 @@
 
 
         // =================================================
-        // СБРОС СОСТОЯНИЯ СТРАНИЦЫ
+        // 9.7. СБРОС СОСТОЯНИЯ СТРАНИЦЫ
         // =================================================
 
         function resetBadgesPage() {
@@ -777,7 +861,7 @@
 
 
         // =================================================
-        // ПРОВЕРКА ПОДКЛЮЧЕНИЯ
+        // 9.8. ПРОВЕРКА ПОДКЛЮЧЕНИЯ К СЕТИ
         // =================================================
 
         async function updatePageConnectionInfo() {
@@ -813,7 +897,9 @@
                 const network =
                     await provider.getNetwork();
 
-                if (network.chainId !== EXPECTED_CHAIN_ID) {
+                if (
+                    network.chainId !== EXPECTED_CHAIN_ID
+                ) {
 
                     statusEl.textContent =
                         "Подключена другая сеть. Выберите локальную сеть Geth с Chain ID 1337.";
@@ -860,7 +946,7 @@
 
 
         // =================================================
-        // ПРОВЕРКА КОНФИГУРАЦИИ
+        // 9.9. ПРОВЕРКА КОНФИГУРАЦИИ
         // =================================================
 
         function validateBadgesConfiguration() {
@@ -909,11 +995,40 @@
 
             }
 
+            const requiredMethods = [
+                "daoContract",
+                "getDonorStats",
+                "hasBadge",
+                "completedRequests",
+                "donatedToRequest",
+                "claimRescueHeroBadge",
+                "uri",
+                "balanceOf"
+            ];
+
+            for (const method of requiredMethods) {
+
+                if (
+                    !BADGES_ABI.some(
+                        item =>
+                            typeof item === "string" &&
+                            item.includes("function " + method + "(")
+                    )
+                ) {
+
+                    throw new Error(
+                        `В BADGES_ABI отсутствует метод ${method}(). Проверьте ABI ERC-1155.`
+                    );
+
+                }
+
+            }
+
         }
 
 
         // =================================================
-        // ИНИЦИАЛИЗАЦИЯ КОНТРАКТОВ
+        // 9.10. ИНИЦИАЛИЗАЦИЯ КОНТРАКТОВ
         // =================================================
 
         async function initializeBadgesPage() {
@@ -934,7 +1049,9 @@
                 const network =
                     await provider.getNetwork();
 
-                if (network.chainId !== EXPECTED_CHAIN_ID) {
+                if (
+                    network.chainId !== EXPECTED_CHAIN_ID
+                ) {
 
                     throw new Error(
                         "Подключитесь к локальной сети Geth с Chain ID 1337."
@@ -950,7 +1067,10 @@
                         []
                     );
 
-                if (!accounts || accounts.length === 0) {
+                if (
+                    !accounts ||
+                    accounts.length === 0
+                ) {
 
                     resetBadgesPage();
 
@@ -963,7 +1083,7 @@
                 currentUser =
                     ethers.getAddress(accounts[0]);
 
-                // Контракт для чтения.
+                // Контракт для чтения данных.
 
                 badgesReadContract = new ethers.Contract(
                     BADGES_ADDRESS,
@@ -1002,10 +1122,10 @@
                     currentUser;
 
                 document.getElementById("infoDAO").textContent =
-                    shortAddr(DAO_ADDRESS);
+                    shortAddress(DAO_ADDRESS);
 
                 document.getElementById("infoBadges").textContent =
-                    shortAddr(BADGES_ADDRESS);
+                    shortAddress(BADGES_ADDRESS);
 
                 await updatePageConnectionInfo();
 
@@ -1013,10 +1133,12 @@
 
                 await loadBadgesData();
 
-                // Обновляем информацию о роли пользователя.
+                if (
+                    typeof updateRoleBadge === "function"
+                ) {
 
-                if (typeof updateRoleBadge === "function") {
                     await updateRoleBadge();
+
                 }
 
             } catch (error) {
@@ -1033,7 +1155,9 @@
 
                 showNotice(
                     "claimNotice",
-                    getErrorMessage(error),
+                    typeof getErrorMessage === "function"
+                        ? getErrorMessage(error)
+                        : error.message,
                     "error"
                 );
 
@@ -1043,7 +1167,7 @@
 
 
         // =================================================
-        // ПРОВЕРКА СВЯЗИ КОНТРАКТОВ
+        // 9.11. ПРОВЕРКА СВЯЗИ КОНТРАКТОВ
         // =================================================
 
         async function checkContractConnection() {
@@ -1059,26 +1183,6 @@
                     provider
                 );
 
-                if (
-                    typeof badgesReadContract.daoContract !== "function"
-                ) {
-
-                    throw new Error(
-                        "В ABI RescueBadges отсутствует метод daoContract()."
-                    );
-
-                }
-
-                if (
-                    typeof daoContract.badgesContract !== "function"
-                ) {
-
-                    throw new Error(
-                        "В ABI RescueDAO отсутствует метод badgesContract()."
-                    );
-
-                }
-
                 const [
                     daoAddressInBadges,
                     badgesAddressInDAO
@@ -1091,11 +1195,11 @@
                 ]);
 
                 const isCorrect =
-                    daoAddressInBadges.toLowerCase() ===
-                        DAO_ADDRESS.toLowerCase() &&
+                    ethers.getAddress(daoAddressInBadges) ===
+                        ethers.getAddress(DAO_ADDRESS) &&
 
-                    badgesAddressInDAO.toLowerCase() ===
-                        BADGES_ADDRESS.toLowerCase();
+                    ethers.getAddress(badgesAddressInDAO) ===
+                        ethers.getAddress(BADGES_ADDRESS);
 
                 connectionEl.textContent = isCorrect
                     ? "Контракты связаны"
@@ -1104,6 +1208,14 @@
                 connectionEl.style.color = isCorrect
                     ? "var(--primary)"
                     : "var(--danger)";
+
+                if (!isCorrect) {
+
+                    setWalletButtonsEnabled(false);
+
+                }
+
+                return isCorrect;
 
             } catch (error) {
 
@@ -1118,13 +1230,17 @@
                 connectionEl.style.color =
                     "var(--danger)";
 
+                setWalletButtonsEnabled(false);
+
+                return false;
+
             }
 
         }
 
 
         // =================================================
-        // ЗАГРУЗКА СТАТИСТИКИ
+        // 9.12. ЗАГРУЗКА СТАТИСТИКИ
         // =================================================
 
         async function loadBadgesData() {
@@ -1194,7 +1310,7 @@
 
                 showNotice(
                     "claimNotice",
-                    "Не удалось загрузить информацию о достижениях. Проверьте сеть, ABI и адрес контракта.",
+                    "Не удалось загрузить информацию о достижениях. Проверьте сеть, ABI и адрес контракта ERC-1155.",
                     "error"
                 );
 
@@ -1214,7 +1330,7 @@
 
 
         // =================================================
-        // ОТОБРАЖЕНИЕ КОЛЛЕКЦИИ БЕЙДЖЕЙ
+        // 9.13. ОТОБРАЖЕНИЕ КОЛЛЕКЦИИ БЕЙДЖЕЙ
         // =================================================
 
         async function renderBadges(
@@ -1229,32 +1345,28 @@
 
             for (const badge of BADGE_INFO) {
 
-                const earned =
-                    await badgesReadContract.hasBadge(
-                        currentUser,
-                        badge.id
-                    );
+                /*
+                 * В ERC-1155 ID бейджа фиксирован.
+                 * Проверяем, есть ли у пользователя
+                 * хотя бы один токен соответствующего типа.
+                 */
 
-                let tokenId = null;
+                const earned =
+                    await userHasBadge(badge.id);
+
                 let metadata = null;
 
                 if (earned) {
 
                     try {
 
-                        tokenId =
-                            await badgesReadContract.getBadgeTokenId(
-                                currentUser,
+                        const badgeURI =
+                            await badgesReadContract.uri(
                                 badge.id
                             );
 
-                        const tokenURI =
-                            await badgesReadContract.tokenURI(
-                                tokenId
-                            );
-
                         metadata =
-                            decodeTokenMetadata(tokenURI);
+                            decodeBadgeMetadata(badgeURI);
 
                     } catch (error) {
 
@@ -1317,8 +1429,12 @@
                         badge.name;
 
                     img.onerror = () => {
+
                         img.remove();
-                        imageBox.textContent = badge.icon;
+
+                        imageBox.textContent =
+                            badge.icon;
+
                     };
 
                     imageBox.appendChild(img);
@@ -1386,6 +1502,12 @@
 
                 if (earned) {
 
+                    /*
+                     * В отличие от ERC-721, у ERC-1155
+                     * ID относится к типу токена, а не
+                     * к индивидуальному экземпляру.
+                     */
+
                     const tokenText =
                         document.createElement("div");
 
@@ -1396,7 +1518,7 @@
                         "0.25rem";
 
                     tokenText.textContent =
-                        "Token ID: #" + tokenId.toString();
+                        "ID типа бейджа: " + badge.id;
 
                     bottomPart.appendChild(tokenText);
 
@@ -1855,7 +1977,7 @@ async function loadHeroCards() {
 
 
         // =================================================
-        // ПОЛУЧЕНИЕ БЕЙДЖА «ГЕРОЙ СПАСЕНИЯ»
+        // 9.14. ПОЛУЧЕНИЕ БЕЙДЖА «ГЕРОЙ СПАСЕНИЯ»
         // =================================================
 
         async function claimHeroBadge() {
@@ -1879,17 +2001,36 @@ async function loadHeroCards() {
             const input =
                 document.getElementById("claimRequestId");
 
-            const requestId =
+            const requestIdText =
                 input.value.trim();
 
             if (
-                !requestId ||
-                !/^(0|[1-9]\d*)$/.test(requestId)
+                !requestIdText ||
+                !/^[1-9]\d*$/.test(requestIdText)
             ) {
 
                 showNotice(
                     "claimNotice",
-                    "Введите корректный идентификатор заявки.",
+                    "Введите корректный положительный идентификатор заявки.",
+                    "error"
+                );
+
+                return;
+
+            }
+
+            let requestId;
+
+            try {
+
+                requestId =
+                    BigInt(requestIdText);
+
+            } catch {
+
+                showNotice(
+                    "claimNotice",
+                    "Некорректный идентификатор заявки.",
                     "error"
                 );
 
@@ -1907,16 +2048,9 @@ async function loadHeroCards() {
 
             try {
 
-                /*
-                 * Проверяем завершение заявки.
-                 *
-                 * В новой архитектуре заявка получает статус
-                 * Completed (4) только после завершения всех
-                 * предусмотренных этапов и соответствующих выплат.
-                 *
-                 * Контракт RescueBadges должен получать информацию
-                 * о завершении заявки от RescueDAO.
-                 */
+                // -----------------------------------------
+                // 1. Проверяем завершение заявки
+                // -----------------------------------------
 
                 const completed =
                     await badgesReadContract.completedRequests(
@@ -1931,7 +2065,9 @@ async function loadHeroCards() {
 
                 }
 
-                // Проверяем наличие пожертвования пользователя.
+                // -----------------------------------------
+                // 2. Проверяем пожертвование пользователя
+                // -----------------------------------------
 
                 const supported =
                     await badgesReadContract.donatedToRequest(
@@ -1947,13 +2083,12 @@ async function loadHeroCards() {
 
                 }
 
-                // Проверяем наличие бейджа.
+                // -----------------------------------------
+                // 3. Проверяем, есть ли уже бейдж
+                // -----------------------------------------
 
                 const alreadyEarned =
-                    await badgesReadContract.hasBadge(
-                        currentUser,
-                        3
-                    );
+                    await userHasBadge(3);
 
                 if (alreadyEarned) {
 
@@ -1972,7 +2107,9 @@ async function loadHeroCards() {
                 claimBtn.textContent =
                     "Ожидание подтверждения...";
 
-                // Отправляем транзакцию.
+                // -----------------------------------------
+                // 4. Вызываем функцию контракта
+                // -----------------------------------------
 
                 const tx =
                     await badgesContract.claimRescueHeroBadge(
@@ -1988,7 +2125,10 @@ async function loadHeroCards() {
                 const receipt =
                     await tx.wait();
 
-                if (!receipt || receipt.status !== 1) {
+                if (
+                    !receipt ||
+                    receipt.status !== 1
+                ) {
 
                     throw new Error(
                         "Транзакция не была успешно выполнена."
@@ -1998,7 +2138,7 @@ async function loadHeroCards() {
 
                 showNotice(
                     "claimNotice",
-                    "Поздравляем! Бейдж «Герой спасения» получен.",
+                    "Поздравляем! ERC-1155 бейдж «Герой спасения» получен.",
                     "success"
                 );
 
@@ -2016,7 +2156,10 @@ async function loadHeroCards() {
                 let message =
                     typeof getErrorMessage === "function"
                         ? getErrorMessage(error)
-                        : (error.message || "Не удалось получить бейдж.");
+                        : (
+                            error.message ||
+                            "Не удалось получить бейдж."
+                        );
 
                 if (
                     error.code === "ACTION_REJECTED" ||
@@ -2048,7 +2191,7 @@ async function loadHeroCards() {
 
 
         // =================================================
-        // ОБРАБОТКА СМЕНЫ АККАУНТА
+        // 9.15. ОБРАБОТКА СМЕНЫ АККАУНТА
         // =================================================
 
         async function handleBadgesAccountChange() {
@@ -2090,7 +2233,7 @@ async function loadHeroCards() {
 
 
         // =================================================
-        // ЗАПУСК СТРАНИЦЫ
+        // 9.16. ЗАПУСК СТРАНИЦЫ
         // =================================================
 
         window.addEventListener(
@@ -2115,8 +2258,6 @@ async function loadHeroCards() {
                 }
 
                 try {
-
-                    // Используем общую инициализацию wallet.js.
 
                     const ready =
                         await initWeb3();
@@ -2154,7 +2295,7 @@ async function loadHeroCards() {
 
 
         // =================================================
-        // СОБЫТИЯ METAMASK
+        // 9.17. СОБЫТИЯ METAMASK
         // =================================================
 
         if (window.ethereum) {

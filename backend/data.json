@@ -4,22 +4,34 @@
     "1": {
       "chainRequestId": "1",
       "draftId": null,
+<<<<<<< Updated upstream
       "photoUrl": "http://localhost:3001/uploads/photo-1795644336555-cd53b3b4279932f9.jpg",
       "shelterName": "Приют-партнёр",
       "animalName": "",
       "fullStory": "Проблема",
       "docUrl": "http://localhost:3001/uploads/doc-1795644336569-cb7f1691f6b207f7.jpg",
+=======
+      "photoUrl": "http://localhost:3001/uploads/photo-1795686029068-1c7ebefdb19dfbe8.jpg",
+      "shelterName": "Приют-партнёр",
+      "animalName": "",
+      "fullStory": "Лечение в клинике",
+      "docUrl": "http://localhost:3001/uploads/doc-1795686029094-25072e5e750d7126.jpg",
+>>>>>>> Stashed changes
       "milestones": {
         "1": {
-          "docUrl": "http://localhost:3001/uploads/ms-1795287473579-2a3625c66a9c0577.jpg",
-          "uploadedAt": "2026-11-21T18:57:53.588Z"
+          "docUrl": "http://localhost:3001/uploads/ms-1795686169286-44532d6cac83d355.pdf",
+          "uploadedAt": "2026-11-26T09:42:49.294Z"
         },
         "2": {
           "docUrl": "http://localhost:3001/uploads/ms-1795287666057-0eb73fc52c1c0be6.jpg",
           "uploadedAt": "2026-11-21T19:01:06.064Z"
         }
       },
+<<<<<<< Updated upstream
       "updatedAt": "2026-11-25T22:05:36.606Z"
+=======
+      "updatedAt": "2026-11-26T09:42:49.294Z"
+>>>>>>> Stashed changes
     },
     "2": {
       "chainRequestId": "2",

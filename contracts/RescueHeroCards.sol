@@ -6,6 +6,7 @@ import "@openzeppelin/contracts@4.9.6/access/Ownable.sol";
 import "@openzeppelin/contracts@4.9.6/utils/Strings.sol";
 import "@openzeppelin/contracts@4.9.6/utils/Base64.sol";
 
+<<<<<<< Updated upstream
 interface IHeroCardsDAO {
     function getRequestTextAndMeta(uint256 requestId)
         external view
@@ -22,6 +23,27 @@ interface IHeroCardsDAO {
 interface IHeroCardsPassport {
     function requestToToken(uint256 requestId)
         external view returns (uint256);
+=======
+/**
+ * @title RescueHeroCards
+ * @dev Коллекционные NFT-карточки доноров, связанные с NFT-паспортами животных.
+ *
+ * Для каждой пары «донор — заявка» выпускается одна карточка.
+ * Каждое последующее пожертвование увеличивает вклад и добавляет
+ * запись в историю участия. Карточка выпускается только при наличии
+ * NFT-паспорта соответствующей заявки.
+ */
+interface IHeroCardsDAO {
+    function getRequestTextAndMeta(uint256 requestId)
+        external view
+        returns (string memory animalName, string memory description,
+            string memory evidenceURI, bytes32 evidenceHash,
+            address requester, bool exists);
+}
+
+interface IHeroCardsPassport {
+    function requestToToken(uint256 requestId) external view returns (uint256);
+>>>>>>> Stashed changes
 }
 
 contract RescueHeroCards is ERC721Enumerable, Ownable {
@@ -49,6 +71,7 @@ contract RescueHeroCards is ERC721Enumerable, Ownable {
 
     mapping(uint256 => HeroCard) private _cards;
     mapping(uint256 => Participation[]) private _history;
+<<<<<<< Updated upstream
 
     mapping(address => mapping(uint256 => uint256))
         public donorRequestCard;
@@ -56,6 +79,9 @@ contract RescueHeroCards is ERC721Enumerable, Ownable {
     // Защита от повторного восстановления одной транзакции.
     mapping(bytes32 => bool)
         public processedRecoveryTransactions;
+=======
+    mapping(address => mapping(uint256 => uint256)) public donorRequestCard;
+>>>>>>> Stashed changes
 
     event HeroCardIssued(
         address indexed donor,
@@ -64,7 +90,10 @@ contract RescueHeroCards is ERC721Enumerable, Ownable {
         uint256 passportTokenId,
         uint256 serialNumber
     );
+<<<<<<< Updated upstream
 
+=======
+>>>>>>> Stashed changes
     event ParticipationRecorded(
         uint256 indexed tokenId,
         address indexed donor,
@@ -74,6 +103,7 @@ contract RescueHeroCards is ERC721Enumerable, Ownable {
         uint256 timestamp
     );
 
+<<<<<<< Updated upstream
     event HistoricalDonationRecovered(
         bytes32 indexed sourceTxHash,
         address indexed donor,
@@ -82,6 +112,8 @@ contract RescueHeroCards is ERC721Enumerable, Ownable {
         uint256 amount
     );
 
+=======
+>>>>>>> Stashed changes
     modifier onlyDAO() {
         require(msg.sender == daoContract, "Only RescueDAO");
         _;
@@ -91,6 +123,7 @@ contract RescueHeroCards is ERC721Enumerable, Ownable {
         ERC721("RescueDAO Hero Cards", "HERO")
         Ownable()
     {
+<<<<<<< Updated upstream
         require(
             dao != address(0) && dao.code.length > 0,
             "Invalid DAO"
@@ -101,11 +134,16 @@ contract RescueHeroCards is ERC721Enumerable, Ownable {
             "Invalid passport"
         );
 
+=======
+        require(dao != address(0) && dao.code.length > 0, "Invalid DAO");
+        require(passport != address(0) && passport.code.length > 0, "Invalid passport");
+>>>>>>> Stashed changes
         daoContract = dao;
         passportContract = passport;
     }
 
     /**
+<<<<<<< Updated upstream
      * Обычная регистрация пожертвования через RescueDAO.
      */
     function recordDonation(
@@ -186,11 +224,35 @@ contract RescueHeroCards is ERC721Enumerable, Ownable {
         if (tokenId == 0) {
             tokenId = _nextTokenId++;
 
+=======
+     * @notice Регистрирует целевое пожертвование и выдаёт карточку при первом участии.
+     * @dev Вызывается исключительно RescueDAO после успешного перевода пожертвования.
+     * Пожертвования в общий фонд (requestId == 0) не создают карточку героя.
+     */
+    function recordDonation(address donor, uint256 requestId, uint256 amount)
+        external onlyDAO
+    {
+        require(donor != address(0), "Invalid donor");
+        require(requestId > 0, "General donation has no animal passport");
+        require(amount > 0, "Zero donation");
+
+        uint256 passportId =
+            IHeroCardsPassport(passportContract).requestToToken(requestId);
+        require(passportId > 0, "Animal passport does not exist");
+
+        uint256 tokenId = donorRequestCard[donor][requestId];
+
+        if (tokenId == 0) {
+            tokenId = _nextTokenId++;
+>>>>>>> Stashed changes
             uint256 serial = totalCardsIssued + 1;
             totalCardsIssued = serial;
 
             donorRequestCard[donor][requestId] = tokenId;
+<<<<<<< Updated upstream
 
+=======
+>>>>>>> Stashed changes
             _cards[tokenId] = HeroCard({
                 serialNumber: serial,
                 requestId: requestId,
@@ -200,6 +262,7 @@ contract RescueHeroCards is ERC721Enumerable, Ownable {
             });
 
             _safeMint(donor, tokenId);
+<<<<<<< Updated upstream
 
             emit HeroCardIssued(
                 donor,
@@ -240,17 +303,45 @@ contract RescueHeroCards is ERC721Enumerable, Ownable {
     function getCard(uint256 tokenId)
         external view returns (HeroCard memory)
     {
+=======
+            emit HeroCardIssued(donor, tokenId, requestId, passportId, serial);
+        } else {
+            require(_cards[tokenId].passportTokenId == passportId, "Passport link changed");
+        }
+
+        HeroCard storage card = _cards[tokenId];
+        card.totalContribution += amount;
+
+        _history[tokenId].push(Participation({
+            timestamp: block.timestamp,
+            amount: amount,
+            totalAfter: card.totalContribution
+        }));
+
+        emit ParticipationRecorded(
+            tokenId, donor, requestId, amount,
+            card.totalContribution, block.timestamp
+        );
+    }
+
+    function getCard(uint256 tokenId) external view returns (HeroCard memory) {
+>>>>>>> Stashed changes
         ownerOf(tokenId);
         return _cards[tokenId];
     }
 
+<<<<<<< Updated upstream
     function getParticipationCount(uint256 tokenId)
         external view returns (uint256)
     {
+=======
+    function getParticipationCount(uint256 tokenId) external view returns (uint256) {
+>>>>>>> Stashed changes
         ownerOf(tokenId);
         return _history[tokenId].length;
     }
 
+<<<<<<< Updated upstream
     function getParticipation(
         uint256 tokenId,
         uint256 index
@@ -281,10 +372,23 @@ contract RescueHeroCards is ERC721Enumerable, Ownable {
     function getHistory(uint256 tokenId)
         external view returns (Participation[] memory)
     {
+=======
+    function getParticipation(uint256 tokenId, uint256 index)
+        external view returns (uint256 timestamp, uint256 amount, uint256 totalAfter)
+    {
+        ownerOf(tokenId);
+        require(index < _history[tokenId].length, "History index out of bounds");
+        Participation storage item = _history[tokenId][index];
+        return (item.timestamp, item.amount, item.totalAfter);
+    }
+
+    function getHistory(uint256 tokenId) external view returns (Participation[] memory) {
+>>>>>>> Stashed changes
         ownerOf(tokenId);
         return _history[tokenId];
     }
 
+<<<<<<< Updated upstream
     function tokenURI(uint256 tokenId)
         public view override returns (string memory)
     {
@@ -351,10 +455,41 @@ contract RescueHeroCards is ERC721Enumerable, Ownable {
             card.passportTokenId.toString(),
             '},{"trait_type":"Total contribution (wei)","value":',
             card.totalContribution.toString(),
+=======
+    function tokenURI(uint256 tokenId) public view override returns (string memory) {
+        ownerOf(tokenId);
+        HeroCard storage card = _cards[tokenId];
+
+        (string memory animalName,,,,, bool exists) =
+            IHeroCardsDAO(daoContract).getRequestTextAndMeta(card.requestId);
+        require(exists, "Request does not exist");
+
+        string memory image = string(abi.encodePacked(
+            '<svg xmlns="http://www.w3.org/2000/svg" width="600" height="800" viewBox="0 0 600 800">',
+            '<defs><linearGradient id="g" x2="1" y2="1"><stop stop-color="#142d3b"/><stop offset="1" stop-color="#386b68"/></linearGradient></defs>',
+            '<rect width="600" height="800" rx="36" fill="url(#g)"/>',
+            '<rect x="24" y="24" width="552" height="752" rx="28" fill="none" stroke="#e8c77b" stroke-width="5"/>',
+            '<text x="300" y="105" text-anchor="middle" fill="#e8c77b" font-size="28" font-family="sans-serif">RESCUEDAO · HERO CARD</text>',
+            '<text x="300" y="300" text-anchor="middle" fill="white" font-size="58">RESCUE</text>',
+            '<text x="300" y="390" text-anchor="middle" fill="white" font-size="42" font-family="sans-serif">', animalName, '</text>',
+            '<text x="300" y="490" text-anchor="middle" fill="#e8c77b" font-size="26" font-family="sans-serif">CARD № ', card.serialNumber.toString(), '</text>',
+            '<text x="300" y="550" text-anchor="middle" fill="white" font-size="22" font-family="sans-serif">ANIMAL PASSPORT #', card.passportTokenId.toString(), '</text>',
+            '<text x="300" y="620" text-anchor="middle" fill="white" font-size="22" font-family="sans-serif">REQUEST #', card.requestId.toString(), '</text>',
+            '<text x="300" y="700" text-anchor="middle" fill="#e8c77b" font-size="20" font-family="sans-serif">THANK YOU FOR RESCUING</text></svg>'
+        ));
+
+        string memory attributes = string(abi.encodePacked(
+            '[{"trait_type":"Serial number","value":', card.serialNumber.toString(),
+            '},{"trait_type":"Animal","value":"', animalName,
+            '"},{"trait_type":"Request ID","value":', card.requestId.toString(),
+            '},{"trait_type":"Passport token ID","value":', card.passportTokenId.toString(),
+            '},{"trait_type":"Total contribution (wei)","value":', card.totalContribution.toString(),
+>>>>>>> Stashed changes
             '}]'
         ));
 
         string memory json = string(abi.encodePacked(
+<<<<<<< Updated upstream
             '{"name":"Hero Card #',
             card.serialNumber.toString(),
             ' — ',
@@ -374,3 +509,17 @@ contract RescueHeroCards is ERC721Enumerable, Ownable {
         ));
     }
 }
+=======
+            '{"name":"Hero Card #', card.serialNumber.toString(),
+            ' — ', animalName,
+            '","description":"RescueDAO donor participation collectible linked to the animal passport.",',
+            '"image":"data:image/svg+xml;base64,', Base64.encode(bytes(image)),
+            '","attributes":', attributes, '}'
+        ));
+
+        return string(abi.encodePacked(
+            "data:application/json;base64,", Base64.encode(bytes(json))
+        ));
+    }
+}
+>>>>>>> Stashed changes
