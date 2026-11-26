@@ -478,7 +478,6 @@
 
         let badgesContract = null;
         let badgesReadContract = null;
-        let heroCardsReadContract = null;
         let currentUser = null;
         let badgesLoading = false;
         
@@ -972,13 +971,12 @@
                     provider
                 );
 
-                // Контракт RescueHeroCards для чтения NFT-карточек
-                heroCardsReadContract = new ethers.Contract(
-                    HERO_CARDS_ADDRESS,
-                    HERO_CARDS_ABI,
-                    provider
-                );
-
+                // Проверяем, что RescueHeroCards инициализирован в wallet.js
+                if (!heroCardsReadContract) {
+                    console.warn(
+                        "RescueHeroCards не инициализирован. Проверьте wallet.js и config.js."
+                    );
+                }
                 // Контракт для отправки транзакций.
 
                 if (
@@ -1454,6 +1452,8 @@
         // =================================================
 
         
+
+
 async function loadHeroCards() {
     const grid = document.getElementById("heroCardsGrid");
     const refreshBtn = document.getElementById("refreshHeroCardsBtn");
@@ -1493,8 +1493,131 @@ async function loadHeroCards() {
         </div>
     `;
 
+    // Нормализация изображения NFT
+    function normalizeImageURI(image) {
+        if (!image || typeof image !== "string") return null;
+
+        image = image.trim();
+
+        if (
+            image.startsWith("data:image/svg+xml") ||
+            image.startsWith("data:image/png") ||
+            image.startsWith("data:image/jpeg") ||
+            image.startsWith("data:image/webp")
+        ) {
+            return image;
+        }
+
+        if (image.startsWith("<svg") || image.includes("<svg ")) {
+            return "data:image/svg+xml;charset=utf-8," +
+                encodeURIComponent(image);
+        }
+
+        if (
+            image.startsWith("https://") ||
+            image.startsWith("http://")
+        ) {
+            return image;
+        }
+
+        return null;
+    }
+
+    // Создание изображения с резервным способом загрузки SVG
+    function createHeroCardImage(imageURI, imageBox, tokenId, alt) {
+        const img = document.createElement("img");
+
+        img.className = "hero-card-image";
+        img.alt = alt;
+        img.loading = "eager";
+        img.decoding = "async";
+
+        let blobURL = null;
+        let usedBlobFallback = false;
+
+        function showFallback(error) {
+            console.error(
+                `Не удалось загрузить изображение Hero Card #${tokenId}:`,
+                error
+            );
+
+            if (blobURL) {
+                URL.revokeObjectURL(blobURL);
+                blobURL = null;
+            }
+
+            img.remove();
+
+            const fallback = document.createElement("div");
+            fallback.className = "hero-card-image-fallback";
+            fallback.textContent = "🐾";
+            imageBox.appendChild(fallback);
+        }
+
+        img.onload = () => {
+            console.log("Hero Card image loaded:", {
+                tokenId: String(tokenId),
+                width: img.naturalWidth,
+                height: img.naturalHeight,
+                renderedWidth: img.getBoundingClientRect().width,
+                renderedHeight: img.getBoundingClientRect().height,
+                source: usedBlobFallback ? "Blob URL" : "Original URI"
+            });
+
+            if (blobURL) {
+                URL.revokeObjectURL(blobURL);
+                blobURL = null;
+            }
+        };
+
+        img.onerror = () => {
+            console.warn(
+                `Ошибка исходного изображения Hero Card #${tokenId}`
+            );
+
+            // Если исходный Data URI не сработал,
+            // пробуем создать Blob URL из SVG
+            if (
+                !usedBlobFallback &&
+                imageURI.startsWith("data:image/svg+xml;base64,")
+            ) {
+                try {
+                    usedBlobFallback = true;
+
+                    const base64 = imageURI.split(",")[1];
+                    const svgText = atob(base64);
+
+                    if (!svgText.includes("<svg")) {
+                        throw new Error("В декодированных данных отсутствует SVG");
+                    }
+
+                    const blob = new Blob(
+                        [svgText],
+                        { type: "image/svg+xml;charset=utf-8" }
+                    );
+
+                    blobURL = URL.createObjectURL(blob);
+                    img.src = blobURL;
+
+                    console.log(
+                        `Hero Card #${tokenId}: повторная загрузка через Blob URL`
+                    );
+
+                    return;
+                } catch (error) {
+                    showFallback(error);
+                    return;
+                }
+            }
+
+            showFallback("Браузер не смог отобразить SVG");
+        };
+
+        img.src = imageURI;
+        imageBox.appendChild(img);
+    }
+
     try {
-        // Получаем количество NFT у пользователя
         const count = Number(
             await heroCardsReadContract.balanceOf(currentUser)
         );
@@ -1511,7 +1634,6 @@ async function loadHeroCards() {
 
         grid.innerHTML = "";
 
-        // Перебираем все карточки владельца
         for (let i = 0; i < count; i++) {
             const tokenId =
                 await heroCardsReadContract.tokenOfOwnerByIndex(
@@ -1519,15 +1641,12 @@ async function loadHeroCards() {
                     i
                 );
 
-            // Получаем информацию о карточке
             const cardData =
                 await heroCardsReadContract.getCard(tokenId);
 
-            // Получаем историю пожертвований
             const history =
                 await heroCardsReadContract.getHistory(tokenId);
 
-            // Получаем NFT-метаданные
             let metadata = null;
 
             try {
@@ -1535,6 +1654,14 @@ async function loadHeroCards() {
                     await heroCardsReadContract.tokenURI(tokenId);
 
                 metadata = decodeTokenMetadata(tokenURI);
+
+                console.log("========== HERO CARD DEBUG ==========");
+                console.log("Token ID:", String(tokenId));
+                console.log("Metadata:", metadata);
+                console.log("Image:", metadata?.image);
+                console.log("Image type:", typeof metadata?.image);
+                console.log("Image length:", metadata?.image?.length);
+                console.log("=====================================");
             } catch (metadataError) {
                 console.warn(
                     `Не удалось получить метаданные NFT #${tokenId}:`,
@@ -1542,7 +1669,6 @@ async function loadHeroCards() {
                 );
             }
 
-            // Данные карточки
             const requestId =
                 cardData.requestId ?? cardData[1];
 
@@ -1558,52 +1684,57 @@ async function loadHeroCards() {
             const issuedAt =
                 cardData.issuedAt ?? cardData[4];
 
-            // Основной контейнер
+            // Основной контейнер карточки
             const article = document.createElement("article");
             article.className = "badge-card hero-card";
 
-            // ==========================================
-            // ИЗОБРАЖЕНИЕ NFT
-            // ==========================================
-
+            // Изображение
             const imageBox = document.createElement("div");
             imageBox.className = "hero-card-image-box";
 
-            if (metadata && metadata.image) {
-                const img = document.createElement("img");
+            const imageURI = normalizeImageURI(metadata?.image);
 
-                img.src = metadata.image;
-                img.alt =
-                    metadata.name || `Карточка героя №${serial}`;
-
-                img.className = "hero-card-image";
-
-                img.onerror = () => {
-                    img.remove();
-                    imageBox.textContent = "🐾";
-                };
-
-                imageBox.appendChild(img);
+            if (imageURI) {
+                createHeroCardImage(
+                    imageURI,
+                    imageBox,
+                    tokenId,
+                    metadata?.name || `Hero Card #${serial}`
+                );
             } else {
-                imageBox.textContent = "🐾";
+                const fallback = document.createElement("div");
+                fallback.className = "hero-card-image-fallback";
+                fallback.textContent = "🐾";
+                imageBox.appendChild(fallback);
+
+                console.warn(
+                    `У карточки #${tokenId} отсутствует корректное изображение`,
+                    metadata
+                );
             }
 
             article.appendChild(imageBox);
 
-            // ==========================================
-            // НАЗВАНИЕ КАРТОЧКИ
-            // ==========================================
+            // Заголовок
+            const heading = document.createElement("div");
+            heading.className = "hero-card-heading";
 
             const title = document.createElement("h3");
-
             title.textContent =
-                metadata?.name || `Карточка героя №${serial}`;
+                metadata?.name || `Hero Card #${serial}`;
 
-            article.appendChild(title);
+            const tokenBadge = document.createElement("span");
+            tokenBadge.className = "hero-card-token";
+            tokenBadge.textContent = `NFT #${tokenId}`;
 
-            // ==========================================
-            // ОСНОВНАЯ ИНФОРМАЦИЯ
-            // ==========================================
+            heading.appendChild(title);
+            heading.appendChild(tokenBadge);
+            article.appendChild(heading);
+
+            // Информация
+            const detailsTitle = document.createElement("h4");
+            detailsTitle.textContent = "Информация о карточке";
+            article.appendChild(detailsTitle);
 
             const details = document.createElement("div");
             details.className = "hero-card-details";
@@ -1616,10 +1747,11 @@ async function loadHeroCards() {
             ];
 
             for (const [label, value] of infoItems) {
-                const row = document.createElement("p");
+                const row = document.createElement("div");
+                row.className = "hero-card-info-row";
 
                 const labelElement = document.createElement("span");
-                labelElement.textContent = label + ": ";
+                labelElement.textContent = label;
 
                 const valueElement = document.createElement("strong");
                 valueElement.textContent = value;
@@ -1632,70 +1764,70 @@ async function loadHeroCards() {
 
             article.appendChild(details);
 
-            // ==========================================
-            // СВЯЗАННЫЙ NFT-ПАСПОРТ
-            // ==========================================
+            // Связанный паспорт
+            const passportLink = document.createElement("div");
+            passportLink.className = "hero-card-passport";
 
-            const passportLink = document.createElement("p");
-
-            passportLink.className = "mono";
             passportLink.textContent =
                 `Связанный паспорт RescueNFT · Token #${passportId}`;
 
             article.appendChild(passportLink);
 
-            // ==========================================
-            // ИСТОРИЯ УЧАСТИЯ
-            // ==========================================
+            // История участия
+            const historySection = document.createElement("div");
+            historySection.className = "hero-card-history";
 
             const historyTitle = document.createElement("h4");
-
             historyTitle.textContent = "История участия";
 
-            article.appendChild(historyTitle);
+            historySection.appendChild(historyTitle);
 
-            const historyList = document.createElement("ol");
+            if (history.length === 0) {
+                const emptyHistory = document.createElement("p");
+                emptyHistory.textContent = "История участия пока пуста.";
+                historySection.appendChild(emptyHistory);
+            } else {
+                const historyList = document.createElement("ol");
 
-            historyList.style.paddingLeft = "1.25rem";
+                for (const item of history) {
+                    const li = document.createElement("li");
 
-            for (const item of history) {
-                const li = document.createElement("li");
+                    const timestamp =
+                        Number(item.timestamp ?? item[0]);
 
-                const timestamp =
-                    Number(item.timestamp ?? item[0]);
+                    const amount =
+                        item.amount ?? item[1];
 
-                const amount =
-                    item.amount ?? item[1];
+                    const runningTotal =
+                        item.totalAfter ?? item[2];
 
-                const runningTotal =
-                    item.totalAfter ?? item[2];
+                    const date = new Date(timestamp * 1000);
 
-                li.textContent =
-                    `${new Date(timestamp * 1000).toLocaleString("ru-RU")} — ` +
-                    `${ethers.formatEther(amount)} ETH ` +
-                    `(накоплено: ${ethers.formatEther(runningTotal)} ETH)`;
+                    li.textContent =
+                        `${date.toLocaleString("ru-RU")} — ` +
+                        `${ethers.formatEther(amount)} ETH ` +
+                        `(накоплено: ${ethers.formatEther(runningTotal)} ETH)`;
 
-                historyList.appendChild(li);
+                    historyList.appendChild(li);
+                }
+
+                historySection.appendChild(historyList);
             }
 
-            article.appendChild(historyList);
+            article.appendChild(historySection);
 
-            // ==========================================
-            // ИНФОРМАЦИЯ О ВЫПУСКЕ NFT
-            // ==========================================
+            // Дата выпуска
+            const issuedDate = new Date(Number(issuedAt) * 1000);
 
-            const tokenLine = document.createElement("div");
+            const footer = document.createElement("div");
+            footer.className = "hero-card-footer";
 
-            tokenLine.className = "mono";
+            footer.textContent =
+                `Карточка #${serial} · Выпущена: ` +
+                issuedDate.toLocaleDateString("ru-RU");
 
-            tokenLine.textContent =
-                `NFT Token ID: #${tokenId} · Выпущена: ` +
-                new Date(Number(issuedAt) * 1000)
-                    .toLocaleDateString("ru-RU");
+            article.appendChild(footer);
 
-            article.appendChild(tokenLine);
-
-            // Добавляем готовую карточку на страницу
             grid.appendChild(article);
         }
 
@@ -1719,6 +1851,7 @@ async function loadHeroCards() {
         }
     }
 }
+
 
 
         // =================================================

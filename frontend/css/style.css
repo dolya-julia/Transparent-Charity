@@ -375,3 +375,193 @@ footer {
 .hero-card h3 {
     margin-bottom: 0.8rem;
 }
+
+
+/* ============================================
+   NFT-КАРТОЧКИ ГЕРОЯ RESCUEHERO CARDS
+============================================ */
+
+.hero-card {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    padding: 20px;
+    border: 1px solid var(--border);
+    border-radius: 18px;
+    background: var(--card-bg);
+    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.06);
+    overflow: hidden;
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.hero-card:hover {
+    transform: translateY(-4px);
+    box-shadow: 0 10px 28px rgba(0, 0, 0, 0.12);
+}
+
+/* Изображение NFT */
+
+.hero-card-image-box {
+    width: 100%;
+    min-height: 240px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 14px;
+    border-radius: 14px;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    overflow: hidden;
+}
+
+.hero-card-image {
+    display: block;
+    width: 100%;
+    max-width: 340px;
+    max-height: 360px;
+    height: auto;
+    object-fit: contain;
+}
+
+.hero-card-image-fallback {
+    font-size: 64px;
+}
+
+/* Заголовок */
+
+.hero-card-heading {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 10px;
+}
+
+.hero-card-heading h3 {
+    margin: 0;
+    font-size: 1.2rem;
+    color: var(--text-main);
+}
+
+.hero-card-token {
+    padding: 6px 11px;
+    border-radius: 20px;
+    background: var(--success-bg);
+    color: var(--success-text);
+    font-size: 0.8rem;
+    font-weight: 600;
+}
+
+/* Информация */
+
+.hero-card h4 {
+    margin: 0;
+    font-size: 1rem;
+    color: var(--text-main);
+}
+
+.hero-card-details {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    padding: 15px;
+    border-radius: 12px;
+    background: var(--bg);
+    border: 1px solid var(--border);
+}
+
+.hero-card-info-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.hero-card-info-row span {
+    color: var(--text-muted);
+    font-size: 0.9rem;
+}
+
+.hero-card-info-row strong {
+    color: var(--text-main);
+    text-align: right;
+}
+
+/* Связанный паспорт */
+
+.hero-card-passport {
+    padding: 12px;
+    border-radius: 10px;
+    background: var(--info-bg);
+    color: var(--info-text);
+    font-size: 0.85rem;
+    overflow-wrap: anywhere;
+}
+
+/* История участия */
+
+.hero-card-history {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.hero-card-history ol {
+    display: grid;
+    gap: 8px;
+    margin: 0;
+    padding-left: 22px;
+}
+
+.hero-card-history li {
+    padding: 5px 0;
+    color: var(--text-main);
+    font-size: 0.88rem;
+    line-height: 1.6;
+    overflow-wrap: anywhere;
+}
+
+/* Нижняя часть */
+
+.hero-card-footer {
+    padding-top: 12px;
+    border-top: 1px solid var(--border);
+    color: var(--text-muted);
+    font-size: 0.8rem;
+}
+
+/* Адаптация для телефона */
+
+@media (max-width: 600px) {
+    .hero-card {
+        padding: 14px;
+    }
+
+    .hero-card-info-row {
+        align-items: flex-start;
+        flex-direction: column;
+    }
+
+    .hero-card-info-row strong {
+        text-align: left;
+    }
+}
+
+.hero-card-image-box {
+    min-height: 300px !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    overflow: visible !important;
+}
+
+.hero-card-image {
+    display: block !important;
+    width: 300px !important;
+    height: 400px !important;
+    max-width: 100% !important;
+    object-fit: contain !important;
+    visibility: visible !important;
+    opacity: 1 !important;
+}
