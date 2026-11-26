@@ -14,7 +14,6 @@ let daoViewContract = null;
 let treasuryContract = null;
 let milestonesContract = null;
 let nftContract = null;
-let heroCardsReadContract = null;
 
 // Роли пользователя
 let userRoles = {

@@ -23,7 +23,7 @@ const BADGES_ADDRESS =
     "0x927fDd82dc78D2956ABA5C9bfd1868354375D005";
 
 const HERO_CARDS_ADDRESS =
-    "0x10DEb68dEb074EF261c29a4f36aC8F2BC82e1731";
+    "0xDE6BB48974c7839d3A79E53fD421c499945fdD26";
 
 
 // =========================================================
